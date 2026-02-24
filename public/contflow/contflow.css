@@ -1,0 +1,618 @@
+/* =========================================================
+   RESET & BASE
+========================================================= */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial;
+  color: var(--text);
+  background: linear-gradient(
+      180deg,
+      rgba(0, 140, 255, 0.205),
+      rgba(10, 12, 18, 0.94)
+    ),
+    var(--bg);
+  overflow: hidden; /* 🔒 travo scroll global */
+}
+
+:root {
+  --bg: #0b0d13;
+  --panel: rgba(18, 22, 34, 0.72);
+  --panel-soft: rgba(255, 255, 255, 0.04);
+  --stroke: rgba(255, 255, 255, 0.08);
+
+  --text: #e8edf6;
+  --muted: rgba(232, 237, 246, 0.65);
+
+  --brand: #4ecca3;
+  --danger: #ff6b6b;
+
+  --radius: 18px;
+  --shadow: 0 20px 60px rgba(0, 0, 0, 0.55);
+  --shadow-soft: 0 12px 30px rgba(0, 0, 0, 0.35);
+  --ring: 0 0 0 4px rgba(78, 204, 163, 0.18);
+
+  --sb-w: 340px;
+}
+
+.muted {
+  color: var(--muted);
+}
+
+/* =========================================================
+   APP / OVERLAY
+========================================================= */
+.app {
+  min-height: 100vh;
+}
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease;
+  z-index: 40;
+}
+
+body.sidebar-open .overlay {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* =========================================================
+   SIDEBAR
+========================================================= */
+.sidebar {
+  position: fixed;
+  top: 12px;
+  left: 12px;
+  width: min(var(--sb-w), calc(100vw - 24px));
+  height: calc(100vh - 24px);
+  padding: 18px;
+  border-radius: var(--radius);
+
+  background: linear-gradient(
+    180deg,
+    rgba(0, 140, 255, 0.205),
+    rgba(10, 12, 18, 0.94)
+  );
+  border: 1px solid var(--stroke);
+  backdrop-filter: blur(14px);
+  box-shadow: var(--shadow);
+
+  transform: translateX(-120%);
+  transition: transform 0.25s ease;
+  z-index: 50;
+
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+
+  overflow-y: auto;
+}
+
+body.sidebar-open .sidebar {
+  transform: translateX(0);
+}
+
+/* brand */
+.sidebar__brand {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px;
+  border-radius: 14px;
+}
+
+.brand__name {
+  font-size: 16px;
+  font-weight: 900;
+}
+
+.titulo-sidebar {
+  display: flex;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.2px;
+  text-transform: uppercase;
+}
+
+.modulos-sidebar {
+  display: grid;
+  gap: 10px;
+}
+
+button.cards-modulos,
+button.usercard,
+button.btn,
+button.cf-btn {
+  font: inherit;
+}
+
+.cards-modulos {
+  display: inline-grid;
+  grid-template-columns: 42px 1fr auto;
+  gap: 12px;
+  align-items: center;
+
+  padding: 12px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.035);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+
+  color: var(--text);
+  cursor: pointer;
+  transition: 0.15s ease;
+
+  appearance: none;
+  -webkit-appearance: none;
+  text-align: left;
+  width: 100%;
+}
+
+.cards-modulos:hover {
+  background: rgba(0, 140, 255, 0.212);
+  transform: translateY(-1px);
+}
+
+.cards-modulos.is-active {
+  background: linear-gradient(
+    180deg,
+    rgba(78, 204, 163, 0.22),
+    rgba(78, 204, 163, 0.12)
+  );
+  border-color: rgba(78, 204, 163, 0.45);
+}
+
+.icone-modulo {
+  width: 42px;
+  height: 42px;
+  border-radius: 14px;
+  display: grid;
+  place-items: center;
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.usercard__avatar {
+  font-weight: 900;
+  color: #071014;
+  background: linear-gradient(
+    180deg,
+    rgba(78, 204, 163, 0.95),
+    rgba(46, 229, 157, 0.75)
+  );
+  border: 1px solid rgba(78, 204, 163, 0.35);
+}
+
+.plaquinha-de-nome {
+  display: grid;
+  justify-content: center;
+  align-items: center;
+}
+
+.placeholder-titulo {
+  font-weight: 900;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.placeholder {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+/* status pills */
+.status {
+  min-width: 64px;
+  height: 22px;
+  padding: 0 10px;
+  border-radius: 999px;
+
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+
+  border: 1px solid transparent;
+}
+
+.status[data-status="online"] {
+  background: rgba(0, 140, 255, 0.25);
+  border-color: rgba(0, 140, 255, 0.45);
+  color: #ffffff;
+}
+
+.status[data-status="admin"] {
+  background: linear-gradient(
+    180deg,
+    rgba(78, 204, 163, 0.95),
+    rgba(46, 229, 157, 0.75)
+  );
+  color: #071014;
+  border-color: rgba(78, 204, 163, 0.6);
+}
+
+/* footer */
+.sidebar__footer {
+  margin-top: auto;
+  padding-top: 16px;
+}
+
+.usercard-wrap {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.cards-modulos.usercard {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.cards-modulos.usercard .plaquinha-de-nome {
+  justify-content: start;
+  align-items: start;
+  text-align: left;
+  gap: 2px;
+}
+
+.btn {
+  height: 36px;
+  padding: 0 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.06);
+  color: #fff;
+  cursor: pointer;
+}
+
+.btn--sair {
+  height: 36px;
+  padding: 0 12px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 900;
+  background: rgba(255, 107, 107, 0.2);
+  border: 1px solid rgba(255, 107, 107, 0.35);
+  color: var(--danger);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.btn--sair:hover {
+  background: rgba(255, 107, 107, 0.3);
+}
+
+/* =========================================================
+   MAIN (layout certo com sidebar)
+========================================================= */
+.main {
+  height: 100vh;
+  padding: 12px;
+  margin-left: 0;
+  transition: margin-left 0.25s ease;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* quando abrir sidebar */
+body.sidebar-open .main {
+  margin-left: calc(min(var(--sb-w), calc(100vw - 24px)) + 24px);
+}
+
+/* =========================================================
+   TOPBAR
+========================================================= */
+.topbar {
+  display: grid;
+  grid-template-columns: 42px 1fr;
+  gap: 12px;
+  align-items: center;
+
+  padding: 10px 12px;
+  border-radius: var(--radius);
+  border: 1px solid var(--stroke);
+  background: rgba(255, 255, 255, 0.04);
+  box-shadow: var(--shadow-soft);
+}
+
+.topbar__title h1 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 900;
+}
+
+.topbar__title p {
+  margin: 2px 0 0 0;
+  font-size: 12px;
+}
+
+.iconbtn {
+  width: 42px;
+  height: 42px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--stroke);
+  color: #fff;
+  cursor: pointer;
+}
+
+/* =========================================================
+   CARD DO CONTflow
+========================================================= */
+.cf-card {
+  flex: 1;
+  min-height: 0;
+  padding: 12px;
+  border-radius: var(--radius);
+  border: 1px solid var(--stroke);
+  background: rgba(255, 255, 255, 0.03);
+  box-shadow: var(--shadow-soft);
+
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* header interno */
+.cf-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  flex-shrink: 0;
+}
+
+.cf-header h2 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 900;
+}
+
+.cf-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+/* =========================================================
+   BOTÕES DO CONTflow
+========================================================= */
+.cf-btn {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: var(--text);
+  padding: 6px 10px;
+  border-radius: 10px;
+  cursor: pointer;
+  font-weight: 900;
+  font-size: 12px;
+}
+
+.cf-btn:hover {
+  background: rgba(0, 140, 255, 0.18);
+}
+
+.cf-btn--ghost {
+  background: transparent;
+}
+
+.cf-btn--danger {
+  border-color: rgba(255, 107, 107, 0.35);
+  color: #ffd0d0;
+  background: rgba(255, 107, 107, 0.12);
+}
+
+.cf-btn--danger:hover {
+  background: rgba(255, 107, 107, 0.2);
+}
+
+/* =========================================================
+   GRID (único scroll)
+========================================================= */
+.cf-grid-container {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(2, 6, 23, 0.5);
+  position: relative; /* importante p/ sticky layers */
+}
+
+.table-wrapper {
+  min-height: 100%;
+  min-width: 100%;
+}
+
+/* tabela */
+.cf-table {
+  border-collapse: collapse;
+  table-layout: fixed;
+  width: max-content;
+  min-width: 100%;
+}
+
+.cf-table th,
+.cf-table td {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 6px 8px;
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  background-clip: padding-box;
+}
+
+/* =========================================================
+   STICKY FIX DEFINITIVO (SEM SOBREPOR)
+   Ordem correta: canto > thead > primeira coluna > células
+========================================================= */
+
+/* células normais */
+.cf-table td {
+  position: relative;
+  z-index: 1;
+  color: var(--text);
+  background: transparent;
+  caret-color: var(--text);
+}
+
+/* cabeçalho horizontal (acima da coluna de índice) */
+.cf-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background: rgba(2, 6, 23, 0.98); /* mais opaco */
+  color: rgba(232, 237, 246, 0.75);
+  cursor: pointer;
+}
+
+/* coluna index sticky (abaixo do thead) */
+.cf-row-index {
+  position: sticky;
+  left: 0;
+  z-index: 15;
+  background: rgba(2, 6, 23, 0.98);
+  color: rgba(232, 237, 246, 0.75);
+  text-align: right;
+  min-width: 40px;
+  cursor: pointer;
+  user-select: none;
+}
+
+/* canto (#) — topo absoluto */
+#cf-corner-select {
+  position: sticky;
+  top: 0;
+  left: 0;
+  z-index: 25;
+  background: rgba(2, 6, 23, 0.98);
+  text-align: center;
+  user-select: none;
+}
+
+/* seleção */
+.cf-cell {
+  outline: none;
+  cursor: text;
+}
+
+.cf-cell--tiny {
+  min-width: 70px;
+}
+
+.cf-cell--small {
+  min-width: 90px;
+}
+
+.cf-cell--obs {
+  min-width: 220px;
+}
+
+.cf-cell.is-selected {
+  background: rgba(30, 41, 59, 0.7);
+}
+
+.cf-cell.is-active {
+  box-shadow: inset 0 0 0 2px rgba(56, 189, 248, 0.9);
+}
+
+/* hover leve */
+.cf-table tbody tr:hover td {
+  background: rgba(255, 255, 255, 0.02);
+}
+
+/* =========================================================
+   MODAL
+========================================================= */
+#cf-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: none;
+  z-index: 100;
+}
+
+#cf-modal {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: rgba(2, 6, 23, 0.96);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 14px;
+  padding: 14px;
+  width: 300px;
+  display: none;
+  z-index: 101;
+  box-shadow: var(--shadow);
+}
+
+#cf-modal.is-open,
+#cf-modal-backdrop.is-open {
+  display: block;
+}
+
+#cf-modal header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.cf-modal-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.cf-file {
+  display: block;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: var(--text);
+  padding: 8px 10px;
+  border-radius: 12px;
+  cursor: pointer;
+  text-align: left;
+  font-weight: 900;
+  font-size: 12px;
+}
+
+.cf-file:hover {
+  background: rgba(0, 140, 255, 0.18);
+}
+
+/* =========================================================
+   RESPONSIVO
+========================================================= */
+@media (max-width: 640px) {
+  .usercard-wrap {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .btn--sair {
+    width: 100%;
+  }
+}

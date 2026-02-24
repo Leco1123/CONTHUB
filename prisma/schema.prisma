@@ -1,0 +1,427 @@
+// ===============================
+// Prisma Schema (PostgreSQL) — BEST VERSION (ContHub)
+// + ContFlow (Mini-Excel) Multiusuário
+// ✅ Mantém: User, Customer, PasswordResetToken, UserLog, Module
+// ✅ Adiciona: Sheet, SheetColumn, SheetRow, SheetCell, SheetView, SheetLock, SheetAudit
+// ✅ Compatível com __id do frontend
+// ✅ Locks por célula + auditoria por base
+// ✅ FIX: relações com "opposite fields" (resolve P1012)
+// ===============================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+/**
+ * ✅ Padroniza o papel do usuário (evita typo em role)
+ */
+enum UserRole {
+  CUSTOMER
+  USER
+  ADMIN
+  TI
+}
+
+/**
+ * ✅ Padroniza ações de auditoria e evita typo no backend
+ */
+enum UserLogAction {
+  USER_CREATED
+  USER_UPDATED
+  USER_TOGGLED
+  PASSWORD_CHANGED
+  USER_DELETED
+  LOGIN
+  LOGOUT
+  ACCESS_DENIED
+  PASSWORD_RESET_REQUESTED
+  PASSWORD_RESET_USED
+}
+
+/**
+ * ✅ ContFlow — tipos de auditoria (evita typo)
+ */
+enum SheetAuditAction {
+  SHEET_CREATED
+  SHEET_RENAMED
+  SHEET_DELETED
+
+  COLUMN_ADDED
+  COLUMN_RENAMED
+  COLUMN_MOVED
+  COLUMN_DELETED
+  COLUMN_RESIZED
+
+  ROW_INSERTED
+  ROW_DUPLICATED
+  ROW_DELETED
+  ROW_MOVED
+
+  CELL_UPDATED
+  RANGE_UPDATED
+
+  IMPORT_REPLACED
+  IMPORT_APPENDED
+  IMPORT_MERGED
+
+  VIEW_UPDATED
+}
+
+/**
+ * ✅ ContFlow — tipo de lock
+ * (por enquanto célula; depois dá pra expandir para range/linha/coluna)
+ */
+enum SheetLockScope {
+  CELL
+}
+
+model User {
+  id       Int    @id @default(autoincrement())
+  name     String
+  email    String @unique
+  password String
+
+  role   UserRole @default(CUSTOMER)
+  active Boolean  @default(true)
+
+  // campo do painel
+  cargo String?
+
+  // opcional (para status online, etc.)
+  lastSeenAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  /// Clientes criados por este usuário (1:N)
+  customers Customer[] @relation("UserCreatedCustomers")
+
+  /// Perfil de cliente deste usuário (1:1 opcional)
+  customerProfile Customer? @relation("UserCustomerProfile")
+
+  /// Tokens de recuperação de senha (1:N)
+  passwordResets PasswordResetToken[] @relation("UserPasswordResets")
+
+  // Logs (target)
+  logs UserLog[] @relation("UserLogTarget")
+
+  // Logs (actor)
+  logsAsActor UserLog[] @relation("UserLogActor")
+
+  // ✅ ContFlow
+  sheetViews SheetView[]
+  sheetLocks SheetLock[]
+
+  sheetAudits         SheetAudit[] @relation("SheetAuditActor")
+  sheetAuditsAsTarget SheetAudit[] @relation("SheetAuditTarget")
+
+  // ✅ FIX (opposites obrigatórios p/ Prisma)
+  sheetsCreated     Sheet[]     @relation("SheetCreatedBy")
+  sheetCellsUpdated SheetCell[] @relation("SheetCellUpdatedBy")
+
+  @@index([role])
+  @@index([active])
+  @@index([lastSeenAt])
+}
+
+model Customer {
+  id       Int     @id @default(autoincrement())
+  name     String
+  email    String?
+  phone    String?
+  document String? @unique
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  /// Quem criou no painel (admin/user) — N:1
+  createdById Int?
+  createdBy   User? @relation("UserCreatedCustomers", fields: [createdById], references: [id], onDelete: SetNull)
+
+  /// Dono da conta do cliente (auto-cadastro/login) — 1:1 opcional
+  userId Int?  @unique
+  user   User? @relation("UserCustomerProfile", fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([createdById])
+  @@index([userId])
+}
+
+model PasswordResetToken {
+  id        Int       @id @default(autoincrement())
+  userId    Int
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation("UserPasswordResets", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+/**
+ * ✅ Auditoria / Logs
+ * - target: usuário afetado (userId)
+ * - actor: usuário que executou (actorId) — pode ser null (evento do sistema)
+ */
+model UserLog {
+  id Int @id @default(autoincrement())
+
+  // alvo (target)
+  userId Int
+  user   User @relation("UserLogTarget", fields: [userId], references: [id], onDelete: Cascade)
+
+  // ação padronizada
+  action UserLogAction
+
+  // mensagem curta
+  message String?
+
+  // payload livre (campos alterados, etc.)
+  meta Json?
+
+  // ator (actor)
+  actorId Int?
+  actor   User? @relation("UserLogActor", fields: [actorId], references: [id], onDelete: SetNull)
+
+  // redundância útil pra auditoria
+  actorEmail String?
+
+  // rastreabilidade opcional
+  ip        String?
+  userAgent String?
+  requestId String?
+
+  createdAt DateTime @default(now())
+
+  @@index([userId, createdAt])
+  @@index([actorId, createdAt])
+  @@index([action, createdAt])
+  @@index([requestId])
+}
+
+model Module {
+  id     Int     @id @default(autoincrement())
+  name   String
+  slug   String  @unique
+  order  Int     @default(1)
+  status String  @default("Base") // online/dev/offline/admin etc
+  access String  @default("user+admin") // regra livre
+  active Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([order])
+  @@index([active])
+}
+
+// ===================================================================
+// ======================== CONT FLOW • MODELS =======================
+// ===================================================================
+
+/**
+ * ✅ Sheet = uma "planilha/base" (ex.: Controle IRPJ)
+ * - key: identificador estável (slug)
+ * - version: incrementa em mudanças estruturais (colunas/ordem/import)
+ */
+model Sheet {
+  id      Int     @id @default(autoincrement())
+  key     String  @unique // ex: "controle_irpj"
+  name    String
+  version Int     @default(1)
+  active  Boolean @default(true)
+
+  // opcional: quem criou
+  createdById Int?
+  createdBy   User? @relation("SheetCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  columns SheetColumn[]
+  rows    SheetRow[]
+  cells   SheetCell[]
+  views   SheetView[]
+  locks   SheetLock[]
+  audits  SheetAudit[]
+
+  @@index([active])
+  @@index([createdById])
+}
+
+/**
+ * ✅ Colunas dinâmicas (ordem, label, key)
+ * - key é a chave que o frontend usa (ex.: "cnpj_cpf")
+ */
+model SheetColumn {
+  id      Int   @id @default(autoincrement())
+  sheetId Int
+  sheet   Sheet @relation(fields: [sheetId], references: [id], onDelete: Cascade)
+
+  key    String // ex: "cod"
+  label  String // ex: "Cód."
+  order  Int
+  width  Int     @default(140)
+  active Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([sheetId, key])
+  @@index([sheetId, order])
+  @@index([sheetId, active])
+}
+
+/**
+ * ✅ Linha (mantém compatibilidade com __id)
+ * - clientRowId = seu __id do frontend (string)
+ * - order = posição na planilha (pra mover/ordenar sem reescrever tudo)
+ * ✅ FIX importante:
+ * - clientRowId NÃO pode ser @unique global (multi-sheet quebra)
+ * - usa @@unique([sheetId, clientRowId])
+ */
+model SheetRow {
+  id      Int   @id @default(autoincrement())
+  sheetId Int
+  sheet   Sheet @relation(fields: [sheetId], references: [id], onDelete: Cascade)
+
+  clientRowId String
+  order       Int
+  active      Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  cells SheetCell[]
+
+  // ✅ FIX: opposite do SheetLock.row
+  locks SheetLock[] @relation("SheetRowLocks")
+
+  @@unique([sheetId, clientRowId])
+  @@index([sheetId, order])
+  @@index([sheetId, active])
+}
+
+/**
+ * ✅ Célula (row + colKey)
+ * - value string pra começar simples e rápido
+ * - updatedBy opcional
+ */
+model SheetCell {
+  id      Int   @id @default(autoincrement())
+  sheetId Int
+  sheet   Sheet @relation(fields: [sheetId], references: [id], onDelete: Cascade)
+
+  rowId Int
+  row   SheetRow @relation(fields: [rowId], references: [id], onDelete: Cascade)
+
+  colKey String
+  value  String @default("")
+
+  updatedById Int?
+  updatedBy   User? @relation("SheetCellUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([rowId, colKey])
+  @@index([sheetId, colKey])
+  @@index([sheetId, updatedAt])
+  @@index([updatedById, updatedAt])
+}
+
+/**
+ * ✅ Preferências por usuário (colWidths/filtros/sort)
+ * - salva exatamente o JSON que teu front já usa (colWidths, filters, sortState)
+ */
+model SheetView {
+  id      Int   @id @default(autoincrement())
+  sheetId Int
+  sheet   Sheet @relation(fields: [sheetId], references: [id], onDelete: Cascade)
+
+  userId Int
+  user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  colWidths Json?
+  filters   Json?
+  sort      Json?
+
+  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now())
+
+  @@unique([sheetId, userId])
+  @@index([sheetId])
+  @@index([userId])
+}
+
+/**
+ * ✅ Lock por célula (multiusuário real)
+ * - expiresAt pra auto-limpar lock "abandonado"
+ */
+model SheetLock {
+  id      Int   @id @default(autoincrement())
+  sheetId Int
+  sheet   Sheet @relation(fields: [sheetId], references: [id], onDelete: Cascade)
+
+  scope SheetLockScope @default(CELL)
+
+  userId Int
+  user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // lock por célula
+  rowId Int
+  row   SheetRow @relation("SheetRowLocks", fields: [rowId], references: [id], onDelete: Cascade)
+
+  colKey String
+
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@unique([sheetId, rowId, colKey])
+  @@index([sheetId, expiresAt])
+  @@index([userId, expiresAt])
+}
+
+/**
+ * ✅ Auditoria específica do Sheet
+ * - action padronizada
+ * - meta: payload livre (before/after, range, import mode, etc.)
+ * - target opcional (ex.: alterações ligadas a um "user alvo" ou evento relacionado)
+ */
+model SheetAudit {
+  id Int @id @default(autoincrement())
+
+  sheetId Int
+  sheet   Sheet @relation(fields: [sheetId], references: [id], onDelete: Cascade)
+
+  action  SheetAuditAction
+  message String?
+  meta    Json?
+
+  // actor
+  actorId    Int?
+  actor      User?   @relation("SheetAuditActor", fields: [actorId], references: [id], onDelete: SetNull)
+  actorEmail String?
+
+  // target (opcional)
+  targetUserId Int?
+  targetUser   User? @relation("SheetAuditTarget", fields: [targetUserId], references: [id], onDelete: SetNull)
+
+  ip        String?
+  userAgent String?
+  requestId String?
+
+  createdAt DateTime @default(now())
+
+  @@index([sheetId, createdAt])
+  @@index([actorId, createdAt])
+  @@index([action, createdAt])
+  @@index([requestId])
+}

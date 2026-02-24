@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ContHub • Redefinir senha</title>
+  <link rel="stylesheet" href="/login/login.css" />
+</head>
+
+<body class="login">
+  <main class="wrap">
+    <form class="card" id="resetForm" novalidate>
+      <header class="card__header">
+        <h1>Redefinir senha</h1>
+        <p class="muted">Defina sua nova senha (mín. 6 caracteres).</p>
+      </header>
+
+      <div class="field">
+        <label for="password">Nova senha</label>
+        <input id="password" name="password" type="password" autocomplete="new-password" required />
+      </div>
+
+      <div class="field">
+        <label for="password2">Confirmar senha</label>
+        <input id="password2" name="password2" type="password" autocomplete="new-password" required />
+      </div>
+
+      <button class="btn btn--primary w100" type="submit">Salvar nova senha</button>
+
+      <p class="hint muted">
+        <a href="/login/login.html">Voltar ao login</a>
+      </p>
+
+      <div id="err" class="err hidden" role="alert"></div>
+    </form>
+  </main>
+
+  <script src="/reset/reset.js"></script>
+</body>
+</html>

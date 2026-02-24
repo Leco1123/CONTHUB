@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Perfil • ContHub</title>
+  <link rel="stylesheet" href="./perfil.css" />
+</head>
+<body>
+  <header class="topbar">
+    <button class="btn btn-ghost" id="btnVoltar">← Voltar</button>
+
+    <div class="brand">
+      <span class="dot"></span>
+      <span>ContHub</span>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <section class="card">
+      <div class="card__header">
+        <div class="avatar" id="avatar">U</div>
+
+        <div class="who">
+          <h1 id="nome">Usuário</h1>
+          <p id="email" class="muted">—</p>
+
+          <div class="badges">
+            <span class="badge badge--role" id="roleBadge">USER</span>
+            <span class="badge badge--cargo" id="cargoBadge">Cargo</span>
+            <span class="badge badge--status" id="statusBadge">ATIVO</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="sep"></div>
+
+      <div class="grid">
+        <div class="row">
+          <div class="label">Nível de acesso</div>
+          <div class="value" id="nivelAcesso">—</div>
+        </div>
+
+        <div class="row">
+          <div class="label">Cargo</div>
+          <div class="value" id="cargo">—</div>
+        </div>
+
+        <div class="row">
+          <div class="label">Status</div>
+          <div class="value" id="status">—</div>
+        </div>
+      </div>
+
+      <!-- (4) ACESSOS AOS MÓDULOS -->
+      <div class="block">
+        <div class="block__title">Acessos aos módulos</div>
+        <div class="block__subtitle muted">O que você consegue abrir + status do módulo.</div>
+
+        <div class="modules" id="modulesList">
+          <!-- JS injeta -->
+        </div>
+      </div>
+
+      <!-- (5) LOGS / ATIVIDADE -->
+      <div class="block">
+        <div class="block__title">Atividade recente</div>
+        <div class="block__subtitle muted">Últimas ações registradas neste dispositivo.</div>
+
+        <div class="logs" id="logsList">
+          <!-- JS injeta -->
+        </div>
+      </div>
+
+      <div class="actions">
+        <button class="btn btn-danger" id="btnSair">Sair</button>
+      </div>
+    </section>
+  </main>
+
+  <script src="./perfil.js"></script>
+</body>
+</html>

@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ContHub • Cadastro</title>
+
+  <!-- Reaproveita o CSS do login (mesmo visual garantido) -->
+  <link rel="stylesheet" href="/login/login.css" />
+</head>
+
+<body class="login">
+  <main class="wrap">
+    <form class="card" id="signupForm" novalidate>
+      <header class="card__header">
+        <h1>ContHub</h1>
+        <p class="muted">Crie seu acesso:</p>
+      </header>
+
+      <div class="field">
+        <label for="name">Nome</label>
+        <input
+          id="name"
+          name="name"
+          type="text"
+          placeholder="Seu nome"
+          autocomplete="name"
+          required
+        />
+      </div>
+
+      <div class="field">
+        <label for="email">Email</label>
+        <input
+          id="email"
+          name="email"
+          type="email"
+          placeholder="voce@empresa.com"
+          autocomplete="email"
+          required
+        />
+      </div>
+
+      <div class="field">
+        <label for="password">Senha</label>
+        <div class="password">
+          <input
+            id="password"
+            name="password"
+            type="password"
+            placeholder="mín. 6 caracteres"
+            autocomplete="new-password"
+            required
+          />
+          <button
+            class="eye"
+            id="togglePassword"
+            type="button"
+            aria-label="Mostrar senha"
+            aria-pressed="false"
+          >
+            👁
+          </button>
+        </div>
+      </div>
+
+      <div class="field">
+        <label for="password2">Confirmar senha</label>
+        <input
+          id="password2"
+          name="password2"
+          type="password"
+          placeholder="repita a senha"
+          autocomplete="new-password"
+          required
+        />
+      </div>
+
+      <button class="btn btn--primary w100" type="submit">
+        Cadastrar
+      </button>
+
+      <p class="hint muted">
+        Já tem conta? <a href="/login/login.html">Entrar</a>
+      </p>
+
+      <div id="err" class="err hidden" role="alert"></div>
+
+      <footer class="card__footer">
+        <p class="hint muted">Ao cadastrar, você cria um usuário “customer”.</p>
+      </footer>
+    </form>
+  </main>
+
+  <script src="/signup/signup.js"></script>
+</body>
+</html>

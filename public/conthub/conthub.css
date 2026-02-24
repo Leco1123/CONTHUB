@@ -1,0 +1,861 @@
+/* =========================================================
+   RESET & BASE
+========================================================= */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial;
+  color: var(--text);
+  background: linear-gradient(
+      180deg,
+      rgba(0, 140, 255, 0.205),
+      rgba(10, 12, 18, 0.94)
+    ),
+    var(--bg);
+  overflow-x: hidden;
+}
+
+/* =========================================================
+   VARIÁVEIS GLOBAIS (DESIGN SYSTEM)
+========================================================= */
+:root {
+  --bg: #0b0d13;
+  --panel: rgba(18, 22, 34, 0.72);
+  --panel-soft: rgba(255, 255, 255, 0.04);
+  --stroke: rgba(255, 255, 255, 0.08);
+
+  --text: #e8edf6;
+  --muted: rgba(232, 237, 246, 0.65);
+
+  --brand: #4ecca3;
+  --danger: #ff6b6b;
+  --warn: #ffd166;
+
+  --radius: 18px;
+  --shadow: 0 20px 60px rgba(0, 0, 0, 0.55);
+  --shadow-soft: 0 12px 30px rgba(0, 0, 0, 0.35);
+  --ring: 0 0 0 4px rgba(78, 204, 163, 0.18);
+}
+
+.muted {
+  color: var(--muted);
+}
+
+/* =========================================================
+   APP / OVERLAY GLOBAL
+========================================================= */
+.app {
+  min-height: 100vh;
+}
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease;
+  z-index: 40;
+}
+
+body.sidebar-open .overlay {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* =========================================================
+   SIDEBAR — CONTAINER
+========================================================= */
+.sidebar {
+  position: fixed;
+  top: 12px;
+  left: 12px;
+  width: min(340px, calc(100vw - 24px));
+  height: calc(100vh - 24px);
+  padding: 18px;
+  border-radius: var(--radius);
+
+  background: linear-gradient(
+    180deg,
+    rgba(0, 140, 255, 0.205),
+    rgba(10, 12, 18, 0.94)
+  );
+  border: 1px solid var(--stroke);
+  backdrop-filter: blur(14px);
+  box-shadow: var(--shadow);
+
+  transform: translateX(-120%);
+  transition: transform 0.25s ease;
+  z-index: 50;
+
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+
+  overflow-y: auto;
+}
+
+.sidebar-open .sidebar {
+  transform: translateX(0);
+}
+
+/* =========================================================
+   SIDEBAR — BRAND
+========================================================= */
+.sidebar__brand {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 12px;
+  border-radius: 14px;
+}
+
+.brand__logo {
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+  display: grid;
+  place-items: center;
+  font-weight: 900;
+  color: #fff;
+  background: linear-gradient(
+    180deg,
+    rgba(0, 140, 255, 0.95),
+    rgba(0, 140, 255, 0.75)
+  );
+}
+
+.brand__name {
+  font-size: 16px;
+  font-weight: 900;
+}
+
+/* =========================================================
+   SIDEBAR — NAVEGAÇÃO
+========================================================= */
+.titulo-sidebar {
+  display: flex;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.2px;
+  text-transform: uppercase;
+}
+
+.modulos-sidebar {
+  display: grid;
+  gap: 10px;
+}
+
+.cards-modulos {
+  display: inline-grid;
+  grid-template-columns: 42px 1fr auto;
+  gap: 12px;
+  align-items: center;
+
+  padding: 12px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.035);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+
+  color: var(--text);
+  cursor: pointer;
+  transition: 0.15s ease;
+}
+
+.cards-modulos:hover {
+  background: rgba(0, 140, 255, 0.212);
+  transform: translateY(-1px);
+}
+
+.cards-modulos.is-active {
+  background: linear-gradient(
+    180deg,
+    rgba(78, 204, 163, 0.22),
+    rgba(78, 204, 163, 0.12)
+  );
+  border-color: rgba(78, 204, 163, 0.45);
+}
+
+.cards-modulos--admin {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.25);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.cards-modulos--admin:hover {
+  background: rgba(0, 255, 170, 0.22);
+  border-color: rgba(21, 255, 0, 0.12);
+}
+
+.icone-modulo {
+  width: 42px;
+  height: 42px;
+  border-radius: 14px;
+  display: grid;
+  place-items: center;
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.plaquinha-de-nome {
+  display: grid;
+  justify-content: center;
+  align-items: center;
+}
+
+.placeholder-titulo {
+  font-weight: 900;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.placeholder {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.mod__desc {
+  font-size: 12px;
+}
+
+/* =========================================================
+   STATUS / PILLS (UNIFICADO)
+========================================================= */
+.status {
+  min-width: 60px;
+  height: 20px;
+  padding: 0 8px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 900;
+  text-transform: uppercase;
+
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+
+  background: rgba(0, 140, 255, 0.2);
+  border: 1px solid rgba(0, 140, 255, 0.35);
+  color: #fff;
+}
+
+.status--danger {
+  background: rgba(0, 140, 255, 0.2);
+  border: 1px solid rgba(0, 140, 255, 0.35);
+  color: #fff;
+}
+
+.status.ativo {
+  background: rgba(0, 200, 100, 0.15);
+  border: 1px solid rgba(0, 200, 100, 0.35);
+  color: #00c864;
+  text-transform: none;
+  font-size: 12px;
+  font-weight: 700;
+  height: 24px;
+  padding: 0 10px;
+}
+
+.status.inativo {
+  background: rgba(255, 70, 70, 0.15);
+  border: 1px solid rgba(255, 70, 70, 0.35);
+  color: #ff4646;
+  text-transform: none;
+  font-size: 12px;
+  font-weight: 700;
+  height: 24px;
+  padding: 0 10px;
+}
+
+/* =========================================================
+   SIDEBAR — FOOTER / USUÁRIO
+========================================================= */
+.sidebar__footer {
+  margin-top: auto;
+  padding-top: 16px;
+}
+
+.usercard {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  padding: 14px;
+  border-radius: 16px;
+  border: 1px solid var(--stroke);
+}
+
+.usercard__avatar {
+  width: 44px;
+  height: 44px;
+  border-radius: 14px;
+  display: grid;
+  place-items: center;
+  font-weight: 900;
+  color: #071014;
+  background: linear-gradient(
+    180deg,
+    rgba(78, 204, 163, 0.95),
+    rgba(46, 229, 157, 0.75)
+  );
+}
+
+.btn--sair {
+  margin-left: auto;
+  height: 32px;
+  padding: 0 12px;
+  border-radius: 10px;
+  font-size: 12px;
+  font-weight: 900;
+  background: rgba(255, 107, 107, 0.2);
+  border: 1px solid rgba(255, 107, 107, 0.35);
+  color: var(--danger);
+  cursor: pointer;
+}
+
+.btn--sair:hover {
+  background: rgba(255, 107, 107, 0.3);
+}
+
+/* =========================================================
+   MAIN / TOPBAR
+========================================================= */
+.main {
+  padding: 18px;
+}
+
+.topbar {
+  display: grid;
+  grid-template-columns: 42px 1fr auto;
+  gap: 14px;
+  align-items: center;
+  padding: 16px;
+  border-radius: var(--radius);
+  border: 1px solid var(--stroke);
+}
+
+.iconbtn {
+  width: 42px;
+  height: 42px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--stroke);
+  color: #fff;
+  cursor: pointer;
+}
+
+/* =========================================================
+   SEARCH / BOTÕES
+========================================================= */
+.search input {
+  height: 42px;
+  padding: 0 14px;
+  border-radius: 14px;
+  background: rgba(10, 12, 18, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: var(--text);
+}
+
+.search input:focus {
+  outline: none;
+  border-color: rgba(78, 204, 163, 0.55);
+  box-shadow: var(--ring);
+}
+
+.btn {
+  height: 42px;
+  padding: 0 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.06);
+  color: #fff;
+  cursor: pointer;
+}
+
+.btn--primary {
+  background: linear-gradient(
+    180deg,
+    rgba(78, 204, 163, 0.95),
+    rgba(46, 229, 157, 0.78)
+  );
+  color: #071014;
+  font-weight: 900;
+}
+
+/* =========================================================
+   IFRAME / VIEW
+========================================================= */
+.viewframe {
+  width: 100%;
+  height: calc(100vh - 140px);
+  border-radius: var(--radius);
+  border: 1px solid var(--stroke);
+  background: rgba(0, 0, 0, 0.15);
+  box-shadow: var(--shadow-soft);
+}
+
+/* =========================================================
+   RESPONSIVO
+========================================================= */
+@media (max-width: 640px) {
+  .topbar {
+    grid-template-columns: 42px 1fr;
+  }
+
+  .topbar__actions {
+    grid-column: 1 / -1;
+    display: grid;
+    gap: 10px;
+  }
+}
+
+/* =========================================================
+   ZONA DE TESTES / ABAS
+========================================================= */
+.teste-conthub {
+  margin-top: 32px;
+  border: 1px solid var(--stroke);
+  border-radius: var(--radius);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.subpage {
+  margin: 12px;
+  height: 42px;
+  width: 48%;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.06);
+  color: #fff;
+  cursor: pointer;
+  transition: 0.15s ease;
+}
+
+.subpage:hover {
+  background: rgba(0, 140, 255, 0.212);
+  transform: translateY(-1px);
+}
+
+.subpage.active {
+  background: rgba(0, 140, 255, 0.32);
+  border-color: rgba(0, 140, 255, 0.45);
+  color: #fff;
+}
+
+.views-conthub {
+  margin-top: 16px;
+}
+
+.view {
+  display: none;
+}
+
+.view.active {
+  display: block;
+}
+
+/* =========================================================
+   ABAS CONTHUB
+========================================================= */
+.abas-conthub {
+  display: flex;
+  gap: 10px;
+  margin-top: 24px;
+  flex-wrap: wrap;
+}
+
+.aba-conthub {
+  height: 42px;
+  padding: 0 18px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--muted);
+  font-weight: 900;
+  cursor: pointer;
+  transition: 0.15s ease;
+}
+
+.aba-conthub:hover {
+  background: rgba(0, 140, 255, 0.18);
+  transform: translateY(-1px);
+}
+
+.aba-conthub.ativa {
+  background: linear-gradient(
+    180deg,
+    rgba(78, 204, 163, 0.95),
+    rgba(46, 229, 157, 0.78)
+  );
+  color: #071014;
+  box-shadow: var(--shadow-soft);
+}
+
+/* =========================================================
+   VISUALIZAÇÕES
+========================================================= */
+.visualizacoes-conthub {
+  margin-top: 18px;
+}
+
+.visualizacao-conthub {
+  display: none;
+  padding: 18px;
+  border-radius: var(--radius);
+  border: 1px solid var(--stroke);
+  background: rgba(255, 255, 255, 0.04);
+  box-shadow: var(--shadow-soft);
+}
+
+.visualizacao-conthub.ativa {
+  display: block;
+}
+
+/* =========================================================
+   PAINEL DE USUÁRIOS
+========================================================= */
+.tabela-wrapper {
+  margin-top: 20px;
+  background: #111;
+  border-radius: 10px;
+  overflow: hidden;
+  border: 1px solid #222;
+}
+
+.tabela-usuarios {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.tabela-usuarios thead {
+  background: #1b1b1b;
+}
+
+.tabela-usuarios th,
+.tabela-usuarios td {
+  padding: 14px;
+  font-size: 14px;
+  text-align: center;
+  vertical-align: middle;
+}
+
+.tabela-usuarios tbody tr {
+  border-bottom: 1px solid #222;
+}
+
+/* SEPARADORES VERTICAIS ENTRE COLUNAS */
+.tabela-usuarios th:not(:last-child),
+.tabela-usuarios td:not(:last-child) {
+  border-right: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+/* HOVER */
+.tabela-usuarios tbody tr:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.btn-excluir {
+  background: rgba(255, 70, 70, 0.15);
+  border-color: rgba(255, 70, 70, 0.35);
+  color: #ff6b6b;
+}
+
+.btn-excluir:hover {
+  background: rgba(255, 70, 70, 0.25);
+}
+/* =========================================================
+   BOTÕES DE AÇÃO
+========================================================= */
+.btn-acao {
+  height: 42px;
+  padding: 0 18px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--muted);
+  font-weight: 900;
+  cursor: pointer;
+  transition: 0.15s ease;
+}
+
+.btn-acao:hover {
+  background: rgba(0, 140, 255, 0.18);
+  transform: translateY(-1px);
+}
+
+/* =========================================================
+   MODAL — OVERLAY
+========================================================= */
+.modal {
+  position: fixed;
+  inset: 0;
+  z-index: 999;
+
+  background: linear-gradient(
+    180deg,
+    rgba(0, 140, 255, 0.18),
+    rgba(10, 12, 18, 0.96)
+  );
+
+  backdrop-filter: blur(6px);
+
+  display: none;
+  align-items: center;
+  justify-content: center;
+}
+
+.modal.ativo {
+  display: flex;
+}
+
+/* =========================================================
+   MODAL — CAIXA
+========================================================= */
+.form-usuario {
+  background: rgba(15, 18, 25, 0.96);
+  border: 1px solid rgba(0, 140, 255, 0.35);
+
+  padding: 20px;
+  border-radius: 10px;
+  width: 320px;
+
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+
+  box-shadow: 0 15px 40px rgba(0, 0, 0, 0.6);
+}
+
+/* =========================================================
+   MODAL — INPUTS
+========================================================= */
+.form-usuario input {
+  padding: 10px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: #eaeef3;
+}
+
+.form-usuario input::placeholder {
+  color: rgba(234, 238, 243, 0.55);
+}
+
+.form-usuario input:focus {
+  outline: none;
+  border-color: #008cff;
+  box-shadow: 0 0 0 2px rgba(0, 140, 255, 0.25);
+}
+
+/* =========================================================
+   MODAL — AÇÕES
+========================================================= */
+.acoes-form {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.btn-novo-usuario {
+  margin: 16px 0;
+  align-self: flex-start;
+}
+
+/* =========================================================
+   SELECT DE CARGO (CUSTOM)
+========================================================= */
+.select-cargo {
+  position: relative;
+  width: 100%;
+}
+
+.select-cargo input {
+  width: 100%;
+  cursor: pointer;
+}
+
+.lista-cargos {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+
+  background: rgba(15, 18, 25, 0.98);
+  border: 1px solid rgba(0, 140, 255, 0.35);
+  border-radius: 6px;
+
+  max-height: 160px;
+  overflow-y: auto;
+
+  list-style: none;
+  padding: 4px;
+  margin: 0;
+
+  display: none;
+  z-index: 10;
+}
+
+.lista-cargos li {
+  padding: 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  color: #eaeef3;
+}
+
+.lista-cargos li:hover {
+  background: rgba(0, 140, 255, 0.25);
+}
+/* =========================================================
+   PAINEL (ABA) — STATUS DE ACESSO (MÓDULOS)
+========================================================= */
+#acessos .acessos-grid {
+  display: grid;
+  gap: 10px;
+  margin-top: 16px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+@media (max-width: 640px) {
+  #acessos .acessos-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* =========================================================
+   STATUS DOS MÓDULOS — SIDEBAR + PAINEL
+   (isolado: não mexe em status da tabela de usuários)
+========================================================= */
+.modulos-sidebar .status,
+#acessos .status {
+  min-width: 64px;
+  height: 22px;
+  padding: 0 10px;
+  border-radius: 999px;
+
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+
+  border: 1px solid transparent;
+}
+
+/* ONLINE */
+.modulos-sidebar .status[data-status="online"],
+#acessos .status[data-status="online"] {
+  background: rgba(0, 140, 255, 0.25);
+  border-color: rgba(0, 140, 255, 0.45);
+  color: #ffffff;
+}
+
+/* DEV */
+.modulos-sidebar .status[data-status="dev"],
+#acessos .status[data-status="dev"] {
+  background: rgba(255, 193, 7, 0.22);
+  border-color: rgba(255, 193, 7, 0.55);
+  color: #ffd166;
+}
+
+/* OFFLINE */
+.modulos-sidebar .status[data-status="offline"],
+#acessos .status[data-status="offline"] {
+  background: rgba(255, 70, 70, 0.22);
+  border-color: rgba(255, 70, 70, 0.45);
+  color: #ff6b6b;
+}
+
+/* ADMIN */
+.modulos-sidebar .status[data-status="admin"],
+#acessos .status[data-status="admin"] {
+  background: linear-gradient(
+    180deg,
+    rgba(78, 204, 163, 0.95),
+    rgba(46, 229, 157, 0.75)
+  );
+  color: #071014;
+  border-color: rgba(78, 204, 163, 0.6);
+}
+
+/* =========================================================
+   BOTÕES DE CONTROLE DENTRO DO CARD (ABA)
+========================================================= */
+#acessos .acesso-actions {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+#acessos .acesso-actions .status {
+  margin-right: 6px;
+}
+
+#acessos .acesso-actions button {
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text);
+  font-weight: 900;
+  font-size: 10px;
+  cursor: pointer;
+}
+
+#acessos .acesso-actions button:hover {
+  background: rgba(0, 140, 255, 0.18);
+}
+
+#acessos .acesso-actions button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+#acessos .plaquinha-de-nome {
+  justify-content: start;
+  align-items: start;
+  text-align: left;
+  gap: 2px;
+}
+
+#acessos .placeholder-titulo, 
+#acessos .placeholder {
+  text-align: left;
+  justify-content: start;
+  align-items: start;
+  line-height: 1.15;
+}
+
+#acessos .cards-modulos {
+  grid-template-columns: 42px 1fr auto;
+}
+
+
+/* =========================================================
+   CARD DESABILITADO (OFFLINE) NO SIDEBAR
+========================================================= */
+.modulos-sidebar .cards-modulos[data-disabled="true"] {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.modulos-sidebar .cards-modulos[data-disabled="true"]:hover {
+  transform: none;
+  background: rgba(255, 255, 255, 0.035);
+}

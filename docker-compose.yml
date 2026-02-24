@@ -1,0 +1,16 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: conthub-postgres
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: painel
+      POSTGRES_PASSWORD: painel123
+      POSTGRES_DB: paineldb
+    volumes:
+      - conthuble_pgdata:/var/lib/postgresql/data
+
+volumes:
+  conthuble_pgdata:

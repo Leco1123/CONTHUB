@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ContHub • Recuperar senha</title>
+  <link rel="stylesheet" href="/login/login.css" />
+</head>
+
+<body class="login">
+  <main class="wrap">
+    <form class="card" id="forgotForm" novalidate>
+      <header class="card__header">
+        <h1>Recuperar senha</h1>
+        <p class="muted">Informe seu email para gerar o link de redefinição.</p>
+      </header>
+
+      <div class="field">
+        <label for="email">Email</label>
+        <input
+          id="email"
+          name="email"
+          type="email"
+          placeholder="voce@empresa.com"
+          autocomplete="email"
+          required
+        />
+      </div>
+
+      <button class="btn btn--primary w100" type="submit">Enviar link</button>
+
+      <p class="hint muted">
+        <a href="/login/login.html">Voltar ao login</a>
+      </p>
+
+      <div id="msg" class="err hidden" role="alert"></div>
+
+      <footer class="card__footer">
+        <p class="hint muted">Obs.: em DEV o link aparece no console do servidor.</p>
+      </footer>
+    </form>
+  </main>
+
+  <script src="/forgot/forgot.js"></script>
+</body>
+</html>

@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ContHub • Sidebar</title>
+
+    <link rel="stylesheet" href="./contadmin.css" />
+  </head>
+
+  <body>
+    <div class="app" id="app">
+      <div class="overlay" id="overlay" aria-hidden="true"></div>
+
+      <aside class="sidebar" id="sidebar" aria-label="Menu lateral de módulos">
+        <div class="sidebar__brand">
+          <div class="brand__text">
+            <div class="brand__name">ContHub</div>
+          </div>
+        </div>
+
+        <div class="titulo-sidebar">MÓDULOS DO CONTHUB</div>
+
+        <nav class="modulos-sidebar">
+          <button
+            class="cards-modulos"
+            type="button"
+            data-module-id="dashboard"
+            data-title="Dashboard"
+            data-src="../dashboard/dashboard.html"
+            data-subtitle="Visão geral do ContHub."
+          >
+            <span class="icone-modulo">🏠</span>
+            <span class="plaquinha-de-nome">
+              <span class="placeholder-titulo">Dashboard</span>
+              <span class="placeholder">Visão geral</span>
+            </span>
+            <span class="status" data-status="online">ONLINE</span>
+          </button>
+
+          <button
+            class="cards-modulos"
+            type="button"
+            data-module-id="contflow"
+            data-title="ContFlow"
+            data-src="../contflow/contflow.html"
+            data-subtitle="Controle de rotinas e fluxo contábil."
+          >
+            <span class="icone-modulo">⚡</span>
+            <span class="plaquinha-de-nome">
+              <span class="placeholder-titulo">ContFlow</span>
+              <span class="placeholder">Rotinas e fluxo</span>
+            </span>
+            <span class="status" data-status="online">ONLINE</span>
+          </button>
+
+          <button
+            class="cards-modulos"
+            type="button"
+            data-module-id="contanalytics"
+            data-title="ContAnalytics"
+            data-src="../contanalytics/contanalytics.html"
+            data-subtitle="KPIs, indicadores e painéis de análise."
+          >
+            <span class="icone-modulo">📊</span>
+            <span class="plaquinha-de-nome">
+              <span class="placeholder-titulo">ContAnalytics</span>
+              <span class="placeholder">KPIs e painel</span>
+            </span>
+            <span class="status" data-status="online">ONLINE</span>
+          </button>
+
+          <button
+            class="cards-modulos"
+            type="button"
+            data-module-id="contdocs"
+            data-title="ContDocs"
+            data-src="../contdocs/contdocs.html"
+            data-subtitle="Centralização e gestão de documentos."
+          >
+            <span class="icone-modulo">📁</span>
+            <span class="plaquinha-de-nome">
+              <span class="placeholder-titulo">ContDocs</span>
+              <span class="placeholder">Documentos</span>
+            </span>
+            <span class="status" data-status="online">ONLINE</span>
+          </button>
+
+          <button
+            class="cards-modulos"
+            type="button"
+            data-module-id="contrels"
+            data-title="ContRelatórios"
+            data-src="../contrels/contrels.html"
+            data-subtitle="Geração de relatórios e exportações."
+          >
+            <span class="icone-modulo">📈</span>
+            <span class="plaquinha-de-nome">
+              <span class="placeholder-titulo">ContRelatórios</span>
+              <span class="placeholder">Exportações</span>
+            </span>
+            <span class="status" data-status="online">ONLINE</span>
+          </button>
+
+          <button
+            class="cards-modulos"
+            type="button"
+            data-module-id="contconfig"
+            data-title="ContConfig"
+            data-src="../contconfig/contconfig.html"
+            data-subtitle="Parâmetros e configurações gerais."
+          >
+            <span class="icone-modulo">⚙️</span>
+            <span class="plaquinha-de-nome">
+              <span class="placeholder-titulo">ContConfig</span>
+              <span class="placeholder">Parâmetros</span>
+            </span>
+            <span class="status" data-status="online">ONLINE</span>
+          </button>
+
+          <button
+            class="cards-modulos"
+            type="button"
+            data-module-id="contadmin"
+            data-title="ContAdmin Hub"
+            data-src="../contadmin/contadmin.html"
+            data-subtitle="Área administrativa e de controle total."
+          >
+            <span class="icone-modulo">🛡️</span>
+            <span class="plaquinha-de-nome">
+              <span class="placeholder-titulo">ContAdmin Hub</span>
+              <span class="placeholder">Acesso total</span>
+            </span>
+            <span class="status" data-status="admin">ADMIN</span>
+          </button>
+        </nav>
+
+        <!-- Footer: usercard + sair -->
+        <div class="sidebar__footer">
+          <div class="usercard-wrap">
+            <button
+              class="cards-modulos usercard"
+              type="button"
+              data-usercard
+              aria-label="Abrir perfil do usuário"
+            >
+              <span class="icone-modulo usercard__avatar" data-user-avatar>U</span>
+
+              <span class="plaquinha-de-nome usercard__info">
+                <span class="placeholder-titulo usercard__name" data-user-name>Usuário</span>
+                <span class="placeholder usercard__role muted" data-user-role>USER</span>
+              </span>
+            </button>
+
+            <button class="btn btn--sair" type="button" data-logout aria-label="Sair do ContHub">
+              Sair
+            </button>
+          </div>
+        </div>
+      </aside>
+    </div>
+
+    <!-- (opcional) se você quiser a sidebar funcionando (abrir/fechar no mobile) -->
+    <!-- <script src="./sidebar-only.js"></script> -->
+  </body>
+</html>
