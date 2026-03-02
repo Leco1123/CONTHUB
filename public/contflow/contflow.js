@@ -204,22 +204,81 @@ function genId() {
   return "r_" + Math.random().toString(36).slice(2) + "_" + Date.now().toString(36);
 }
 
-function createEmptyRow() {
-  const row = {};
-  CF_COLUMNS.forEach((col) => (row[col.key] = ""));
-  row.__id = row.__id || genId();
-  return row;
-}
-
 function deepClone(obj) {
   return JSON.parse(JSON.stringify(obj));
 }
 
+/* ===========================
+   🔥 FIX CRÍTICO: Num Quotas (SEM RECURSÃO)
+   - Você tinha duas funções com o mesmo nome getNumQuotaKey()
+   - Isso gerava chamada infinita e quebrava o render (RangeError)
+=========================== */
+function findColKeyByLabelRegex(re) {
+  const col = (CF_COLUMNS || []).find((c) => re.test(normalizeLabel(c.label)));
+  return col ? col.key : null;
+}
+
+function getNumQuotasKey() {
+  // tenta achar pelo label, mas SEMPRE cai no fallback correto
+  return (
+    findColKeyByLabelRegex(/\bnum\b.*\bquota\b/) ||
+    findColKeyByLabelRegex(/\bquota\b.*\bnum\b/) ||
+    "num_quotas"
+  );
+}
+
+// garante 1..3, default 3, e limpa quota2/quota3 quando necessário
+function normalizeNumQuotas(row) {
+  if (!row) return;
+
+  const nqKey = getNumQuotasKey();
+  const raw = String(row?.[nqKey] ?? "3").trim();
+  const n = Number(raw);
+  const num = Number.isFinite(n) ? clamp(n, 1, 3) : 3;
+
+  row[nqKey] = String(num);
+
+  if (num < 3 && row.quota3 != null) row.quota3 = "";
+  if (num < 2 && row.quota2 != null) row.quota2 = "";
+}
+
+// alias para manter teu commitEdit funcionando
+function syncQuotasByNum(row) {
+  normalizeNumQuotas(row);
+}
+
+function createEmptyRow() {
+  const row = {};
+  CF_COLUMNS.forEach((col) => (row[col.key] = ""));
+
+  const nqKey = getNumQuotasKey();
+  if (row[nqKey] != null && String(row[nqKey]).trim() === "") row[nqKey] = "3";
+
+  // já normaliza e limpa quotas extras se precisar
+  normalizeNumQuotas(row);
+
+  row.__id = row.__id || genId();
+  return row;
+}
+
 function coerceRowsToCurrentColumns(rows) {
+  const nqKey = getNumQuotasKey();
+
   return (rows || []).map((r) => {
     const row = {};
-    CF_COLUMNS.forEach((c) => (row[c.key] = r && r[c.key] != null ? r[c.key] : ""));
+
+    CF_COLUMNS.forEach((c) => {
+      const v = r && r[c.key] != null ? r[c.key] : "";
+      row[c.key] = v;
+    });
+
+    if (row[nqKey] != null && String(row[nqKey]).trim() === "") {
+      row[nqKey] = "3";
+    }
+
     row.__id = r && r.__id ? r.__id : genId();
+
+    normalizeNumQuotas(row);
     return row;
   });
 }
@@ -1189,17 +1248,32 @@ function commitEdit() {
   const { el, before, dataIndex, colKey, viewRow, colIndex } = editing;
   const after = String(el.textContent ?? "");
 
+  let finalAfter = after;
+
+  if (colKey === "num_quotas") {
+    // normaliza e sincroniza quotas 2/3
+    cfData[dataIndex][colKey] = finalAfter;
+    syncQuotasByNum(cfData[dataIndex]);
+    el.textContent = cfData[dataIndex][colKey];
+    finalAfter = cfData[dataIndex][colKey];
+  }
+
+  // se apagar Num Quotas, volta para 3
+  if (colKey === "num_quotas" && String(finalAfter).trim() === "") {
+    finalAfter = "3";
+    cfData[dataIndex][colKey] = "3";
+    syncQuotasByNum(cfData[dataIndex]);
+    el.textContent = "3";
+  }
+
   el.contentEditable = "false";
   el.classList.remove("is-editing");
 
   editing = null;
 
-  if (before !== after) {
-    cfData[dataIndex][colKey] = after;
-    pushUndo({ type: "cell", dataIndex, colKey, before, after });
-
-    // ✅ edição é o que mais “não salva” se o cara navega rápido
-    // então agenda + também salva logo se a pessoa sair/ir pra outro módulo (goto/beforeunload cobre)
+  if (before !== finalAfter) {
+    cfData[dataIndex][colKey] = finalAfter;
+    pushUndo({ type: "cell", dataIndex, colKey, before, after: finalAfter });
     scheduleAutoSave();
   }
 
@@ -1556,11 +1630,29 @@ function renderHeaders() {
 
 function renderTable() {
   renderColgroup();
-  renderHeaders();
 
+  function ensureTbody() {
+    const table = document.querySelector(".cf-table");
+    if (!table) return null;
+
+    let tbody = document.getElementById("cf-tbody");
+    if (tbody) return tbody;
+
+    tbody = table.querySelector("tbody");
+    // 🔥 FIX: aqui você tinha `if ("tbody")` (sempre true) e criava bug
+    if (!tbody) {
+      tbody = document.createElement("tbody");
+      table.appendChild(tbody);
+    }
+
+    tbody.id = "cf-tbody";
+    return tbody;
+  }
+
+  renderHeaders();
   rebuildViewMap();
 
-  const tbody = document.getElementById("cf-tbody");
+  const tbody = ensureTbody();
   if (!tbody) return;
   tbody.innerHTML = "";
 

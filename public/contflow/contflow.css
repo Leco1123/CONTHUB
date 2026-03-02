@@ -462,6 +462,8 @@ body.sidebar-open .main {
   overflow: hidden;
   text-overflow: ellipsis;
   background-clip: padding-box;
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: 11px;
 }
 
 /* =========================================================
@@ -486,10 +488,31 @@ body.sidebar-open .main {
   background: rgba(2, 6, 23, 0.98); /* mais opaco */
   color: rgba(232, 237, 246, 0.75);
   cursor: pointer;
+  height: 30px;
+  min-height: 30px;
+  max-height: 30px;
+  line-height: 30px;
+  font-size: 11px;
+  padding-top: 0;
+  padding-bottom: 0;
+}
+
+.cf.table tbody td {
+  height: 30px;
+  min-height: 30px;
+  max-height: 30px;
+  line-height: 30px;
+  font-size: 11px;
+  padding-top: 0;
+  padding-bottom: 0;
 }
 
 /* coluna index sticky (abaixo do thead) */
 .cf-row-index {
+  height: 20px;
+  line-height: 20px;
+  font-size: 11px;
+  font-family: Arial, Helvetica, sans-serif;
   position: sticky;
   left: 0;
   z-index: 15;
@@ -514,6 +537,9 @@ body.sidebar-open .main {
 
 /* seleção */
 .cf-cell {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   outline: none;
   cursor: text;
 }
