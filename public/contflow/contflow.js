@@ -2350,11 +2350,6 @@ function stableStringify(obj) {
   return JSON.stringify(stringify(obj));
 }
 
-function findColKeyByLabelRegex(re) {
-  const col = (CF_COLUMNS || []).find((c) => re.test(normalizeLabel(c.label)));
-  return col ? col.key : null;
-}
-
 function summarizeRow(r) {
   const codKey = findColKeyByLabelRegex(/\bcod\b|cód/);
   const razKey = findColKeyByLabelRegex(/razao|razão|social/);
