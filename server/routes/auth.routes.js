@@ -110,7 +110,7 @@ router.post("/signup", async (req, res) => {
         email: normalizedEmail,
         password: passwordHash,
         // se seu schema tiver esses campos, ok; se não tiver, remova aqui
-        role: "customer",
+        role: "USER",
         active: true,
       },
       select: {
@@ -124,10 +124,9 @@ router.post("/signup", async (req, res) => {
 
     return res.status(201).json({ user: toSafeUser(user) });
   } catch (err) {
-    console.error("Erro no signup:", err);
-
-    // Se seu schema NÃO tiver role/active e der erro, a mensagem ajuda a identificar rápido.
-    return res.status(500).json({ error: "Erro interno no cadastro." });
+    console.error("ERRO REAL NO SIGNUP:");
+    console.error(err);
+    return res.status(500).json({ error: "Erro interno ao cadastrar usuário." });
   }
 });
 

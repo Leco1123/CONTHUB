@@ -761,6 +761,13 @@ function openFilterDropdownForHeader(thEl, colIndex) {
   const menu = ensureFilterDropdown();
   menu.innerHTML = "";
 
+  //isola o dropdown do teclado/mouse do grid
+  //impede o handleGlobalKeyDown do document de "roubar" o input/checkbx
+  menu.addEventListener("keydown", (ev) => ev.stopPropagation(), true);
+  menu.addEventListener("keypress", (ev) => ev.stopPropagation(), true);
+  menu.addEventListener("keyup", (ev) => ev.stopPropagation(), true);
+
+
   const colKey = col.key;
   const colLabel = col.label;
 
@@ -1862,10 +1869,15 @@ async function handleGlobalKeyDown(e) {
   const insideGrid =
     (activeEl && activeEl.classList && activeEl.classList.contains("cf-cell")) ||
     (activeEl && activeEl.closest && activeEl.closest(".cf-grid-container")) ||
-    (grid && activeEl && grid.contains(activeEl)) ||
-    !!lastSelectionBounds;
+    (grid && activeEl && grid.contains(activeEl));
 
   if (!insideGrid) return;
+
+  if (cfFilterDD && cfFilterDD.style.display !== "none") {
+    if (e.key === "Escape") {
+      hideFilterDropdown();
+    }
+  }
 
   if (isTypingKey(e)) {
     e.preventDefault();

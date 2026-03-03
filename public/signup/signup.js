@@ -39,8 +39,14 @@ form?.addEventListener("submit", async (e) => {
       body: JSON.stringify({ name, email, password }),
     });
 
-    const data = await resp.json().catch(() => ({}));
-    if (!resp.ok) throw new Error(data?.error || "Erro ao cadastrar.");
+    const raw = await resp.text();
+    let data = {};
+    try { data = raw ? JSON.parse(raw) : {}; } catch { data = { raw };}
+
+    if (!resp.ok) {
+      console.error("Signup error:", resp.status, data);
+      throw new Error(data?.error || data?.message || `Erro ao cadastrar (HTTP ${resp.status}).`);
+    }
 
     // Depois do cadastro, vai pro login
     window.location.href = "/login/login.html";
