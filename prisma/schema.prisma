@@ -1,11 +1,11 @@
+// prisma/schema.prisma
 // ===============================
 // Prisma Schema (PostgreSQL) — BEST VERSION (ContHub)
 // + ContFlow (Mini-Excel) Multiusuário
 // ✅ Mantém: User, Customer, PasswordResetToken, UserLog, Module
 // ✅ Adiciona: Sheet, SheetColumn, SheetRow, SheetCell, SheetView, SheetLock, SheetAudit
-// ✅ Compatível com __id do frontend
-// ✅ Locks por célula + auditoria por base
-// ✅ FIX: relações com "opposite fields" (resolve P1012)
+// ✅ Adiciona (Dashboard): DashboardNextAction, ContflowFeed, ContflowDashboardSnapshot
+// ✅ Melhorias: type + deletedAt (soft delete) em Sheet/Column/Row/Cell
 // ===============================
 
 generator client {
@@ -74,7 +74,6 @@ enum SheetAuditAction {
 
 /**
  * ✅ ContFlow — tipo de lock
- * (por enquanto célula; depois dá pra expandir para range/linha/coluna)
  */
 enum SheetLockScope {
   CELL
@@ -123,6 +122,11 @@ model User {
   // ✅ FIX (opposites obrigatórios p/ Prisma)
   sheetsCreated     Sheet[]     @relation("SheetCreatedBy")
   sheetCellsUpdated SheetCell[] @relation("SheetCellUpdatedBy")
+
+  // ✅ Dashboard
+  dashboardNextActions DashboardNextAction[]
+  contflowFeedCreated  ContflowFeed[]
+  contflowSnapshots    ContflowDashboardSnapshot[]
 
   @@index([role])
   @@index([active])
@@ -227,9 +231,7 @@ model Module {
 // ===================================================================
 
 /**
- * ✅ Sheet = uma "planilha/base" (ex.: Controle IRPJ)
- * - key: identificador estável (slug)
- * - version: incrementa em mudanças estruturais (colunas/ordem/import)
+ * ✅ Sheet = uma "planilha/base"
  */
 model Sheet {
   id      Int     @id @default(autoincrement())
@@ -237,6 +239,9 @@ model Sheet {
   name    String
   version Int     @default(1)
   active  Boolean @default(true)
+
+  // ✅ Soft delete
+  deletedAt DateTime?
 
   // opcional: quem criou
   createdById Int?
@@ -252,24 +257,30 @@ model Sheet {
   locks   SheetLock[]
   audits  SheetAudit[]
 
+  // ✅ Feed ligado ao sheet (opcional)
+  feed ContflowFeed[]
+
   @@index([active])
+  @@index([deletedAt])
   @@index([createdById])
 }
 
 /**
- * ✅ Colunas dinâmicas (ordem, label, key)
- * - key é a chave que o frontend usa (ex.: "cnpj_cpf")
+ * ✅ Colunas dinâmicas
  */
 model SheetColumn {
   id      Int   @id @default(autoincrement())
   sheetId Int
   sheet   Sheet @relation(fields: [sheetId], references: [id], onDelete: Cascade)
 
-  key    String // ex: "cod"
-  label  String // ex: "Cód."
+  key    String
+  label  String
   order  Int
   width  Int     @default(140)
   active Boolean @default(true)
+
+  // ✅ Soft delete
+  deletedAt DateTime?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -277,15 +288,11 @@ model SheetColumn {
   @@unique([sheetId, key])
   @@index([sheetId, order])
   @@index([sheetId, active])
+  @@index([sheetId, deletedAt])
 }
 
 /**
- * ✅ Linha (mantém compatibilidade com __id)
- * - clientRowId = seu __id do frontend (string)
- * - order = posição na planilha (pra mover/ordenar sem reescrever tudo)
- * ✅ FIX importante:
- * - clientRowId NÃO pode ser @unique global (multi-sheet quebra)
- * - usa @@unique([sheetId, clientRowId])
+ * ✅ Linha (compatível com __id)
  */
 model SheetRow {
   id      Int   @id @default(autoincrement())
@@ -295,6 +302,9 @@ model SheetRow {
   clientRowId String
   order       Int
   active      Boolean @default(true)
+
+  // ✅ Soft delete
+  deletedAt DateTime?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -307,12 +317,11 @@ model SheetRow {
   @@unique([sheetId, clientRowId])
   @@index([sheetId, order])
   @@index([sheetId, active])
+  @@index([sheetId, deletedAt])
 }
 
 /**
  * ✅ Célula (row + colKey)
- * - value string pra começar simples e rápido
- * - updatedBy opcional
  */
 model SheetCell {
   id      Int   @id @default(autoincrement())
@@ -323,7 +332,13 @@ model SheetCell {
   row   SheetRow @relation(fields: [rowId], references: [id], onDelete: Cascade)
 
   colKey String
-  value  String @default("")
+
+  // ✅ Valor + tipo
+  value String @default("")
+  type  String @default("text") // text|number|date|currency|percent|bool...
+
+  // ✅ Soft delete
+  deletedAt DateTime?
 
   updatedById Int?
   updatedBy   User? @relation("SheetCellUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
@@ -335,11 +350,11 @@ model SheetCell {
   @@index([sheetId, colKey])
   @@index([sheetId, updatedAt])
   @@index([updatedById, updatedAt])
+  @@index([deletedAt])
 }
 
 /**
  * ✅ Preferências por usuário (colWidths/filtros/sort)
- * - salva exatamente o JSON que teu front já usa (colWidths, filters, sortState)
  */
 model SheetView {
   id      Int   @id @default(autoincrement())
@@ -363,7 +378,6 @@ model SheetView {
 
 /**
  * ✅ Lock por célula (multiusuário real)
- * - expiresAt pra auto-limpar lock "abandonado"
  */
 model SheetLock {
   id      Int   @id @default(autoincrement())
@@ -391,9 +405,6 @@ model SheetLock {
 
 /**
  * ✅ Auditoria específica do Sheet
- * - action padronizada
- * - meta: payload livre (before/after, range, import mode, etc.)
- * - target opcional (ex.: alterações ligadas a um "user alvo" ou evento relacionado)
  */
 model SheetAudit {
   id Int @id @default(autoincrement())
@@ -424,4 +435,73 @@ model SheetAudit {
   @@index([actorId, createdAt])
   @@index([action, createdAt])
   @@index([requestId])
+}
+
+// ===================================================================
+// =========================== DASHBOARD (NEW) ========================
+// ===================================================================
+
+/**
+ * ✅ 4 ações manuais do dashboard por usuário
+ * - position: 0..3
+ */
+model DashboardNextAction {
+  id Int @id @default(autoincrement())
+
+  userId Int
+  user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  position Int
+  text     String  @default("")
+  done     Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, position])
+  @@index([userId])
+}
+
+/**
+ * ✅ Feed de novidades (substitui localStorage contflow_feed)
+ * - pode apontar para um Sheet (opcional)
+ */
+model ContflowFeed {
+  id Int @id @default(autoincrement())
+
+  title       String
+  description String?
+
+  sheetId Int?
+  sheet   Sheet? @relation(fields: [sheetId], references: [id], onDelete: SetNull)
+
+  createdById Int?
+  createdBy   User? @relation(fields: [createdById], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([sheetId, createdAt])
+  @@index([createdById, createdAt])
+}
+
+/**
+ * ✅ Snapshot do ContFlow por usuário (substitui localStorage contflow_snapshot)
+ * - 1 snapshot por usuário
+ * - guarda o JSON do "data" + count + ts
+ */
+model ContflowDashboardSnapshot {
+  id Int @id @default(autoincrement())
+
+  userId Int    @unique
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  ts    DateTime @default(now())
+  count Int      @default(0)
+  data  Json     @default("[]")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([ts])
 }

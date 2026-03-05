@@ -6,7 +6,7 @@ const fs = require("fs");
 const session = require("express-session");
 require("dotenv").config();
 
-const db = require("./db"); // mantém: garante que o DB inicializa (como você já usa hoje)
+const db = require("./db");
 
 // Rotas
 const authRoutes = require("./routes/auth.routes");
@@ -14,35 +14,63 @@ const adminUsersRoutes = require("./routes/admin.users.routes");
 const adminModulesRoutes = require("./routes/admin.modules.routes");
 const publicCustomersRoutes = require("./routes/public.customers.routes");
 
+// ✅ (3) Dashboard Routes (Postgres)
+const dashboardRoutes = require("./routes/dashboard.routes");
+
 const app = express();
 
 // --------------------
-// Middlewares
+// Middlewares (ORDEM CERTA)
 // --------------------
-app.use(cors());
-app.use(express.json({ limit: "1mb" }));
 
+// ✅ CORS único (sem duplicar)
 app.use(
   cors({
     origin: true,
     credentials: true,
   })
 );
+
+// ✅ JSON (uma vez só)
 app.use(express.json({ limit: "1mb" }));
 
+// ✅ Session (depois do CORS)
 app.use(
   session({
     name: "conthub.sid",
     secret: process.env.SESSION_SECRET || "conthub_super_secret",
     resave: false,
-    saveUninitialized: false, 
+    saveUninitialized: false,
     cookie: {
       httpOnly: true,
-      secure: false,
-      maxAge: 1000 * 60 * 60 * 8, 
-    }
+      secure: false, // DEV em http
+      sameSite: "lax", // ✅ evita bloqueios bobos no browser
+      maxAge: 1000 * 60 * 60 * 8, // 8h
+    },
   })
 );
+
+// --------------------
+// AUTH MIDDLEWARES (AQUI MESMO NO SERVER.JS)
+// --------------------
+function requireAuth(req, res, next) {
+  if (!req.session?.user) {
+    return res.status(401).json({ error: "Não autenticado." });
+  }
+  next();
+}
+
+function requireAdmin(req, res, next) {
+  if (!req.session?.user) {
+    return res.status(401).json({ error: "Não autenticado." });
+  }
+  // Ajuste aqui se seu role for "admin" / "ti" / etc.
+  const role = String(req.session.user.role || "").toLowerCase();
+  if (role !== "admin" && role !== "ti" && role !== "administrator") {
+    return res.status(403).json({ error: "Acesso negado." });
+  }
+  next();
+}
 
 // --------------------
 // Static (painel)
@@ -51,7 +79,6 @@ app.use(
 const publicDir = path.join(__dirname, "..", "public");
 console.log("📁 Servindo arquivos estáticos de:", publicDir);
 
-// sanity check (pra você ver se o arquivo existe)
 const loginPath = path.join(publicDir, "login", "login.html");
 console.log("🔎 login.html existe?", fs.existsSync(loginPath), "-", loginPath);
 
@@ -60,10 +87,18 @@ app.use(express.static(publicDir));
 // --------------------
 // API
 // --------------------
+// Auth (público)
 app.use("/api/auth", authRoutes);
-app.use("/api/admin/users", adminUsersRoutes);
-app.use("/api/admin/modules", adminModulesRoutes);
+
+// Público (se tiver rotas que precisam ser públicas, mantém)
 app.use("/api/public/customers", publicCustomersRoutes);
+
+// ✅ Dashboard (protegido) — aqui é o #3
+app.use("/api/dashboard", requireAuth, dashboardRoutes);
+
+// Admin (protegido)
+app.use("/api/admin/users", requireAdmin, adminUsersRoutes);
+app.use("/api/admin/modules", requireAdmin, adminModulesRoutes);
 
 // --------------------
 // Rotas HTML
@@ -87,7 +122,7 @@ app.use((req, res) => {
 });
 
 // --------------------
-// Porta dinâmica (evita EADDRINUSE)
+// Porta
 // --------------------
 const PORT = process.env.PORT ? Number(process.env.PORT) : 3000;
 
@@ -103,7 +138,6 @@ async function gracefulShutdown(signal) {
   try {
     console.log(`\n🛑 Recebido ${signal}. Encerrando com segurança...`);
 
-    // Se seu ./db tiver close/closeAll, tenta encerrar
     if (db && typeof db.close === "function") {
       await db.close();
     }

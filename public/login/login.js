@@ -1,12 +1,12 @@
 // ================================
-// LOGIN • CONT HUB (FIXED + SESSION COOKIE)
+// LOGIN • CONT HUB (SESSION COOKIE • SEM FALLBACK LOCAL)
 // - Login via API (/api/auth/login)
 // - ✅ Usa cookie de sessão (express-session) com credentials: "include"
 // - ✅ Confirma sessão com /api/auth/me antes de redirecionar
-// - Mantém compatibilidade com ContAdmin:
-//   - conthub_user (objeto da sessão no front)
+// - ✅ Mantém compatibilidade com ContAdmin:
+//   - conthub_user (objeto cache UI)
 //   - conthub_current_user_id (id legado)
-//   - conthub_usuarios (base local)
+//   - conthub_usuarios (base local)  <-- NÃO usa pra autenticar
 // ================================
 
 const form = document.getElementById("loginForm");
@@ -17,9 +17,9 @@ const submitBtn = form?.querySelector("button[type='submit']");
 const loading = document.getElementById("loginLoading");
 
 /* ===== KEYS ===== */
-const USERS_KEY = "conthub_usuarios";
+const USERS_KEY = "conthub_usuarios"; // compatibilidade (não autentica)
 const CURRENT_USER_KEY = "conthub_current_user_id";
-const SESSION_USER_KEY = "conthub_user"; // sessão nova (ContAdmin lê)
+const SESSION_USER_KEY = "conthub_user"; // cache UI (ContAdmin lê)
 
 /* ===== olho da senha ===== */
 eye?.addEventListener("click", () => {
@@ -102,6 +102,7 @@ function normalizeUser(userAny) {
   };
 }
 
+// mantém store local (compatibilidade) — mas NÃO usa pra autenticar
 function upsertUserInStore(userFromApi) {
   const incoming = normalizeUser(userFromApi);
 
@@ -109,11 +110,11 @@ function upsertUserInStore(userFromApi) {
     throw new Error("Usuário sem ID válido retornado pela API.");
   }
 
-  const users = loadUsers();
+  const users = loadUsers().map(normalizeUser);
   const idx = users.findIndex((x) => Number(x.id) === Number(incoming.id));
 
   if (idx >= 0) {
-    const keepSenha = users[idx]?.senha; // preserva senha local se existir
+    const keepSenha = users[idx]?.senha; // preserva senha local se existir (legado)
     users[idx] = { ...users[idx], ...incoming };
     if (keepSenha && !users[idx].senha) users[idx].senha = keepSenha;
   } else {
@@ -131,6 +132,7 @@ function setSession(userNormalized) {
     throw new Error("Usuário desativado. Solicite liberação ao ADMIN/TI.");
   }
 
+  // cache UI (não é segurança)
   localStorage.setItem(SESSION_USER_KEY, JSON.stringify(u));
   localStorage.setItem(CURRENT_USER_KEY, String(u.id));
 }
@@ -142,7 +144,6 @@ function clearLocalSession() {
 
 /**
  * ✅ Confirma que a sessão no servidor foi criada (cookie conthub.sid)
- * - Se der 401, você sabe que o cookie não colou ou a sessão não existe
  */
 async function confirmServerSession() {
   const resp = await fetch("/api/auth/me", {
@@ -156,29 +157,9 @@ async function confirmServerSession() {
   const data = await resp.json().catch(() => null);
   if (!data || typeof data !== "object") return null;
 
-  // seu /me pode retornar {user:{...}} ou {...}
+  // /me pode retornar {user:{...}} ou {...}
   const me = data.user || data;
   return me && typeof me === "object" ? me : null;
-}
-
-/**
- * Fallback LOCAL (opcional):
- * Se a API falhar, tenta autenticar pelo conthub_usuarios (base local).
- */
-function tryLocalLogin(email, password) {
-  const emailLower = String(email || "").trim().toLowerCase();
-  const passStr = String(password || "").trim();
-
-  const users = loadUsers().map(normalizeUser);
-  const u = users.find((x) => String(x.email || "").toLowerCase() === emailLower);
-
-  if (!u) return { ok: false, error: "Usuário não encontrado (base local)." };
-  if (u.ativo === false) return { ok: false, error: "Usuário desativado." };
-
-  if (u.senha && String(u.senha) !== passStr) return { ok: false, error: "Senha inválida." };
-  if (!u.senha) return { ok: false, error: "Usuário sem senha cadastrada localmente." };
-
-  return { ok: true, user: u };
 }
 
 /* ===== submit ===== */
@@ -217,42 +198,27 @@ form?.addEventListener("submit", async (e) => {
       throw new Error("Resposta inválida do servidor (user ausente).");
     }
 
-    // salva user pro front (cache/compatibilidade)
+    // cache/compatibilidade (não segurança)
     const u = upsertUserInStore(data.user);
     setSession(u);
 
-    // ✅ confirma sessão no servidor antes de ir pro dashboard
+    // ✅ confirma sessão real no servidor antes de ir pro dashboard
     const me = await confirmServerSession();
     if (!me) {
       clearLocalSession();
-      throw new Error("Sessão não foi confirmada (/api/auth/me). Verifique cookie/CORS.");
+      throw new Error("Sessão não confirmada (/api/auth/me). Verifique cookie/CORS/session.");
     }
 
-    // opcional: reforça dados vindos do servidor (fonte de verdade)
+    // reforça dados do servidor (fonte de verdade)
     setSession(me);
 
     window.location.href = "../dashboard/dashboard.html";
     return;
   } catch (apiErr) {
-    console.warn("⚠️ Falha na API de login, tentando fallback local...", apiErr);
-
-    // ====== FALLBACK LOCAL (DEV/EMERGÊNCIA) ======
-    const local = tryLocalLogin(email, password);
-    if (local.ok) {
-      try {
-        setSession(local.user);
-        window.location.href = "../dashboard/dashboard.html";
-        return;
-      } catch (sessErr) {
-        hideLoading();
-        showError(sessErr?.message || "Não foi possível criar sessão.");
-        if (submitBtn) submitBtn.disabled = false;
-        return;
-      }
-    }
+    console.warn("❌ Erro no login:", apiErr);
 
     hideLoading();
-    showError(local.error || apiErr?.message || "Erro ao efetuar login.");
+    showError(apiErr?.message || "Erro ao efetuar login.");
     if (submitBtn) submitBtn.disabled = false;
   }
 });
