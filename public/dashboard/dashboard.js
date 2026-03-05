@@ -9,12 +9,12 @@
   // ----------------------------
   // CONFIG
   // ----------------------------
-  const SESSION_USER_KEY = "conthub_user"; // novo login
+  const SESSION_USER_KEY = "conthub_user"; // novo login (cache local)
   const LEGACY_USER_ID_KEY = "conthub_current_user_id";
   const LEGACY_USERS_KEY = "conthub_usuarios";
 
   const MODULES_KEY = "conthub_module_status"; // status módulos
-  const CONTFLOW_KEY = "conthub:contflow:data"; // base do ContFlow (você já usa isso)
+  const CONTFLOW_KEY = "conthub:contflow:data"; // base do ContFlow
 
   // 🔥 Novidades do ContFlow (por usuário)
   const CF_SNAPSHOT_PREFIX = "conthub:dashboard:contflow_snapshot:";
@@ -57,10 +57,21 @@
     return users.find((x) => Number(x.id) === Number(id)) || null;
   }
 
+  function setSessionUserLocal(u) {
+    if (!u || typeof u !== "object") return;
+    localStorage.setItem(SESSION_USER_KEY, JSON.stringify(u));
+    if (u.id != null) localStorage.setItem(LEGACY_USER_ID_KEY, String(u.id));
+  }
+
+  function clearLocalSession() {
+    localStorage.removeItem(SESSION_USER_KEY);
+    localStorage.removeItem(LEGACY_USER_ID_KEY);
+    // não apago LEGACY_USERS_KEY nem dados do ContFlow, porque isso é base do app
+  }
+
   function getUserKey() {
     const u = getSessionUser();
     if (!u) return "anon";
-    // prioriza email; se não tiver, id; senão nome
     const email = (u.email || "").toLowerCase().trim();
     const id = u.id != null ? String(u.id) : "";
     const name = (u.nome || u.name || "").trim();
@@ -97,6 +108,44 @@
     const raw = localStorage.getItem(MODULES_KEY) || "{}";
     const obj = safeJSONParse(raw, {});
     return obj && typeof obj === "object" ? obj : {};
+  }
+
+  // ✅ AUTH (SERVER SIDE) — aqui é a correção de verdade
+  async function requireAuthOrRedirect() {
+    try {
+      const resp = await fetch("/api/auth/me", {
+        method: "GET",
+        credentials: "include", // ✅ manda o conthub.sid junto
+        headers: { "Accept": "application/json" },
+      });
+
+      if (!resp.ok) {
+        clearLocalSession();
+        goto("../login/login.html");
+        return null;
+      }
+
+      const data = await resp.json().catch(() => null);
+
+      // seu /me pode retornar {user: {...}} ou direto {...}
+      const me = data && typeof data === "object" ? (data.user || data) : null;
+
+      if (!me || typeof me !== "object") {
+        clearLocalSession();
+        goto("../login/login.html");
+        return null;
+      }
+
+      // atualiza cache local pra UI (nome/role etc)
+      setSessionUserLocal(me);
+      return me;
+    } catch (err) {
+      // se cair aqui, normalmente é servidor off / CORS / rede
+      console.warn("Falha ao validar /api/auth/me:", err);
+      clearLocalSession();
+      goto("../login/login.html");
+      return null;
+    }
   }
 
   // dd/mm/yyyy -> Date | null
@@ -161,7 +210,6 @@
 
   function normalizeRowForCompare(row) {
     if (!row || typeof row !== "object") return {};
-    // remove campos voláteis se existirem
     const copy = { ...row };
     delete copy._ui;
     delete copy.__temp;
@@ -169,7 +217,6 @@
   }
 
   function rowId(row, idxFallback) {
-    // tenta achar algum ID estável
     const id =
       row?.id ??
       row?.__id ??
@@ -199,7 +246,6 @@
     let removed = 0;
     let changed = 0;
 
-    // added / changed
     for (const [id, newRow] of newMap.entries()) {
       if (!oldMap.has(id)) {
         added++;
@@ -209,7 +255,6 @@
       }
     }
 
-    // removed
     for (const [id] of oldMap.entries()) {
       if (!newMap.has(id)) removed++;
     }
@@ -229,17 +274,14 @@
     };
 
     if (!oldSnap || !Array.isArray(oldSnap.data)) {
-      // primeira vez: só salva snapshot, sem feed
       saveContFlowSnapshot(newSnap);
       return null;
     }
 
     const d = diffContFlow(oldSnap.data, current);
 
-    // salva snapshot sempre
     saveContFlowSnapshot(newSnap);
 
-    // se teve mudança, gera item no feed
     if (d.added || d.changed || d.removed) {
       const msg = `+${d.added} novo(s) · ✏️ ${d.changed} alterado(s) · 🗑️ ${d.removed} removido(s)`;
 
@@ -256,10 +298,6 @@
   }
 
   function renderContFlowNewsBadge() {
-    // opcional: se você criar no HTML:
-    // <div id="contflowNewsText"></div>
-    // <div id="contflowNewsFeed"></div>
-
     const elText = document.getElementById("contflowNewsText");
     const elFeed = document.getElementById("contflowNewsFeed");
 
@@ -345,10 +383,7 @@
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    // Heurística 1: "Quotas vencidas" (quota1/2/3 com data no passado)
     let overdueQuotas = 0;
-
-    // Heurística 2: "Pendências MIT" (mit/controle_mit preenchidos e não resolvidos)
     let pendingMIT = 0;
 
     const isResolvedWord = (v) => {
@@ -368,7 +403,6 @@
     data.forEach((row) => {
       if (!row || typeof row !== "object") return;
 
-      // quotas
       ["quota1", "quota2", "quota3"].forEach((k) => {
         const d = parseBRDateMaybe(row[k]);
         if (!d) return;
@@ -376,20 +410,17 @@
         if (d < today) overdueQuotas += 1;
       });
 
-      // MIT
       const mit = String(row.mit ?? "").trim();
       const ctrl = String(row.controle_mit ?? "").trim();
       const hasMITInfo = Boolean(mit || ctrl);
 
       if (hasMITInfo) {
-        // se qualquer um tem texto “resolvido”, considera resolvido
         if (!isResolvedWord(mit) && !isResolvedWord(ctrl)) {
           pendingMIT += 1;
         }
       }
     });
 
-    // mensagens humanas
     const a1 =
       overdueQuotas > 0
         ? `SLA: ${overdueQuotas} quota(s) vencida(s) no ContFlow (ver datas em 1º/2º/3º quota).`
@@ -415,11 +446,6 @@
       .replaceAll("'", "&#039;");
   }
 
-  // ----------------------------
-  // ✅ RESUMO RÁPIDO (CARD) • FEED de atualizações do ContFlow
-  // - Não repete os automáticos do "Próximas ações"
-  // - Renderiza dentro do <ul id="quickAutoList">
-  // ----------------------------
   function renderQuickAutoCard() {
     const el = document.getElementById("quickAutoList");
     if (!el) return;
@@ -464,9 +490,6 @@
     });
   }
 
-  // ----------------------------
-  // RENDER: Next actions UI (classes alinhadas ao CSS)
-  // ----------------------------
   function renderNextActions() {
     const el = document.getElementById("nextActionsList");
     if (!el) return;
@@ -476,7 +499,6 @@
 
     el.innerHTML = "";
 
-    // 4 manuais
     for (let i = 0; i < 4; i++) {
       const text = String(state.manual[i] || "").trim();
       const checked = Boolean(state.checks[i]);
@@ -508,7 +530,6 @@
       el.appendChild(row);
     }
 
-    // 2 automáticas
     auto.forEach((t) => {
       const row = document.createElement("div");
       row.className = "todo__auto";
@@ -519,7 +540,6 @@
       el.appendChild(row);
     });
 
-    // bind events (delegação)
     el.onclick = (e) => {
       const delBtn = e.target.closest("[data-del]");
       if (delBtn) {
@@ -559,7 +579,6 @@
       const st = loadNextActionsState();
       st.checks[i] = Boolean(chk.checked);
       saveNextActionsState(st);
-      // re-render pra aplicar classe is-done instantânea
       renderNextActions();
     };
 
@@ -573,7 +592,6 @@
     btnAdd?.addEventListener("click", () => {
       const st = loadNextActionsState();
 
-      // acha primeiro slot vazio
       const idx = st.manual.findIndex((x) => !String(x || "").trim());
       const target = idx === -1 ? 0 : idx;
 
@@ -608,9 +626,6 @@
     });
   }
 
-  // ----------------------------
-  // UI: Top + counts + nav
-  // ----------------------------
   function fillHeroUser() {
     const u = getSessionUser();
     const name = (u?.nome || u?.name || "Usuário").trim();
@@ -630,7 +645,6 @@
   function fillModulesStats() {
     const store = readModuleStore();
 
-    // se não tiver store ainda, assume tudo online menos contadmin admin
     const moduleIds = [
       "contflow",
       "contanalytics",
@@ -640,9 +654,7 @@
       "contadmin",
     ];
 
-    let online = 0,
-      dev = 0,
-      off = 0;
+    let online = 0, dev = 0, off = 0;
 
     moduleIds.forEach((id) => {
       const st = store[id] || (id === "contadmin" ? "admin" : "online");
@@ -669,15 +681,10 @@
     });
   }
 
-  // ----------------------------
-  // AUTO UPDATE (quando ContFlow salvar)
-  // ----------------------------
   function bindContFlowAutoUpdates() {
-    // Quando mudar em outra aba/janela
     window.addEventListener("storage", (e) => {
       if (!e) return;
       if (e.key === CONTFLOW_KEY) {
-        // recalcula novidades + re-render
         computeContFlowNewsAndSaveSnapshot();
         renderContFlowNewsBadge();
         renderNextActions();
@@ -685,7 +692,6 @@
       }
     });
 
-    // Quando voltar pra aba (se não disparou storage)
     document.addEventListener("visibilitychange", () => {
       if (!document.hidden) {
         computeContFlowNewsAndSaveSnapshot();
@@ -699,27 +705,22 @@
   // ----------------------------
   // INIT
   // ----------------------------
-  document.addEventListener("DOMContentLoaded", () => {
-    // guard simples: se não tem sessão, manda login
-    const u = getSessionUser();
-    if (!u) {
-      goto("../login/login.html");
-      return;
-    }
+  document.addEventListener("DOMContentLoaded", async () => {
+    // ✅ guard REAL: valida sessão no servidor (cookie conthub.sid)
+    const me = await requireAuthOrRedirect();
+    if (!me) return; // já redirecionou
 
+    // daqui pra frente, usuário está autenticado
     fillHeroUser();
     fillModulesStats();
     bindGotoButtons();
 
     bindAddResetButtons();
 
-    // snapshot + feed inicial
     computeContFlowNewsAndSaveSnapshot();
     renderContFlowNewsBadge();
 
     renderNextActions();
-
-    // ✅ card "Resumo rápido": feed do ContFlow
     renderQuickAutoCard();
 
     bindContFlowAutoUpdates();

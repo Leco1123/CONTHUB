@@ -1,9 +1,12 @@
 // ================================
-// LOGIN • CONT HUB (FIXED)
-// Compatível com ContAdmin:
-// - conthub_user (objeto da sessão)
-// - conthub_current_user_id (id legado)
-// - conthub_usuarios (base local)
+// LOGIN • CONT HUB (FIXED + SESSION COOKIE)
+// - Login via API (/api/auth/login)
+// - ✅ Usa cookie de sessão (express-session) com credentials: "include"
+// - ✅ Confirma sessão com /api/auth/me antes de redirecionar
+// - Mantém compatibilidade com ContAdmin:
+//   - conthub_user (objeto da sessão no front)
+//   - conthub_current_user_id (id legado)
+//   - conthub_usuarios (base local)
 // ================================
 
 const form = document.getElementById("loginForm");
@@ -16,7 +19,7 @@ const loading = document.getElementById("loginLoading");
 /* ===== KEYS ===== */
 const USERS_KEY = "conthub_usuarios";
 const CURRENT_USER_KEY = "conthub_current_user_id";
-const SESSION_USER_KEY = "conthub_user"; // ✅ sessão nova (ContAdmin lê)
+const SESSION_USER_KEY = "conthub_user"; // sessão nova (ContAdmin lê)
 
 /* ===== olho da senha ===== */
 eye?.addEventListener("click", () => {
@@ -81,15 +84,11 @@ function normalizeUser(userAny) {
   const u = userAny && typeof userAny === "object" ? userAny : {};
   const id = Number(u.id);
 
-  // normaliza nomes/aliases possíveis do backend
   const nome = String(u.nome || u.name || "Usuário").trim();
   const email = String(u.email || "").trim().toLowerCase();
   const cargo = String(u.cargo || u.roleName || u.funcao || "").trim();
 
-  // ativo: default true
   const ativo = u.ativo !== false;
-
-  // role: default user
   const role = normalizeRole(u.role);
 
   return {
@@ -109,17 +108,12 @@ function upsertUserInStore(userFromApi) {
   if (!Number.isFinite(incoming.id) || incoming.id <= 0) {
     throw new Error("Usuário sem ID válido retornado pela API.");
   }
-  if (!incoming.email) {
-    // não é impeditivo total, mas ajuda demais pra login
-    console.warn("⚠️ Usuário retornado sem email.");
-  }
 
   const users = loadUsers();
   const idx = users.findIndex((x) => Number(x.id) === Number(incoming.id));
 
   if (idx >= 0) {
-    // preserva senha local se existir (backend geralmente não retorna senha)
-    const keepSenha = users[idx]?.senha;
+    const keepSenha = users[idx]?.senha; // preserva senha local se existir
     users[idx] = { ...users[idx], ...incoming };
     if (keepSenha && !users[idx].senha) users[idx].senha = keepSenha;
   } else {
@@ -133,45 +127,56 @@ function upsertUserInStore(userFromApi) {
 function setSession(userNormalized) {
   const u = normalizeUser(userNormalized);
 
-  // bloqueio de inativo (evita “logar e cair” depois)
   if (u.ativo === false) {
     throw new Error("Usuário desativado. Solicite liberação ao ADMIN/TI.");
   }
 
-  // ✅ sessão principal
   localStorage.setItem(SESSION_USER_KEY, JSON.stringify(u));
-
-  // ✅ legado (ContAdmin também olha isso como fallback)
   localStorage.setItem(CURRENT_USER_KEY, String(u.id));
+}
+
+function clearLocalSession() {
+  localStorage.removeItem(SESSION_USER_KEY);
+  localStorage.removeItem(CURRENT_USER_KEY);
+}
+
+/**
+ * ✅ Confirma que a sessão no servidor foi criada (cookie conthub.sid)
+ * - Se der 401, você sabe que o cookie não colou ou a sessão não existe
+ */
+async function confirmServerSession() {
+  const resp = await fetch("/api/auth/me", {
+    method: "GET",
+    credentials: "include",
+    headers: { Accept: "application/json" },
+  });
+
+  if (!resp.ok) return null;
+
+  const data = await resp.json().catch(() => null);
+  if (!data || typeof data !== "object") return null;
+
+  // seu /me pode retornar {user:{...}} ou {...}
+  const me = data.user || data;
+  return me && typeof me === "object" ? me : null;
 }
 
 /**
  * Fallback LOCAL (opcional):
- * Se a API falhar, tenta autenticar pelo conthub_usuarios (mesma base do ContAdmin).
- * - Isso ajuda a não “morrer” em dev, e resolve casos onde só admin@local entra por seed local.
+ * Se a API falhar, tenta autenticar pelo conthub_usuarios (base local).
  */
 function tryLocalLogin(email, password) {
   const emailLower = String(email || "").trim().toLowerCase();
   const passStr = String(password || "").trim();
 
   const users = loadUsers().map(normalizeUser);
-
-  // encontra por email (case-insensitive)
   const u = users.find((x) => String(x.email || "").toLowerCase() === emailLower);
 
   if (!u) return { ok: false, error: "Usuário não encontrado (base local)." };
   if (u.ativo === false) return { ok: false, error: "Usuário desativado." };
 
-  // senha local existe? compara
-  // (se você não guarda senha local, essa parte pode ser ajustada)
-  if (u.senha && String(u.senha) !== passStr) {
-    return { ok: false, error: "Senha inválida." };
-  }
-
-  // se não existe senha no store, não dá pra validar com segurança
-  if (!u.senha) {
-    return { ok: false, error: "Usuário sem senha cadastrada localmente." };
-  }
+  if (u.senha && String(u.senha) !== passStr) return { ok: false, error: "Senha inválida." };
+  if (!u.senha) return { ok: false, error: "Usuário sem senha cadastrada localmente." };
 
   return { ok: true, user: u };
 }
@@ -192,13 +197,13 @@ form?.addEventListener("submit", async (e) => {
   if (submitBtn) submitBtn.disabled = true;
   showLoading();
 
-  // força render do loading
   await new Promise((r) => requestAnimationFrame(r));
 
   try {
     // ====== LOGIN VIA API ======
     const resp = await fetch("/api/auth/login", {
       method: "POST",
+      credentials: "include", // ✅ ESSENCIAL: salva/manda cookie de sessão
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ email, password }),
     });
@@ -208,15 +213,24 @@ form?.addEventListener("submit", async (e) => {
     if (!resp.ok) {
       throw new Error(data?.error || "Usuário ou senha inválidos.");
     }
-
     if (!data || !data.user) {
       throw new Error("Resposta inválida do servidor (user ausente).");
     }
 
+    // salva user pro front (cache/compatibilidade)
     const u = upsertUserInStore(data.user);
     setSession(u);
 
-    // navega
+    // ✅ confirma sessão no servidor antes de ir pro dashboard
+    const me = await confirmServerSession();
+    if (!me) {
+      clearLocalSession();
+      throw new Error("Sessão não foi confirmada (/api/auth/me). Verifique cookie/CORS.");
+    }
+
+    // opcional: reforça dados vindos do servidor (fonte de verdade)
+    setSession(me);
+
     window.location.href = "../dashboard/dashboard.html";
     return;
   } catch (apiErr) {

@@ -12,12 +12,12 @@ function normalizeEmail(email) {
 }
 
 function toSafeUser(user) {
-  // Mantém compatibilidade com seu front (login.js normalizeUser entende "nome/ativo/role")
+  // Compatível com front (login.js normalizeUser entende "nome/ativo/role")
   return {
     id: user.id,
     nome: user.name ?? user.nome ?? "Usuário",
     email: user.email,
-    role: user.role ?? "customer",
+    role: user.role ?? "user",
     ativo: typeof user.active === "boolean" ? user.active : true,
   };
 }
@@ -37,7 +37,6 @@ router.post("/login", async (req, res) => {
 
     const normalizedEmail = normalizeEmail(email);
 
-    // Prisma: busca pelo email
     const user = await db.user.findUnique({
       where: { email: normalizedEmail },
       select: {
@@ -50,22 +49,28 @@ router.post("/login", async (req, res) => {
       },
     });
 
-    if (!user) {
-      return res.status(401).json({ error: "Credenciais inválidas." });
-    }
+    if (!user) return res.status(401).json({ error: "Credenciais inválidas." });
 
-    // Se existir flag active no schema, respeita
     if (typeof user.active === "boolean" && user.active === false) {
       return res.status(403).json({ error: "Usuário desativado." });
     }
 
-    // Confere senha (hash bcrypt)
     const ok = await bcrypt.compare(String(password), user.password);
-    if (!ok) {
-      return res.status(401).json({ error: "Credenciais inválidas." });
-    }
+    if (!ok) return res.status(401).json({ error: "Credenciais inválidas." });
 
-    return res.json({ user: toSafeUser(user) });
+    const safe = toSafeUser(user);
+
+    // ✅ CRIA SESSÃO (isso é o que gera o cookie conthub.sid)
+    req.session.user = safe;
+
+    // ✅ GARANTE persistir antes de responder (evita login ok mas sem cookie)
+    req.session.save((err) => {
+      if (err) {
+        console.error("Erro ao salvar sessão:", err);
+        return res.status(500).json({ error: "Erro ao criar sessão." });
+      }
+      return res.json({ user: safe });
+    });
   } catch (err) {
     console.error("Erro no login:", err);
     return res.status(500).json({ error: "Erro interno no login." });
@@ -109,8 +114,7 @@ router.post("/signup", async (req, res) => {
         name: cleanName,
         email: normalizedEmail,
         password: passwordHash,
-        // se seu schema tiver esses campos, ok; se não tiver, remova aqui
-        role: "USER",
+        role: "user", // ✅ padroniza com front
         active: true,
       },
       select: {
@@ -122,7 +126,18 @@ router.post("/signup", async (req, res) => {
       },
     });
 
-    return res.status(201).json({ user: toSafeUser(user) });
+    const safe = toSafeUser(user);
+
+    // ✅ opcional: já cria sessão após cadastro (melhor UX)
+    req.session.user = safe;
+    req.session.save((err) => {
+      if (err) {
+        console.error("Erro ao salvar sessão no signup:", err);
+        // se falhar sessão, ainda devolve user (cadastro feito)
+        return res.status(201).json({ user: safe });
+      }
+      return res.status(201).json({ user: safe });
+    });
   } catch (err) {
     console.error("ERRO REAL NO SIGNUP:");
     console.error(err);
@@ -150,7 +165,6 @@ router.post("/forgot", async (req, res) => {
       select: { id: true, active: true, email: true, name: true },
     });
 
-    // Resposta genérica (anti-enumeração)
     if (!user || (typeof user.active === "boolean" && user.active === false)) {
       return res.json({ ok: true });
     }
@@ -160,19 +174,13 @@ router.post("/forgot", async (req, res) => {
     const expiresAt = new Date(Date.now() + 1000 * 60 * 30); // 30 min
 
     await db.passwordResetToken.create({
-      data: {
-        userId: user.id,
-        tokenHash,
-        expiresAt,
-      },
+      data: { userId: user.id, tokenHash, expiresAt },
     });
 
-    // DEV: imprime o link
     const baseUrl = process.env.APP_BASE_URL || "http://localhost:3000";
     const resetLink = `${baseUrl}/reset/reset.html?token=${rawToken}`;
     console.log("🔐 RESET LINK:", resetLink);
 
-    // Em produção: aqui você envia email (SMTP/SES/etc).
     return res.json({ ok: true });
   } catch (err) {
     console.error("Erro no forgot:", err);
@@ -203,12 +211,7 @@ router.post("/reset", async (req, res) => {
 
     const row = await db.passwordResetToken.findUnique({
       where: { tokenHash },
-      select: {
-        tokenHash: true,
-        userId: true,
-        expiresAt: true,
-        usedAt: true,
-      },
+      select: { tokenHash: true, userId: true, expiresAt: true, usedAt: true },
     });
 
     if (!row) return res.status(400).json({ error: "Token inválido." });
@@ -234,6 +237,36 @@ router.post("/reset", async (req, res) => {
   } catch (err) {
     console.error("Erro no reset:", err);
     return res.status(500).json({ error: "Erro interno ao redefinir senha." });
+  }
+});
+
+/* ===============================
+   GET SESSION USER
+   GET /api/auth/me
+================================ */
+router.get("/me", (req, res) => {
+  const u = req.session?.user;
+  if (!u) return res.status(401).json({ error: "Não autenticado." });
+  return res.json({ user: u });
+});
+
+/* ===============================
+   LOGOUT (limpa sessão + cookie)
+   POST /api/auth/logout
+================================ */
+router.post("/logout", (req, res) => {
+  try {
+    req.session.destroy((err) => {
+      if (err) {
+        console.error("Erro ao destruir sessão:", err);
+        return res.status(500).json({ error: "Erro ao sair." });
+      }
+      res.clearCookie("conthub.sid");
+      return res.json({ ok: true });
+    });
+  } catch (err) {
+    console.error("Erro no logout:", err);
+    return res.status(500).json({ error: "Erro ao sair." });
   }
 });
 

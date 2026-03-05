@@ -3,6 +3,7 @@ const express = require("express");
 const cors = require("cors");
 const path = require("path");
 const fs = require("fs");
+const session = require("express-session");
 require("dotenv").config();
 
 const db = require("./db"); // mantém: garante que o DB inicializa (como você já usa hoje)
@@ -20,6 +21,28 @@ const app = express();
 // --------------------
 app.use(cors());
 app.use(express.json({ limit: "1mb" }));
+
+app.use(
+  cors({
+    origin: true,
+    credentials: true,
+  })
+);
+app.use(express.json({ limit: "1mb" }));
+
+app.use(
+  session({
+    name: "conthub.sid",
+    secret: process.env.SESSION_SECRET || "conthub_super_secret",
+    resave: false,
+    saveUninitialized: false, 
+    cookie: {
+      httpOnly: true,
+      secure: false,
+      maxAge: 1000 * 60 * 60 * 8, 
+    }
+  })
+);
 
 // --------------------
 // Static (painel)

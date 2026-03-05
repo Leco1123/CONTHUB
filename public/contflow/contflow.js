@@ -1,26 +1,3 @@
-/* =========================================================
-   ContFlow • “Mini-Excel” (Operacional + Controle)
-   - Colunas dinâmicas (import / criar / renomear / excluir / reordenar)
-   - Undo/Redo (Ctrl+Z / Ctrl+Y)
-   - Modo seleção x edição (F2 / duplo clique / digitar inicia edição)
-   - Buscar (Ctrl+F) + navegar resultados
-   - Ordenar (clique no header) + Filtro (Shift+clique ou dropdown)
-   - Ctrl+seta Excel-like (vai pro fim do bloco)
-   - Inserir/duplicar/excluir linhas (atalhos + menu)
-   - Redimensionar colunas (arrastar no header) + persistência
-   - Export respeita filtros/ordem (CSV/XLSX)
-   - Import: substituir / anexar / mesclar por chave
-   - Fix “sobreposição” (sticky + scrollIntoView com offsets)
-
-   ✅ ATUALIZAÇÕES IMPORTANTES (para “aparecer no Dashboard”):
-   1) Salvamento IMEDIATO em ações críticas:
-      - adicionar linha, inserir linha, duplicar, excluir, importar, salvar manual
-   2) Salvamento garantido antes de navegar (goto) e antes de sair da página (beforeunload).
-   3) “Evento de atualização” mais robusto:
-      - localStorage (CF_LAST_UPDATE_KEY) + BroadcastChannel (se disponível)
-      - delta (added/changed/removed) calculado no saveBase
-========================================================= */
-
 console.log("⚡ ContFlow JS carregando...");
 
 /* ===========================
