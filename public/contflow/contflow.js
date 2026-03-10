@@ -6,16 +6,10 @@ console.log("⚡ ContFlow JS carregando...");
 const USER_PAGE_URL = "../perfil/perfil.html";
 const LOGIN_PAGE_URL = "../login/login.html";
 
-const STORAGE_KEY_LEGACY_USERS = "conthub_usuarios";
-const CURRENT_USER_KEY_LEGACY = "conthub_current_user_id";
-const SESSION_USER_KEY = "conthub_user";
 
 /* ===========================
-   STORAGE
+   CONTFLOW CHANNEL
 =========================== */
-const CF_STORAGE_KEY = "conthub:contflow:data";
-const CF_VERSIONS_KEY = "conthub:contflow:versions";
-const CF_LAST_UPDATE_KEY = "conthub:contflow:last_update";
 const CF_BC_NAME = "conthub:contflow:bc";
 
 /* ===========================
@@ -41,8 +35,7 @@ async function requireAuthOrRedirect() {
     const resp = await apiFetch("/api/auth/me", { method: "GET" });
 
     if (!resp.ok) {
-      localStorage.removeItem(SESSION_USER_KEY);
-      localStorage.removeItem(CURRENT_USER_KEY_LEGACY);
+      currentUser = null;
       goto(LOGIN_PAGE_URL);
       return null;
     }
@@ -51,17 +44,15 @@ async function requireAuthOrRedirect() {
     const me = data && typeof data === "object" ? (data.user || data) : null;
 
     if (!me || typeof me !== "object") {
-      localStorage.removeItem(SESSION_USER_KEY);
-      localStorage.removeItem(CURRENT_USER_KEY_LEGACY);
+      currentUser = null;
       goto(LOGIN_PAGE_URL);
       return null;
     }
 
-    localStorage.setItem(SESSION_USER_KEY, JSON.stringify(me));
-    localStorage.setItem(CURRENT_USER_KEY_LEGACY, String(me.id));
-
+    currentUser = me;
     return me;
   } catch (err) {
+    currentUser = null;
     console.warn("Falha ao validar sessão no ContFlow:", err);
     goto(LOGIN_PAGE_URL);
     return null;
@@ -118,6 +109,15 @@ let findIndex = -1;
 let ctxMenuEl = null;
 let cfBC = null;
 
+/* versões agora ficam só em memória da página */
+let cfVersions = [];
+
+/* controle do último payload salvo/carregado para delta */
+let lastSavedPayload = null;
+let saveInFlight = false;
+let queuedSaveAfterFlight = false;
+let currentUser = null;
+
 /* ===========================
    HELPERS
 =========================== */
@@ -138,35 +138,8 @@ function goto(url) {
   window.location.href = target;
 }
 
-function loadLegacyUsers() {
-  try {
-    const arr = JSON.parse(localStorage.getItem(STORAGE_KEY_LEGACY_USERS) || "[]");
-    return Array.isArray(arr) ? arr : [];
-  } catch {
-    return [];
-  }
-}
-
-function getLegacyCurrentUserId() {
-  const raw = localStorage.getItem(CURRENT_USER_KEY_LEGACY);
-  const n = Number(raw);
-  return Number.isFinite(n) && n > 0 ? n : null;
-}
-
 function getSessionUser() {
-  try {
-    const raw = localStorage.getItem(SESSION_USER_KEY);
-    if (raw) {
-      const u = JSON.parse(raw);
-      if (u && typeof u === "object") return u;
-    }
-  } catch (_) {}
-
-  const id = getLegacyCurrentUserId();
-  if (!id) return null;
-
-  const users = loadLegacyUsers();
-  return users.find((x) => Number(x.id) === Number(id)) || null;
+  return currentUser;
 }
 
 function roleLabel(role) {
@@ -182,15 +155,14 @@ function avatarFromName(name) {
 
 async function logout() {
   try {
-    flushSaveNow(true);
+    await flushSaveNow(true);
   } catch (_) {}
 
   try {
     await apiFetch("/api/auth/logout", { method: "POST" });
   } catch (_) {}
 
-  localStorage.removeItem(SESSION_USER_KEY);
-  localStorage.removeItem(CURRENT_USER_KEY_LEGACY);
+  currentUser = null;
   goto(LOGIN_PAGE_URL);
 }
 
@@ -234,10 +206,7 @@ function deepClone(obj) {
 }
 
 async function loadBaseFromApi() {
-  const resp = await apiFetch(CF_API_SHEET_URL, {
-    method: "GET",
-  });
-
+  const resp = await apiFetch(CF_API_SHEET_URL, { method: "GET" });
   const data = await resp.json().catch(() => null);
 
   if (!resp.ok) {
@@ -247,40 +216,121 @@ async function loadBaseFromApi() {
   return data;
 }
 
-function hydrateContFlowFromApiPayload(payload) {
-  const cols = Array.isArray(payload?.columns) ? payload.columns : [];
-  const rows = Array.isArray(payload?.rows) ? payload.rows : [];
-  const cells = Array.isArray(payload?.cells) ? payload.cells : [];
-
-  CF_COLUMNS = ensureUniqueKeys(
-    cols.map((c) => ({
-      key: String(c.key || "").trim(),
-      label: String(c.label || c.key || "Coluna").trim(),
-    }))
+function isApiRelationalPayload(payload) {
+  return (
+    payload &&
+    typeof payload === "object" &&
+    Array.isArray(payload.columns) &&
+    Array.isArray(payload.rows) &&
+    Array.isArray(payload.cells)
   );
+}
 
-  CF_COLUMNS.forEach((c) => setDefaultWidthForCol(c.key));
+function isApiDocumentPayload(payload) {
+  return (
+    payload &&
+    typeof payload === "object" &&
+    Array.isArray(payload.columns) &&
+    Array.isArray(payload.data)
+  );
+}
 
-  const rowMap = new Map();
+function hydrateContFlowFromApiPayload(payload) {
+  if (isApiRelationalPayload(payload)) {
+    const cols = Array.isArray(payload?.columns) ? payload.columns : [];
+    const rows = Array.isArray(payload?.rows) ? payload.rows : [];
+    const cells = Array.isArray(payload?.cells) ? payload.cells : [];
 
-  rows.forEach((r) => {
-    const rowObj = {};
-    CF_COLUMNS.forEach((col) => {
-      rowObj[col.key] = "";
+    CF_COLUMNS = ensureUniqueKeys(
+      cols.map((c) => ({
+        key: String(c.key || "").trim(),
+        label: String(c.label || c.key || "Coluna").trim(),
+      }))
+    );
+
+    CF_COLUMNS.forEach((c) => setDefaultWidthForCol(c.key));
+
+    const rowMap = new Map();
+
+    rows.forEach((r) => {
+      const rowObj = {};
+      CF_COLUMNS.forEach((col) => {
+        rowObj[col.key] = "";
+      });
+      rowObj.__id = String(r.clientRowId || genId());
+      rowMap.set(Number(r.id), rowObj);
     });
-    rowObj.__id = String(r.clientRowId || genId());
-    rowMap.set(Number(r.id), rowObj);
+
+    cells.forEach((cell) => {
+      const rowObj = rowMap.get(Number(cell.rowId));
+      if (!rowObj) return;
+      if (!(cell.colKey in rowObj)) return;
+      rowObj[cell.colKey] = String(cell.value ?? "");
+    });
+
+    cfData = Array.from(rowMap.values());
+    cfData = coerceRowsToCurrentColumns(cfData);
+
+    sortState = payload?.sort || null;
+    filters = payload?.filters || {};
+    colWidths = payload?.colWidths || {};
+    cfVersions = Array.isArray(payload?.versions) ? payload.versions.slice(0, MAX_VERSIONS) : [];
+    lastSavedPayload = buildServerPayload();
+
+    return;
+  }
+
+  if (isApiDocumentPayload(payload)) {
+    CF_COLUMNS = ensureUniqueKeys(
+      payload.columns.map((c) => ({
+        key: String(c.key || slugKeyFromLabel(c.label || "col")).trim(),
+        label: String(c.label || c.key || "").trim() || "Coluna",
+      }))
+    );
+
+    cfData = coerceRowsToCurrentColumns(payload.data || []);
+    sortState = payload.sort || null;
+    filters = payload.filters || {};
+    colWidths = payload.colWidths || {};
+    cfVersions = Array.isArray(payload.versions) ? payload.versions.slice(0, MAX_VERSIONS) : [];
+
+    CF_COLUMNS.forEach((c) => setDefaultWidthForCol(c.key));
+    lastSavedPayload = buildServerPayload();
+    return;
+  }
+
+  throw new Error("Payload da API em formato inválido para o ContFlow.");
+}
+
+function buildServerPayload() {
+  return {
+    version: 4,
+    savedAt: new Date().toISOString(),
+    columns: deepClone(CF_COLUMNS),
+    data: deepClone(cfData),
+    sort: deepClone(sortState),
+    filters: deepClone(filters),
+    colWidths: deepClone(colWidths),
+    versions: deepClone(cfVersions.slice(0, MAX_VERSIONS)),
+  };
+}
+
+async function persistBaseToApi(payload) {
+  const resp = await apiFetch(CF_API_SHEET_URL, {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
   });
 
-  cells.forEach((cell) => {
-    const rowObj = rowMap.get(Number(cell.rowId));
-    if (!rowObj) return;
-    if (!(cell.colKey in rowObj)) return;
-    rowObj[cell.colKey] = String(cell.value ?? "");
-  });
+  const data = await resp.json().catch(() => null);
 
-  cfData = Array.from(rowMap.values());
-  cfData = coerceRowsToCurrentColumns(cfData);
+  if (!resp.ok) {
+    throw new Error(data?.error || "Erro ao salvar ContFlow na API.");
+  }
+
+  return data;
 }
 
 /* ===========================
@@ -378,16 +428,21 @@ function isFilterActive(f) {
 =========================== */
 function scheduleAutoSave() {
   if (autoSaveTimeout) clearTimeout(autoSaveTimeout);
-  autoSaveTimeout = setTimeout(() => saveBase(true), 650);
+  autoSaveTimeout = setTimeout(() => {
+    saveBase(true).catch((err) => {
+      console.error("Erro no autosave:", err);
+    });
+  }, 650);
 }
 
 function flushSaveNow(silent = true) {
   try {
     if (editing) commitEdit();
   } catch (_) {}
-  try {
-    saveBase(!!silent);
-  } catch (_) {}
+
+  return saveBase(!!silent).catch((err) => {
+    console.error("Erro no flushSaveNow:", err);
+  });
 }
 
 /* ===========================
@@ -527,19 +582,12 @@ function redo() {
    VERSÕES
 =========================== */
 function loadVersions() {
-  try {
-    const raw = localStorage.getItem(CF_VERSIONS_KEY);
-    const arr = JSON.parse(raw || "[]");
-    return Array.isArray(arr) ? arr : [];
-  } catch {
-    return [];
-  }
+  return Array.isArray(cfVersions) ? cfVersions : [];
 }
 
 function saveVersions(arr) {
-  try {
-    localStorage.setItem(CF_VERSIONS_KEY, JSON.stringify(arr.slice(0, MAX_VERSIONS)));
-  } catch (_) {}
+  cfVersions = Array.isArray(arr) ? arr.slice(0, MAX_VERSIONS) : [];
+  scheduleAutoSave();
 }
 
 function saveVersion() {
@@ -555,13 +603,16 @@ function saveVersion() {
 
 function restoreVersion() {
   const versions = loadVersions();
-  if (!versions.length) return alert("Sem versões salvas.");
+  if (!versions.length) return alert("Sem versões salvas nesta sessão.");
+
   const list = versions
     .slice(0, MAX_VERSIONS)
     .map((v, i) => `${i + 1}) ${v.name}`)
     .join("\n");
+
   const pick = prompt(`Escolha a versão para restaurar:\n\n${list}\n\nDigite o número:`, "1");
   if (!pick) return;
+
   const idx = Number(pick) - 1;
   if (!Number.isFinite(idx) || idx < 0 || idx >= versions.length) return;
 
@@ -2461,7 +2512,7 @@ function handleExportXLSX() {
 }
 
 /* ===========================
-   SAVE / LOAD LOCAL
+   SAVE / LOAD API ONLY
 =========================== */
 function initBroadcast() {
   try {
@@ -2553,43 +2604,31 @@ function computeDelta(prevPayload, nextPayload) {
 
 function publishContFlowUpdate(eventPayload) {
   try {
-    localStorage.setItem(CF_LAST_UPDATE_KEY, JSON.stringify(eventPayload));
-  } catch (_) {}
-
-  try {
     if (cfBC) cfBC.postMessage(eventPayload);
   } catch (_) {}
 }
 
-function saveBase(silent = false) {
+async function saveBase(silent = false) {
+  if (saveInFlight) {
+    queuedSaveAfterFlight = true;
+    return;
+  }
+
+  saveInFlight = true;
+
   try {
-    let prev = null;
-    try {
-      const rawPrev = localStorage.getItem(CF_STORAGE_KEY);
-      prev = rawPrev ? JSON.parse(rawPrev) : null;
-    } catch (_) {
-      prev = null;
-    }
+    const payload = buildServerPayload();
+    const prev = lastSavedPayload ? deepClone(lastSavedPayload) : null;
 
-    const payload = {
-      version: 3,
-      savedAt: new Date().toISOString(),
-      columns: CF_COLUMNS,
-      data: cfData,
-      sort: sortState,
-      filters,
-      colWidths,
-    };
+    await persistBaseToApi(payload);
 
-    localStorage.setItem(CF_STORAGE_KEY, JSON.stringify(payload));
+    lastSavedPayload = deepClone(payload);
 
     const delta = computeDelta(prev, payload);
 
     publishContFlowUpdate({
       ts: new Date().toISOString(),
       kind: "contflow_update",
-      storageKey: CF_STORAGE_KEY,
-      lastUpdateKey: CF_LAST_UPDATE_KEY,
       summary: {
         added: delta.added.length,
         changed: delta.changed.length,
@@ -2604,42 +2643,16 @@ function saveBase(silent = false) {
 
     if (!silent) alert("Base salva 💾");
   } catch (err) {
-    console.error("Erro ao salvar base:", err);
-    if (!silent) alert("Erro ao salvar a base.");
-  }
-}
+    console.error("Erro ao salvar base na API:", err);
+    if (!silent) alert("Erro ao salvar a base na API.");
+    throw err;
+  } finally {
+    saveInFlight = false;
 
-function loadBase() {
-  try {
-    const saved = localStorage.getItem(CF_STORAGE_KEY);
-    if (!saved) return false;
-    const parsed = JSON.parse(saved);
-
-    if (parsed && typeof parsed === "object" && Array.isArray(parsed.columns) && Array.isArray(parsed.data)) {
-      CF_COLUMNS = ensureUniqueKeys(
-        parsed.columns.map((c) => ({
-          key: String(c.key || slugKeyFromLabel(c.label || "col")).trim(),
-          label: String(c.label || c.key || "").trim() || "Coluna",
-        }))
-      );
-      cfData = coerceRowsToCurrentColumns(parsed.data);
-      sortState = parsed.sort || null;
-      filters = parsed.filters || {};
-      colWidths = parsed.colWidths || {};
-      CF_COLUMNS.forEach((c) => setDefaultWidthForCol(c.key));
-      return true;
+    if (queuedSaveAfterFlight) {
+      queuedSaveAfterFlight = false;
+      saveBase(true).catch((err) => console.error("Erro ao salvar fila pendente:", err));
     }
-
-    if (Array.isArray(parsed)) {
-      cfData = coerceRowsToCurrentColumns(parsed);
-      CF_COLUMNS.forEach((c) => setDefaultWidthForCol(c.key));
-      return true;
-    }
-
-    return false;
-  } catch (err) {
-    console.error("Erro ao carregar base:", err);
-    return false;
   }
 }
 
@@ -3145,20 +3158,32 @@ document.addEventListener("DOMContentLoaded", async () => {
   setOverlayState();
 
   document.querySelectorAll(".modulos-sidebar .cards-modulos[data-src]").forEach((button) => {
-    button.addEventListener("click", () => {
-      const src = button.dataset.src;
-      if (src) goto(src);
-    });
+  button.addEventListener("click", (e) => {
+    const disabled = button.getAttribute("data-disabled") === "true";
+    const noAccess = button.getAttribute("data-noaccess") === "true";
+
+    if (disabled || noAccess) {
+      e.preventDefault();
+      e.stopPropagation();
+      return;
+    }
+
+    const src = button.dataset.src;
+    if (src) goto(src);
   });
+});
 
   const userCard = document.querySelector("[data-usercard]");
   const btnLogout = document.querySelector("[data-logout]");
   userCard?.addEventListener("click", (e) => {
+    if (e.target.closest("[data-logout]")) return;
     e.preventDefault();
     goto(USER_PAGE_URL);
   });
+
   btnLogout?.addEventListener("click", async (e) => {
     e.preventDefault();
+    e.stopPropagation();
     await logout();
   });
   renderUserCard();
@@ -3175,7 +3200,9 @@ document.addEventListener("DOMContentLoaded", async () => {
   const modalBackdrop = document.getElementById("cf-modal-backdrop");
 
   const modalActions = document.querySelector(".cf-modal-actions");
-  if (modalActions) {
+  if (modalActions && !modalActions.dataset.enhanced) {
+    modalActions.dataset.enhanced = "1";
+
     const extra = document.createElement("div");
     extra.style.display = "grid";
     extra.style.gridTemplateColumns = "1fr 1fr";
@@ -3275,21 +3302,23 @@ document.addEventListener("DOMContentLoaded", async () => {
     if (!cfData.length) {
       cfData = Array.from({ length: 15 }, () => createEmptyRow());
       CF_COLUMNS.forEach((c) => setDefaultWidthForCol(c.key));
-      flushSaveNow(true);
+      await flushSaveNow(true);
     }
 
     console.log("✅ ContFlow carregado da API.");
   } catch (err) {
-    console.warn("⚠️ Falha ao carregar da API, usando fallback local:", err);
+    console.error("❌ Falha ao carregar ContFlow da API:", err);
 
-    const loaded = loadBase();
-    if (!loaded) {
-      cfData = Array.from({ length: 15 }, () => createEmptyRow());
-      CF_COLUMNS.forEach((c) => setDefaultWidthForCol(c.key));
-      flushSaveNow(true);
+    cfData = Array.from({ length: 15 }, () => createEmptyRow());
+    CF_COLUMNS.forEach((c) => setDefaultWidthForCol(c.key));
+
+    try {
+      await flushSaveNow(true);
+    } catch (saveErr) {
+      console.error("❌ Não foi possível inicializar/salvar estrutura vazia na API:", saveErr);
     }
 
-    console.log("✅ ContFlow carregado do localStorage.");
+    console.log("⚠️ ContFlow iniciado com estrutura vazia, sem fallback local.");
   }
 
   rebuildViewMap();
@@ -3300,5 +3329,5 @@ document.addEventListener("DOMContentLoaded", async () => {
   renderTable();
   setTimeout(() => setSingleActiveCell(0, 0), 0);
 
-  console.log("✅ ContFlow pronto (API + fallback local)!");
+  console.log("✅ ContFlow pronto (API only)!");
 });

@@ -114,7 +114,7 @@ router.post("/signup", async (req, res) => {
         name: cleanName,
         email: normalizedEmail,
         password: passwordHash,
-        role: "user", // ✅ padroniza com front
+        role: "USER", 
         active: true,
       },
       select: {

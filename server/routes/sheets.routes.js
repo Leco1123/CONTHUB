@@ -1,4 +1,3 @@
-// server/routes/sheets.routes.js
 const express = require("express");
 const router = express.Router();
 const db = require("../db");
@@ -43,23 +42,20 @@ function normalizeColumnInput(col, index) {
   return {
     key: String(col?.key || "").trim(),
     label: String(col?.label || "").trim(),
-    order: Number.isFinite(Number(col?.order)) ? Number(col.order) : index,
+    order: index,
     width: Number.isFinite(Number(col?.width)) ? Number(col.width) : 140,
   };
 }
 
-/**
- * POST /api/sheets
- * Cria uma sheet nova
- * body: { key, name, columns? }
- */
+///////////////////////////////////////////////
+//// CREATE SHEET
+///////////////////////////////////////////////
+
 router.post("/", async (req, res) => {
   try {
     const key = String(req.body?.key || "").trim();
     const name = String(req.body?.name || "").trim();
     const rawColumns = Array.isArray(req.body?.columns) ? req.body.columns : [];
-
-    const createdById = Number(req.session?.user?.id || 0) || null;
 
     if (!key) {
       return res.status(400).json({ error: "key obrigatória." });
@@ -70,75 +66,59 @@ router.post("/", async (req, res) => {
     }
 
     const exists = await db.sheet.findFirst({
-      where: {
-        key,
-        deletedAt: null,
-      },
+      where: { key, deletedAt: null },
     });
 
     if (exists) {
-      return res.status(409).json({ error: "Já existe uma sheet com essa key." });
+      return res.status(409).json({ error: "Sheet já existe." });
     }
 
     const columns = rawColumns
       .map((col, index) => normalizeColumnInput(col, index))
-      .filter((col) => col.key && col.label);
+      .filter((c) => c.key && c.label);
 
-    const created = await db.$transaction(async (tx) => {
-      const sheet = await tx.sheet.create({
-        data: {
-          key,
-          name,
-          version: 1,
-          active: true,
-          createdById,
-        },
-      });
-
-      if (columns.length > 0) {
-        await tx.sheetColumn.createMany({
-          data: columns.map((col) => ({
-            sheetId: sheet.id,
-            key: col.key,
-            label: col.label,
-            order: col.order,
-            width: col.width,
-            active: true,
-          })),
-        });
-      }
-
-      return sheet;
+    const sheet = await db.sheet.create({
+      data: {
+        key,
+        name,
+        version: 1,
+        active: true,
+      },
     });
 
-    return res.status(201).json({
+    if (columns.length > 0) {
+      await db.sheetColumn.createMany({
+        data: columns.map((col) => ({
+          sheetId: sheet.id,
+          key: col.key,
+          label: col.label,
+          order: col.order,
+          width: col.width,
+          active: true,
+        })),
+      });
+    }
+
+    return res.json({
       ok: true,
-      sheetId: created.id,
-      key: created.key,
-      name: created.name,
+      sheetId: sheet.id,
     });
   } catch (err) {
     console.error("Erro ao criar sheet:", err);
-    return res.status(500).json({ error: "Erro interno ao criar sheet." });
+    return res.status(500).json({ error: "Erro ao criar sheet." });
   }
 });
 
-/**
- * GET /api/sheets/:key
- * Ex.: /api/sheets/contflow
- */
+///////////////////////////////////////////////
+//// GET SHEET
+///////////////////////////////////////////////
+
 router.get("/:key", async (req, res) => {
   try {
     const key = String(req.params.key || "").trim();
-    if (!key) {
-      return res.status(400).json({ error: "Sheet key obrigatória." });
-    }
 
     const sheet = await db.sheet.findFirst({
-      where: {
-        key,
-        deletedAt: null,
-      },
+      where: { key, deletedAt: null },
     });
 
     if (!sheet) {
@@ -147,77 +127,66 @@ router.get("/:key", async (req, res) => {
 
     const [columns, rows, cells] = await Promise.all([
       db.sheetColumn.findMany({
-        where: {
-          sheetId: sheet.id,
-          deletedAt: null,
-          active: true,
-        },
+        where: { sheetId: sheet.id, deletedAt: null, active: true },
         orderBy: { order: "asc" },
       }),
+
       db.sheetRow.findMany({
-        where: {
-          sheetId: sheet.id,
-          deletedAt: null,
-          active: true,
-        },
+        where: { sheetId: sheet.id, deletedAt: null, active: true },
         orderBy: { order: "asc" },
       }),
+
       db.sheetCell.findMany({
-        where: {
-          sheetId: sheet.id,
-          deletedAt: null,
-        },
+        where: { sheetId: sheet.id, deletedAt: null },
       }),
     ]);
 
-    return res.json(normalizeSheetPayload(sheet, columns, rows, cells));
+    return res.json(
+      normalizeSheetPayload(sheet, columns, rows, cells)
+    );
   } catch (err) {
     console.error("Erro ao buscar sheet:", err);
-    return res.status(500).json({ error: "Erro interno ao buscar sheet." });
+    return res.status(500).json({ error: "Erro interno." });
   }
 });
 
-/**
- * POST /api/sheets/:key/import-local
- * Importa linhas vindas do localStorage
- * body: { rows: [...] }
- */
-router.post("/:key/import-local", async (req, res) => {
+///////////////////////////////////////////////
+//// UPDATE SHEET
+///////////////////////////////////////////////
+
+router.put("/:key", async (req, res) => {
   try {
     const key = String(req.params.key || "").trim();
-    const incomingRows = Array.isArray(req.body?.rows) ? req.body.rows : [];
-
-    if (!key) {
-      return res.status(400).json({ error: "Sheet key obrigatória." });
-    }
 
     const sheet = await db.sheet.findFirst({
-      where: {
-        key,
-        deletedAt: null,
-      },
+      where: { key, deletedAt: null },
     });
 
     if (!sheet) {
       return res.status(404).json({ error: "Sheet não encontrada." });
     }
 
-    if (!incomingRows.length) {
-      return res.status(400).json({ error: "Nenhuma linha enviada para importação." });
-    }
+    const rawColumns = Array.isArray(req.body?.columns)
+      ? req.body.columns
+      : [];
 
-    const columns = await db.sheetColumn.findMany({
-      where: {
-        sheetId: sheet.id,
-        deletedAt: null,
-        active: true,
-      },
-      orderBy: { order: "asc" },
-    });
+    const rawData = Array.isArray(req.body?.data)
+      ? req.body.data
+      : [];
 
-    const validColKeys = new Set(columns.map((c) => c.key));
+    const columns = rawColumns
+      .map((col, index) => normalizeColumnInput(col, index))
+      .filter((c) => c.key && c.label);
 
     const result = await db.$transaction(async (tx) => {
+
+      const updatedSheet = await tx.sheet.update({
+        where: { id: sheet.id },
+        data: {
+          version: (sheet.version || 0) + 1,
+        },
+      });
+
       await tx.sheetCell.deleteMany({
         where: { sheetId: sheet.id },
       });
@@ -226,33 +195,44 @@ router.post("/:key/import-local", async (req, res) => {
         where: { sheetId: sheet.id },
       });
 
-      let rowsCreated = 0;
-      let cellsCreated = 0;
+      await tx.sheetColumn.deleteMany({
+        where: { sheetId: sheet.id },
+      });
 
-      for (let i = 0; i < incomingRows.length; i++) {
-        const rawRow =
-          incomingRows[i] && typeof incomingRows[i] === "object"
-            ? incomingRows[i]
-            : {};
+      await tx.sheetColumn.createMany({
+        data: columns.map((col) => ({
+          sheetId: sheet.id,
+          key: col.key,
+          label: col.label,
+          order: col.order,
+          width: col.width,
+          active: true,
+        })),
+      });
 
-        const clientRowId =
-          String(rawRow.__id || "").trim() ||
-          `row_${Date.now()}_${i}`;
+      const createdColumns = await tx.sheetColumn.findMany({
+        where: { sheetId: sheet.id, active: true },
+      });
+
+      const validColKeys = new Set(createdColumns.map((c) => c.key));
+
+      for (let i = 0; i < rawData.length; i++) {
+
+        const rowData = rawData[i];
 
         const row = await tx.sheetRow.create({
           data: {
             sheetId: sheet.id,
-            clientRowId,
+            clientRowId: rowData.__id || `row_${i}`,
             order: i,
             active: true,
           },
         });
 
-        rowsCreated += 1;
-
         const cellData = [];
 
-        for (const [colKey, value] of Object.entries(rawRow)) {
+        for (const [colKey, value] of Object.entries(rowData)) {
+
           if (colKey === "__id") continue;
           if (!validColKeys.has(colKey)) continue;
 
@@ -269,21 +249,131 @@ router.post("/:key/import-local", async (req, res) => {
           await tx.sheetCell.createMany({
             data: cellData,
           });
-          cellsCreated += cellData.length;
         }
       }
 
-      return { rowsCreated, cellsCreated };
+      const [columnsFinal, rowsFinal, cellsFinal] = await Promise.all([
+        tx.sheetColumn.findMany({
+          where: { sheetId: sheet.id, active: true },
+          orderBy: { order: "asc" },
+        }),
+
+        tx.sheetRow.findMany({
+          where: { sheetId: sheet.id, active: true },
+          orderBy: { order: "asc" },
+        }),
+
+        tx.sheetCell.findMany({
+          where: { sheetId: sheet.id },
+        }),
+      ]);
+
+      return {
+        updatedSheet,
+        columnsFinal,
+        rowsFinal,
+        cellsFinal,
+      };
     });
 
     return res.json({
       ok: true,
-      importedRows: result.rowsCreated,
-      importedCells: result.cellsCreated,
+      ...normalizeSheetPayload(
+        result.updatedSheet,
+        result.columnsFinal,
+        result.rowsFinal,
+        result.cellsFinal
+      ),
     });
+
+  } catch (err) {
+    console.error("Erro ao atualizar sheet:");
+    console.error(err);
+
+    return res.status(500).json({
+      error: "Erro interno ao atualizar sheet.",
+      details: err?.message || String(err),
+    });
+  }
+});
+
+///////////////////////////////////////////////
+//// IMPORT LOCAL STORAGE
+///////////////////////////////////////////////
+
+router.post("/:key/import-local", async (req, res) => {
+  try {
+
+    const key = String(req.params.key || "").trim();
+
+    const incomingRows = Array.isArray(req.body?.rows)
+      ? req.body.rows
+      : [];
+
+    const sheet = await db.sheet.findFirst({
+      where: { key, deletedAt: null },
+    });
+
+    if (!sheet) {
+      return res.status(404).json({ error: "Sheet não encontrada." });
+    }
+
+    const columns = await db.sheetColumn.findMany({
+      where: { sheetId: sheet.id, active: true },
+    });
+
+    const validColKeys = new Set(columns.map((c) => c.key));
+
+    await db.sheetCell.deleteMany({ where: { sheetId: sheet.id } });
+    await db.sheetRow.deleteMany({ where: { sheetId: sheet.id } });
+
+    for (let i = 0; i < incomingRows.length; i++) {
+
+      const rowData = incomingRows[i];
+
+      const row = await db.sheetRow.create({
+        data: {
+          sheetId: sheet.id,
+          clientRowId: rowData.__id || `row_${i}`,
+          order: i,
+          active: true,
+        },
+      });
+
+      const cellData = [];
+
+      for (const [colKey, value] of Object.entries(rowData)) {
+
+        if (colKey === "__id") continue;
+        if (!validColKeys.has(colKey)) continue;
+
+        cellData.push({
+          sheetId: sheet.id,
+          rowId: row.id,
+          colKey,
+          value: value == null ? "" : String(value),
+          type: "text",
+        });
+      }
+
+      if (cellData.length > 0) {
+        await db.sheetCell.createMany({
+          data: cellData,
+        });
+      }
+    }
+
+    return res.json({
+      ok: true,
+      importedRows: incomingRows.length,
+    });
+
   } catch (err) {
     console.error("Erro ao importar sheet:", err);
-    return res.status(500).json({ error: "Erro interno ao importar sheet." });
+
+    return res.status(500).json({
+      error: "Erro interno ao importar sheet.",
+    });
   }
 });
 

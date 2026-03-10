@@ -1,15 +1,19 @@
 // =======================================
-// CONTADMIN • JS PRINCIPAL (API-FIRST • ROBUSTO) — COMPLETO
+// CONTADMIN • JS PRINCIPAL (API-FIRST • BANCO + SESSÃO)
 // ✅ CRUD via API (/api/admin/users)
-// ✅ Sessão via localStorage "conthub_user" (login.js)
-// ✅ Validação: email obrigatório @franco-rnc.com.br (front)
-// ✅ Validação: senha forte (mín. 8, maiúscula, minúscula, número, símbolo)
-// ✅ Editar usuário NÃO exige senha (remove required no modo edição)  ✅ ADICIONADO
-// ✅ Logs: GET /api/admin/users/:id/logs?limit=50  ✅ ADICIONADO
-// ✅ Auditoria: envia headers X-User-Id / X-User-Email  ✅ ADICIONADO
+// ✅ Sessão 100% via backend (/api/auth/me)
+// ✅ Logout real via backend (/api/auth/logout)
+// ✅ Módulos via banco (/api/admin/modules)
+// ✅ Sem localStorage para sessão
+// ✅ Sem localStorage para status de módulos
+// ✅ Validação: email obrigatório @franco-rnc.com.br
+// ✅ Validação: senha forte
+// ✅ Editar usuário NÃO exige senha
+// ✅ Logs: GET /api/admin/users/:id/logs?limit=50
+// ✅ Auditoria: envia headers X-User-Id / X-User-Email
 // =======================================
 
-console.log("🚀 ContAdmin JS carregando (API-FIRST • ROBUSTO)...");
+console.log("🚀 ContAdmin JS carregando (API-FIRST • BANCO + SESSÃO)...");
 
 document.addEventListener("DOMContentLoaded", () => {
   console.log("✅ DOM totalmente carregado");
@@ -22,6 +26,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   const API_BASE = "";
   const API_USERS = `${API_BASE}/api/admin/users`;
+  const API_MODULES = `${API_BASE}/api/admin/modules`;
   const API_USER_LOGS = (id) => `${API_USERS}/${id}/logs?limit=50`;
 
   const COMPANY_DOMAIN = "@franco-rnc.com.br";
@@ -29,11 +34,11 @@ document.addEventListener("DOMContentLoaded", () => {
     /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{8,}$/;
 
   // =======================================
-  // STORAGE KEYS
+  // STATE
   // =======================================
-  const MODULES_KEY = "conthub_module_status";
-  const SESSION_USER_KEY = "conthub_user";
-  const CURRENT_USER_KEY = "conthub_current_user_id";
+  let currentUser = null;
+  let moduleStatusMap = {};
+  let modulesDbRows = [];
 
   // =======================================
   // NAV (TOP SAFE)
@@ -56,14 +61,13 @@ document.addEventListener("DOMContentLoaded", () => {
   // SESSION
   // =======================================
   function getSessionUser() {
-    try {
-      const raw = localStorage.getItem(SESSION_USER_KEY);
-      if (!raw) return null;
-      const u = JSON.parse(raw);
-      return u && typeof u === "object" ? u : null;
-    } catch {
-      return null;
-    }
+    return currentUser;
+  }
+
+  async function loadSessionUser() {
+    const data = await fetchJson("/api/auth/me", { method: "GET" });
+    currentUser = data?.user || null;
+    return currentUser;
   }
 
   function roleLabel(role) {
@@ -78,30 +82,33 @@ document.addEventListener("DOMContentLoaded", () => {
     return t ? t[0].toUpperCase() : "U";
   }
 
-  function logout() {
+  async function logout() {
     console.log("🔴 logout()");
-    localStorage.removeItem(SESSION_USER_KEY);
-    localStorage.removeItem(CURRENT_USER_KEY);
-    goto(LOGIN_PAGE_URL);
-  }
 
-  const sessionUser = getSessionUser();
-  if (!sessionUser) {
-    logout();
-    return;
+    try {
+      await fetch("/api/auth/logout", {
+        method: "POST",
+        credentials: "include",
+      });
+    } catch (err) {
+      console.warn("Falha ao encerrar sessão no servidor:", err);
+    }
+
+    currentUser = null;
+    goto(LOGIN_PAGE_URL);
   }
 
   // =======================================
   // API HELPERS
   // =======================================
   async function fetchJson(url, opts = {}) {
-    // ✅ ADICIONADO: manda o "ator" (quem está logado) pro backend gravar auditoria
     const actor = getSessionUser();
     const actorId = actor?.id != null ? String(actor.id) : "";
     const actorEmail = actor?.email ? String(actor.email) : "";
 
     const res = await fetch(url, {
       method: opts.method || "GET",
+      credentials: "include",
       headers: {
         "Content-Type": "application/json",
         "X-User-Id": actorId,
@@ -113,6 +120,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const text = await res.text();
     let data = null;
+
     try {
       data = text ? JSON.parse(text) : null;
     } catch {
@@ -127,6 +135,13 @@ document.addEventListener("DOMContentLoaded", () => {
         statusText: res.statusText,
         response: data,
       });
+
+      if (res.status === 401) {
+        currentUser = null;
+        alert("Sua sessão expirou. Faça login novamente.");
+        goto(LOGIN_PAGE_URL);
+        return null;
+      }
 
       const msg =
         (data && (data.error || data.message)) ||
@@ -144,8 +159,19 @@ document.addEventListener("DOMContentLoaded", () => {
   function normalizeUsersResponse(payload) {
     if (!payload) return [];
     if (Array.isArray(payload)) return payload;
-    const cands = [payload.users, payload.data, payload.rows, payload.result, payload.items];
-    for (const c of cands) if (Array.isArray(c)) return c;
+
+    const cands = [
+      payload.users,
+      payload.data,
+      payload.rows,
+      payload.result,
+      payload.items,
+    ];
+
+    for (const c of cands) {
+      if (Array.isArray(c)) return c;
+    }
+
     return [];
   }
 
@@ -177,24 +203,78 @@ document.addEventListener("DOMContentLoaded", () => {
     };
   }
 
+  function normalizeModuleStatus(status, active) {
+    const s = String(status || "").trim().toLowerCase();
+
+    if (active === false) return "offline";
+    if (s === "offline" || s === "off") return "offline";
+    if (s === "dev") return "dev";
+    if (s === "admin") return "admin";
+    return "online";
+  }
+
+  // =======================================
+  // API: MODULES
+  // =======================================
+  async function apiListModules() {
+    const payload = await fetchJson(API_MODULES, { method: "GET" });
+    return Array.isArray(payload?.modules) ? payload.modules : [];
+  }
+
+  async function apiSaveModules(rows) {
+    await fetchJson(API_MODULES, {
+      method: "PUT",
+      body: { modules: rows },
+    });
+  }
+
+  async function loadModulesFromApi() {
+    const rows = await apiListModules();
+    modulesDbRows = Array.isArray(rows) ? rows : [];
+
+    const map = {};
+    modulesDbRows.forEach((m) => {
+      const slug = String(m.slug || "").trim().toLowerCase();
+      if (!slug) return;
+      map[slug] = normalizeModuleStatus(m.status, m.active);
+    });
+
+    moduleStatusMap = map;
+    return map;
+  }
+
   // =======================================
   // REGRAS: EMAIL + SENHA
   // =======================================
   function ensureCompanyEmail(raw) {
     const s = String(raw || "").trim().toLowerCase();
-    if (!s) return { ok: false, value: "", error: "Email é obrigatório." };
 
-    if (!s.includes("@")) return { ok: true, value: `${s}${COMPANY_DOMAIN}` };
+    if (!s) {
+      return { ok: false, value: "", error: "Email é obrigatório." };
+    }
+
+    if (!s.includes("@")) {
+      return { ok: true, value: `${s}${COMPANY_DOMAIN}` };
+    }
 
     if (!s.endsWith(COMPANY_DOMAIN)) {
-      return { ok: false, value: s, error: `Email deve ser do domínio ${COMPANY_DOMAIN}` };
+      return {
+        ok: false,
+        value: s,
+        error: `Email deve ser do domínio ${COMPANY_DOMAIN}`,
+      };
     }
+
     return { ok: true, value: s };
   }
 
   function validateStrongPassword(pw) {
     const s = String(pw || "");
-    if (!s) return { ok: false, error: "Senha é obrigatória." };
+
+    if (!s) {
+      return { ok: false, error: "Senha é obrigatória." };
+    }
+
     if (!PASSWORD_POLICY.test(s)) {
       return {
         ok: false,
@@ -202,6 +282,7 @@ document.addEventListener("DOMContentLoaded", () => {
           "Senha fraca. Use no mínimo 8 caracteres com 1 maiúscula, 1 minúscula, 1 número e 1 símbolo.",
       };
     }
+
     return { ok: true };
   }
 
@@ -213,6 +294,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function setOverlayState() {
     if (!overlay) return;
+
     const open = document.body.classList.contains("sidebar-open");
 
     overlay.style.pointerEvents = open ? "auto" : "none";
@@ -254,20 +336,21 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   // =======================================
-  // STATUS DOS MÓDULOS (LOCAL)
+  // STATUS DOS MÓDULOS
   // =======================================
-  const statusLabel = { online: "ONLINE", dev: "DEV", offline: "OFF", admin: "ADMIN" };
+  const statusLabel = {
+    online: "ONLINE",
+    dev: "DEV",
+    offline: "OFF",
+    admin: "ADMIN",
+  };
 
   function readModuleStore() {
-    try {
-      return JSON.parse(localStorage.getItem(MODULES_KEY) || "{}");
-    } catch {
-      return {};
-    }
+    return moduleStatusMap || {};
   }
 
   function writeModuleStore(obj) {
-    localStorage.setItem(MODULES_KEY, JSON.stringify(obj));
+    moduleStatusMap = { ...obj };
   }
 
   function getSidebarCards() {
@@ -284,6 +367,7 @@ document.addEventListener("DOMContentLoaded", () => {
       const t = (pill.textContent || "").trim().toLowerCase();
       pill.setAttribute("data-status", t === "admin" ? "admin" : "online");
     }
+
     return pill;
   }
 
@@ -306,27 +390,33 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function syncSidebarFromStore() {
     const store = readModuleStore();
+
     getSidebarCards().forEach((btn) => {
       const moduleId = btn.dataset.moduleId;
       if (!moduleId) return;
+
       const def = moduleId === "contadmin" ? "admin" : "online";
       applyStatusToSidebar(moduleId, store[moduleId] || def);
     });
   }
 
-  document.querySelectorAll(".modulos-sidebar .cards-modulos[data-src]").forEach((button) => {
-    button.addEventListener("click", (e) => {
-      const disabled = button.getAttribute("data-disabled") === "true";
-      const noAccess = button.getAttribute("data-noaccess") === "true";
-      if (disabled || noAccess) {
-        e.preventDefault();
-        e.stopPropagation();
-        return;
-      }
-      const src = button.dataset.src;
-      if (src) goto(src);
+  document
+    .querySelectorAll(".modulos-sidebar .cards-modulos[data-src]")
+    .forEach((button) => {
+      button.addEventListener("click", (e) => {
+        const disabled = button.getAttribute("data-disabled") === "true";
+        const noAccess = button.getAttribute("data-noaccess") === "true";
+
+        if (disabled || noAccess) {
+          e.preventDefault();
+          e.stopPropagation();
+          return;
+        }
+
+        const src = button.dataset.src;
+        if (src) goto(src);
+      });
     });
-  });
 
   // =======================================
   // PAINEL "STATUS DE ACESSO"
@@ -374,7 +464,12 @@ document.addEventListener("DOMContentLoaded", () => {
         </span>
       `;
 
-      if (isAdminModule) wrap.querySelectorAll("button[data-set]").forEach((b) => (b.disabled = true));
+      if (isAdminModule) {
+        wrap
+          .querySelectorAll('button[data-set]')
+          .forEach((b) => (b.disabled = true));
+      }
+
       grid.appendChild(wrap);
     });
   }
@@ -384,7 +479,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (!grid || grid.__bound) return;
     grid.__bound = true;
 
-    grid.addEventListener("click", (e) => {
+    grid.addEventListener("click", async (e) => {
       const btn = e.target.closest("button[data-set]");
       if (!btn) return;
 
@@ -397,12 +492,42 @@ document.addEventListener("DOMContentLoaded", () => {
       const next = btn.getAttribute("data-set");
       if (!next) return;
 
-      const storeNow = readModuleStore();
-      storeNow[moduleId] = next;
-      writeModuleStore(storeNow);
+      try {
+        const storeNow = readModuleStore();
+        storeNow[moduleId] = next;
+        writeModuleStore(storeNow);
 
-      syncSidebarFromStore();
-      renderAdminPanel();
+        const currentRows = Array.isArray(modulesDbRows) ? [...modulesDbRows] : [];
+        const row = currentRows.find(
+          (m) => String(m.slug || "").toLowerCase() === String(moduleId).toLowerCase()
+        );
+
+        if (!row) {
+          alert(`Módulo "${moduleId}" não encontrado no banco.`);
+          return;
+        }
+
+        const nextStatus =
+          next === "offline"
+            ? "offline"
+            : next === "dev"
+            ? "dev"
+            : row.slug === "contadmin"
+            ? "admin"
+            : "online";
+
+        row.status = nextStatus;
+        row.active = next !== "offline";
+
+        await apiSaveModules(currentRows);
+        await loadModulesFromApi();
+
+        syncSidebarFromStore();
+        renderAdminPanel();
+      } catch (err) {
+        console.error("❌ Falha ao salvar status do módulo:", err);
+        alert(`Erro ao salvar status do módulo: ${err?.message || err}`);
+      }
     });
   }
 
@@ -429,11 +554,12 @@ document.addEventListener("DOMContentLoaded", () => {
     modal?.classList.remove("ativo");
     document.body.classList.remove("modal-open");
     modal?.setAttribute("aria-hidden", "true");
+
     if (reset) form?.reset();
+
     modoEdicao = false;
     idEmEdicao = null;
 
-    // ✅ ADICIONADO: volta required padrão quando fecha
     if (form?.senha) form.senha.required = true;
     if (form?.confirmarSenha) form.confirmarSenha.required = true;
   }
@@ -449,21 +575,38 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function ensureRoleStyle() {
     if (document.getElementById("roleMiniStyle")) return;
+
     const st = document.createElement("style");
     st.id = "roleMiniStyle";
     st.textContent = `
-      #roleBox{ margin-top:6px; padding:10px; border:1px solid rgba(255,255,255,0.12);
-        border-radius:10px; background:rgba(255,255,255,0.04); }
-      .role-select{ width:100%; height:36px; border-radius:10px; border:1px solid rgba(255,255,255,0.12);
-        background:rgba(255,255,255,0.06); color:rgba(232,237,246,0.9); font-weight:900;
-        padding:0 10px; outline:none; cursor:pointer; }
+      #roleBox{
+        margin-top:6px;
+        padding:10px;
+        border:1px solid rgba(255,255,255,0.12);
+        border-radius:10px;
+        background:rgba(255,255,255,0.04);
+      }
+      .role-select{
+        width:100%;
+        height:36px;
+        border-radius:10px;
+        border:1px solid rgba(255,255,255,0.12);
+        background:rgba(255,255,255,0.06);
+        color:rgba(232,237,246,0.9);
+        font-weight:900;
+        padding:0 10px;
+        outline:none;
+        cursor:pointer;
+      }
     `;
     document.head.appendChild(st);
   }
+
   ensureRoleStyle();
 
   function ensureRoleBox() {
     if (!form) return null;
+
     let box = document.getElementById("roleBox");
     if (box) return box;
 
@@ -504,6 +647,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function setCargoOpen(open) {
     if (!listaCargos || !inputCargo) return;
+
     listaCargos.style.display = open ? "block" : "none";
     inputCargo.setAttribute("aria-expanded", open ? "true" : "false");
   }
@@ -535,13 +679,19 @@ document.addEventListener("DOMContentLoaded", () => {
   // =======================================
   // USER CARD + LOGOUT
   // =======================================
-  const userCard = document.querySelector("[data-usercard]") || document.querySelector(".usercard");
-  const btnLogout = document.querySelector("[data-logout]") || document.querySelector(".btn--sair");
+  const userCard =
+    document.querySelector("[data-usercard]") || document.querySelector(".usercard");
+  const btnLogout =
+    document.querySelector("[data-logout]") || document.querySelector(".btn--sair");
 
   const elUserName =
-    (userCard && userCard.querySelector("[data-user-name]")) || document.querySelector("[data-user-name]");
+    (userCard && userCard.querySelector("[data-user-name]")) ||
+    document.querySelector("[data-user-name]");
+
   const elUserRole =
-    (userCard && userCard.querySelector("[data-user-role]")) || document.querySelector("[data-user-role]");
+    (userCard && userCard.querySelector("[data-user-role]")) ||
+    document.querySelector("[data-user-role]");
+
   const elUserAvatar =
     (userCard && userCard.querySelector("[data-user-avatar]")) ||
     document.querySelector("[data-user-avatar]") ||
@@ -549,6 +699,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function renderUserCard() {
     const u = getSessionUser();
+
     if (!u) {
       if (elUserName) elUserName.textContent = "Usuário";
       if (elUserRole) elUserRole.textContent = "Deslogado";
@@ -575,12 +726,14 @@ document.addEventListener("DOMContentLoaded", () => {
       userCard.style.position = "relative";
       userCard.style.zIndex = "999999";
     }
+
     if (btnLogout) {
       btnLogout.style.pointerEvents = "auto";
       btnLogout.style.cursor = "pointer";
       btnLogout.style.position = "relative";
       btnLogout.style.zIndex = "1000000";
     }
+
     setOverlayState();
   }
 
@@ -626,6 +779,7 @@ document.addEventListener("DOMContentLoaded", () => {
     getSidebarCards().forEach((card) => {
       const moduleId = card.dataset.moduleId;
       if (!moduleId) return;
+
       const blocked = role === "user" && moduleId === "contadmin";
       card.setAttribute("data-noaccess", blocked ? "true" : "false");
     });
@@ -654,6 +808,7 @@ document.addEventListener("DOMContentLoaded", () => {
         senha: body.senha,
       },
     });
+
     const u = payload?.user ? payload.user : payload;
     return normalizeUser(u);
   }
@@ -671,6 +826,7 @@ document.addEventListener("DOMContentLoaded", () => {
         ativo: body.ativo,
       },
     });
+
     const u = payload?.user ? payload.user : payload;
     return normalizeUser(u);
   }
@@ -767,6 +923,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     try {
       const logs = await apiFetchLogs(usuario.id);
+
       if (!logs.length) {
         body.textContent = "Sem logs registrados para este usuário.";
         return;
@@ -812,7 +969,8 @@ document.addEventListener("DOMContentLoaded", () => {
     const currentRole = (current?.role || "user").toLowerCase();
 
     usuarios.forEach((usuario) => {
-      const protegido = currentRole === "admin" && (usuario.role || "").toLowerCase() === "ti";
+      const protegido =
+        currentRole === "admin" && (usuario.role || "").toLowerCase() === "ti";
       const funcao = roleLabel(usuario.role);
 
       listaUsuarios.innerHTML += `
@@ -870,14 +1028,14 @@ document.addEventListener("DOMContentLoaded", () => {
     idEmEdicao = null;
     form?.reset();
 
-    // ✅ ADICIONADO: criação exige senha (HTML já tem required, reforço aqui)
     if (form?.senha) form.senha.required = true;
     if (form?.confirmarSenha) form.confirmarSenha.required = true;
 
     const current = getSessionUser();
-    renderRoleSelect((current?.role || "user").toLowerCase(), { role: ROLE_DEFAULT });
+    renderRoleSelect((current?.role || "user").toLowerCase(), {
+      role: ROLE_DEFAULT,
+    });
 
-    // título
     const h3 = form?.querySelector("h3");
     if (h3) h3.textContent = "Novo Usuário";
 
@@ -892,6 +1050,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const current = getSessionUser();
     const currentRole = (current?.role || "user").toLowerCase();
+
     if (currentRole === "admin" && (usuario.role || "").toLowerCase() === "ti") {
       alert("ADMIN não pode alterar usuários TI.");
       return;
@@ -904,14 +1063,14 @@ document.addEventListener("DOMContentLoaded", () => {
     form.email.value = usuario.email || "";
     form.cargo.value = usuario.cargo || "";
 
-    // ✅ ADICIONADO: edição NÃO exige senha (remove required que está no HTML)
     if (form?.senha) {
       form.senha.value = "";
-      form.senha.required = false; // <- aqui
+      form.senha.required = false;
     }
+
     if (form?.confirmarSenha) {
       form.confirmarSenha.value = "";
-      form.confirmarSenha.required = false; // <- aqui
+      form.confirmarSenha.required = false;
     }
 
     const h3 = form?.querySelector("h3");
@@ -927,6 +1086,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const current = getSessionUser();
     const currentRole = (current?.role || "user").toLowerCase();
+
     if (currentRole === "admin" && (usuario.role || "").toLowerCase() === "ti") {
       alert("ADMIN não pode alterar usuários TI.");
       return;
@@ -948,6 +1108,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const current = getSessionUser();
     const currentRole = (current?.role || "user").toLowerCase();
+
     if (currentRole === "admin" && (usuario.role || "").toLowerCase() === "ti") {
       alert("ADMIN não pode excluir usuário TI.");
       return;
@@ -981,9 +1142,10 @@ document.addEventListener("DOMContentLoaded", () => {
     const nome = String(form.nome?.value || "").trim();
     const emailRaw = String(form.email?.value || "").trim();
     const cargo = String(form.cargo?.value || "").trim();
-
     const senha = String(form.senha?.value || "");
-    const confirmarSenha = form.confirmarSenha ? String(form.confirmarSenha.value || "") : "";
+    const confirmarSenha = form.confirmarSenha
+      ? String(form.confirmarSenha.value || "")
+      : "";
 
     if (!nome || !emailRaw || !cargo) {
       alert("Preencha todos os campos obrigatórios");
@@ -999,22 +1161,20 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const current = getSessionUser();
     const creatorRole = (current?.role || "user").toLowerCase();
+
     if (creatorRole === "admin" && selectedRole === "ti") {
       alert("ADMIN não pode criar/alterar usuário TI.");
       return;
     }
 
-    // ✅ ALTERADO: senha obrigatória só no create; no edit só valida se preencher
     if (!modoEdicao) {
       const pw = validateStrongPassword(senha);
       if (!pw.ok) return alert(pw.error);
       if (senha !== confirmarSenha) return alert("As senhas não conferem.");
-    } else {
-      if (senha) {
-        const pw = validateStrongPassword(senha);
-        if (!pw.ok) return alert(pw.error);
-        if (senha !== confirmarSenha) return alert("As senhas não conferem.");
-      }
+    } else if (senha) {
+      const pw = validateStrongPassword(senha);
+      if (!pw.ok) return alert(pw.error);
+      if (senha !== confirmarSenha) return alert("As senhas não conferem.");
     }
 
     try {
@@ -1031,10 +1191,13 @@ document.addEventListener("DOMContentLoaded", () => {
           ativo: true,
         });
 
-        // senha opcional
-        if (senha) await apiUpdatePassword(id, senha);
+        if (senha) {
+          await apiUpdatePassword(id, senha);
+        }
 
-        usuarios = usuarios.map((u) => (Number(u.id) === Number(id) ? updated : u));
+        usuarios = usuarios.map((u) =>
+          Number(u.id) === Number(id) ? updated : u
+        );
       } else {
         const created = await apiCreateUser({
           nome,
@@ -1079,13 +1242,32 @@ document.addEventListener("DOMContentLoaded", () => {
   // =======================================
   // INIT
   // =======================================
-  syncSidebarFromStore();
-  renderAdminPanel();
-  bindAdminPanelEvents();
-  applyRoleToSidebar();
-  renderUserCard();
+  async function init() {
+    try {
+      await loadSessionUser();
 
-  carregarUsuariosDaAPI();
+      if (!currentUser) {
+        goto(LOGIN_PAGE_URL);
+        return;
+      }
 
-  console.log("🎉 ContAdmin JS inicializado!");
+      await loadModulesFromApi();
+
+      syncSidebarFromStore();
+      renderAdminPanel();
+      bindAdminPanelEvents();
+      applyRoleToSidebar();
+      renderUserCard();
+
+      await carregarUsuariosDaAPI();
+
+      console.log("🎉 ContAdmin JS inicializado!");
+    } catch (err) {
+      console.error("❌ Falha ao inicializar ContAdmin:", err);
+      alert("Sessão inválida ou expirada. Faça login novamente.");
+      goto(LOGIN_PAGE_URL);
+    }
+  }
+
+  init();
 });

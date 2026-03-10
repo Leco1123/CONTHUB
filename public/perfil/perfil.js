@@ -1,10 +1,11 @@
 // public/perfil/perfil.js
-// PERFIL • JS (API-FIRST • ROBUSTO)
-// ✅ Usa sessão via localStorage "conthub_user" (compatível com login.js novo)
-// ✅ Busca dados atualizados do usuário via API (/api/admin/users) para trazer cargo/role/active corretos
-// ✅ Busca logs do backend (GET /api/admin/users/:id/logs) e faz fallback p/ logs locais (localStorage)
-// ✅ Renderiza módulos usando status local (MODULES_KEY) + regra de acesso por role
-// ✅ Voltar + Sair (limpa sessão)
+// PERFIL • JS (100% SESSION + API)
+// ✅ Sessão real via /api/auth/me
+// ✅ Logout real via /api/auth/logout
+// ✅ Busca dados atualizados do usuário via API (/api/admin/users)
+// ✅ Busca logs do backend (GET /api/admin/users/:id/logs)
+// ✅ Fallback de logs locais apenas para visualização
+// ✅ Renderiza módulos usando status do banco (/api/admin/modules)
 // ---------------------------------------------------------
 
 (function () {
@@ -12,19 +13,19 @@
   // CONFIG
   // ==============================
   const LOGIN_PAGE_URL = "../login/login.html";
-  const API_BASE = ""; // same-origin
+  const API_BASE = "";
   const API_USERS = `${API_BASE}/api/admin/users`;
+  const API_MODULES = `${API_BASE}/api/admin/modules`;
   const API_USER_LOGS = (id) => `${API_USERS}/${id}/logs?limit=50`;
 
-  // ==============================
-  // STORAGE KEYS (compat)
-  // ==============================
-  const SESSION_USER_KEY = "conthub_user"; // ✅ novo padrão
-  const CURRENT_USER_KEY = "conthub_current_user_id"; // legado (mantém, mas não depende)
-  const MODULES_KEY = "conthub_module_status";
-
-  // logs locais (fallback)
+  // fallback local apenas para logs
   const LOGS_KEY = "conthub_user_logs";
+
+  // ==============================
+  // STATE
+  // ==============================
+  let AUTH_USER = null;
+  let MODULES_MAP = {};
 
   // ==============================
   // DOM
@@ -47,7 +48,7 @@
   const btnSair = document.getElementById("btnSair");
 
   // ==============================
-  // Helpers (storage)
+  // Helpers
   // ==============================
   function readJSON(key, fallback) {
     try {
@@ -63,35 +64,38 @@
     localStorage.setItem(key, JSON.stringify(value));
   }
 
-  // ==============================
-  // Session
-  // ==============================
-  function getSessionUser() {
+  function goto(url) {
+    const target = String(url || "").trim();
+    if (!target) return;
+
     try {
-      const raw = localStorage.getItem(SESSION_USER_KEY);
-      if (!raw) return null;
-      const u = JSON.parse(raw);
-      return u && typeof u === "object" ? u : null;
-    } catch {
-      return null;
+      if (window.top && window.top !== window) {
+        window.top.location.href = target;
+        return;
+      }
+    } catch (_) {}
+
+    window.location.href = target;
+  }
+
+  function getSessionUser() {
+    return AUTH_USER;
+  }
+
+  async function logout() {
+    try {
+      await fetch("/api/auth/logout", {
+        method: "POST",
+        credentials: "include",
+      });
+    } catch (err) {
+      console.warn("Falha ao encerrar sessão:", err);
     }
+
+    AUTH_USER = null;
+    goto(LOGIN_PAGE_URL);
   }
 
-  function getLegacyCurrentUserId() {
-    const v = localStorage.getItem(CURRENT_USER_KEY);
-    const n = Number(v);
-    return Number.isFinite(n) && n > 0 ? n : null;
-  }
-
-  function logout() {
-    localStorage.removeItem(SESSION_USER_KEY);
-    localStorage.removeItem(CURRENT_USER_KEY);
-    window.location.href = LOGIN_PAGE_URL;
-  }
-
-  // ==============================
-  // Helpers (ui)
-  // ==============================
   function roleLabel(role) {
     const r = String(role || "user").toLowerCase();
     if (r === "ti") return "TI";
@@ -126,6 +130,16 @@
       .replaceAll("'", "&#039;");
   }
 
+  function normalizeModuleStatus(status, active) {
+    const s = String(status || "").trim().toLowerCase();
+
+    if (active === false) return "offline";
+    if (s === "offline" || s === "off") return "offline";
+    if (s === "dev") return "dev";
+    if (s === "admin") return "admin";
+    return "online";
+  }
+
   // ==============================
   // API helper
   // ==============================
@@ -134,9 +148,9 @@
 
     const res = await fetch(url, {
       method: opts.method || "GET",
+      credentials: "include",
       headers: {
         "Content-Type": "application/json",
-        // ✅ ADICIONADO: manda ator p/ auditoria (opcional)
         ...(session?.id != null ? { "x-user-id": String(session.id) } : {}),
         ...(session?.email ? { "x-user-email": String(session.email) } : {}),
         ...(opts.headers || {}),
@@ -146,6 +160,7 @@
 
     const text = await res.text();
     let data = null;
+
     try {
       data = text ? JSON.parse(text) : null;
     } catch {
@@ -153,6 +168,12 @@
     }
 
     if (!res.ok) {
+      if (res.status === 401) {
+        AUTH_USER = null;
+        goto(LOGIN_PAGE_URL);
+        return null;
+      }
+
       const msg = (data && (data.error || data.message)) || `HTTP ${res.status}`;
       const err = new Error(msg);
       err.status = res.status;
@@ -163,17 +184,61 @@
     return data;
   }
 
+  async function requireAuthOrRedirect() {
+    try {
+      const data = await fetchJson("/api/auth/me", { method: "GET" });
+      const me = data && typeof data === "object" ? data.user || data : null;
+
+      if (!me || typeof me !== "object") {
+        goto(LOGIN_PAGE_URL);
+        return null;
+      }
+
+      AUTH_USER = me;
+      return me;
+    } catch (err) {
+      console.warn("Falha ao validar sessão:", err?.message || err);
+      goto(LOGIN_PAGE_URL);
+      return null;
+    }
+  }
+
   async function loadUserFromApi(userId) {
     const payload = await fetchJson(API_USERS, { method: "GET" });
-    const list = Array.isArray(payload?.users) ? payload.users : Array.isArray(payload) ? payload : [];
-    const u = list.find((x) => Number(x.id) === Number(userId));
-    return u || null;
+    const list = Array.isArray(payload?.users)
+      ? payload.users
+      : Array.isArray(payload)
+      ? payload
+      : [];
+
+    return list.find((x) => Number(x.id) === Number(userId)) || null;
   }
 
   async function loadLogsFromApi(userId) {
     const payload = await fetchJson(API_USER_LOGS(userId), { method: "GET" });
     const list = payload?.logs || payload?.items || payload?.data || payload;
     return Array.isArray(list) ? list : [];
+  }
+
+  async function loadModulesFromApi() {
+    try {
+      const payload = await fetchJson(API_MODULES, { method: "GET" });
+      const rows = Array.isArray(payload?.modules) ? payload.modules : [];
+
+      const map = {};
+      rows.forEach((m) => {
+        const slug = String(m.slug || "").trim().toLowerCase();
+        if (!slug) return;
+        map[slug] = normalizeModuleStatus(m.status, m.active);
+      });
+
+      MODULES_MAP = map;
+      return map;
+    } catch (err) {
+      console.warn("Falha ao carregar módulos:", err?.message || err);
+      MODULES_MAP = {};
+      return MODULES_MAP;
+    }
   }
 
   // ==============================
@@ -191,15 +256,10 @@
   ];
 
   function getModuleStatus(id) {
-    const store = readJSON(MODULES_KEY, {});
     if (id === "contadmin") return "admin";
-    return store[id] || "online";
+    return MODULES_MAP[id] || "online";
   }
 
-  // regra simples de acesso:
-  // - TI: tudo
-  // - ADMIN: tudo
-  // - USER: tudo menos contadmin
   function canAccessModule(role, moduleId) {
     const r = String(role || "user").toLowerCase();
     if (r === "ti") return true;
@@ -251,6 +311,7 @@
     const action = x.action || x.event || x.type || "LOG";
     const by = x.actorEmail || x.actor || x.by || "";
     const msg = x.message || x.detail || "";
+
     return {
       when: when ? fmtTime(when) : "—",
       action: String(action),
@@ -263,17 +324,14 @@
   async function loadLogsBackend(userId) {
     if (!elLogsList) return;
 
-    // mostra um "carregando" leve sem apagar o local
     const old = elLogsList.innerHTML;
     elLogsList.innerHTML =
-      old ||
-      `<div class="muted" style="font-size:12px;">Carregando atividade…</div>`;
+      old || `<div class="muted" style="font-size:12px;">Carregando atividade…</div>`;
 
     try {
       const logs = await loadLogsFromApi(userId);
 
       if (!logs.length) {
-        // mantém local fallback
         if (!old) {
           elLogsList.innerHTML = `<div class="muted" style="font-size:12px;">Sem logs no servidor ainda.</div>`;
         }
@@ -297,9 +355,7 @@
         )
         .join("");
     } catch (err) {
-      // se endpoint não existe, não “estraga” a UI
       console.warn("Logs backend indisponíveis:", err?.message || err);
-      // mantém fallback local, não sobrescreve se já tinha conteúdo
       if (!old) renderLogsLocal(String(userId));
     }
   }
@@ -310,9 +366,11 @@
   function renderProfile(user) {
     const nome = String(user?.name ?? user?.nome ?? "Usuário").trim();
     const email = String(user?.email ?? "—").trim();
+    const cargo =
+      user?.cargo != null && String(user.cargo).trim() !== ""
+        ? String(user.cargo).trim()
+        : "—";
 
-    // ✅ IMPORTANTE: backend usa "cargo" e "active". (não usa "ativo")
-    const cargo = user?.cargo != null && String(user.cargo).trim() !== "" ? String(user.cargo).trim() : "—";
     const roleRaw = String(user?.role ?? "user").toLowerCase();
 
     const active =
@@ -357,7 +415,13 @@
         st === "dev" ? "pill--dev" : st === "offline" ? "pill--off" : "pill--online";
 
       const pillText =
-        st === "dev" ? "DEV" : st === "offline" ? "OFF" : st === "admin" ? "ADMIN" : "ONLINE";
+        st === "dev"
+          ? "DEV"
+          : st === "offline"
+          ? "OFF"
+          : st === "admin"
+          ? "ADMIN"
+          : "ONLINE";
 
       return `
         <div class="module">
@@ -381,60 +445,48 @@
   // ==============================
   // BOOT
   // ==============================
-  const session = getSessionUser();
+  async function init() {
+    const session = await requireAuthOrRedirect();
+    if (!session) return;
 
-  // Se não tiver sessão, manda pro login
-  if (!session) {
-    logout();
-    return;
-  }
+    const userId = session?.id != null ? Number(session.id) : null;
+    if (!userId) {
+      goto(LOGIN_PAGE_URL);
+      return;
+    }
 
-  // resolve userId
-  const userId =
-    session?.id != null
-      ? Number(session.id)
-      : getLegacyCurrentUserId();
+    await loadModulesFromApi();
 
-  if (!userId) {
-    logout();
-    return;
-  }
+    renderProfile(session);
+    renderModules(session);
 
-  // Render rápido com sessão (pode vir sem cargo)
-  renderProfile(session);
-  renderModules(session);
+    pushLocalLog(String(userId), "Acessou a página de perfil");
+    renderLogsLocal(String(userId));
 
-  // Logs: sempre salva local
-  pushLocalLog(String(userId), "Acessou a página de perfil");
-  renderLogsLocal(String(userId));
-
-  // Depois, tenta atualizar dados e logs do backend
-  (async () => {
     try {
       const apiUser = await loadUserFromApi(userId);
       if (apiUser) {
-        renderProfile(apiUser);
-        renderModules(apiUser);
-
-        // ✅ opcional: atualiza sessão com dados mais completos (inclui cargo)
-        // Isso evita “cargo —” em outras telas
-        localStorage.setItem(SESSION_USER_KEY, JSON.stringify({ ...session, ...apiUser }));
+        AUTH_USER = { ...session, ...apiUser };
+        renderProfile(AUTH_USER);
+        renderModules(AUTH_USER);
       }
     } catch (err) {
       console.warn("Perfil: falha ao atualizar dados via API:", err?.message || err);
     }
 
-    // logs backend (se existir endpoint)
     await loadLogsBackend(userId);
-  })();
+  }
 
   // ==============================
   // Events
   // ==============================
   btnVoltar?.addEventListener("click", () => history.back());
 
-  btnSair?.addEventListener("click", () => {
-    pushLocalLog(String(userId), "Saiu (logout)");
-    logout();
+  btnSair?.addEventListener("click", async () => {
+    const userId = AUTH_USER?.id != null ? String(AUTH_USER.id) : "0";
+    pushLocalLog(userId, "Saiu (logout)");
+    await logout();
   });
+
+  init();
 })();
