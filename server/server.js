@@ -8,22 +8,20 @@ require("dotenv").config();
 
 const db = require("./db");
 
-// Rotas
+// ROTAS
 const authRoutes = require("./routes/auth.routes");
 const adminUsersRoutes = require("./routes/admin.users.routes");
 const adminModulesRoutes = require("./routes/admin.modules.routes");
 const publicCustomersRoutes = require("./routes/public.customers.routes");
-
-// ✅ (3) Dashboard Routes (Postgres)
 const dashboardRoutes = require("./routes/dashboard.routes");
+const sheetsRoutes = require("./routes/sheets.routes"); // ✅ ContFlow API
 
 const app = express();
 
-// --------------------
-// Middlewares (ORDEM CERTA)
-// --------------------
+// ---------------------------------------------------
+// MIDDLEWARES
+// ---------------------------------------------------
 
-// ✅ CORS único (sem duplicar)
 app.use(
   cors({
     origin: true,
@@ -31,10 +29,8 @@ app.use(
   })
 );
 
-// ✅ JSON (uma vez só)
 app.use(express.json({ limit: "1mb" }));
 
-// ✅ Session (depois do CORS)
 app.use(
   session({
     name: "conthub.sid",
@@ -43,16 +39,17 @@ app.use(
     saveUninitialized: false,
     cookie: {
       httpOnly: true,
-      secure: false, // DEV em http
-      sameSite: "lax", // ✅ evita bloqueios bobos no browser
-      maxAge: 1000 * 60 * 60 * 8, // 8h
+      secure: false,
+      sameSite: "lax",
+      maxAge: 1000 * 60 * 60 * 8,
     },
   })
 );
 
-// --------------------
-// AUTH MIDDLEWARES (AQUI MESMO NO SERVER.JS)
-// --------------------
+// ---------------------------------------------------
+// AUTH MIDDLEWARE
+// ---------------------------------------------------
+
 function requireAuth(req, res, next) {
   if (!req.session?.user) {
     return res.status(401).json({ error: "Não autenticado." });
@@ -64,98 +61,108 @@ function requireAdmin(req, res, next) {
   if (!req.session?.user) {
     return res.status(401).json({ error: "Não autenticado." });
   }
-  // Ajuste aqui se seu role for "admin" / "ti" / etc.
+
   const role = String(req.session.user.role || "").toLowerCase();
-  if (role !== "admin" && role !== "ti" && role !== "administrator") {
+
+  if (!["admin", "ti", "administrator"].includes(role)) {
     return res.status(403).json({ error: "Acesso negado." });
   }
+
   next();
 }
 
-// --------------------
-// Static (painel)
-// --------------------
-// public está na raiz do projeto (../public)
+// ---------------------------------------------------
+// STATIC FILES
+// ---------------------------------------------------
+
 const publicDir = path.join(__dirname, "..", "public");
-console.log("📁 Servindo arquivos estáticos de:", publicDir);
+console.log("📁 Static:", publicDir);
 
 const loginPath = path.join(publicDir, "login", "login.html");
-console.log("🔎 login.html existe?", fs.existsSync(loginPath), "-", loginPath);
+console.log("🔎 login.html:", fs.existsSync(loginPath));
 
 app.use(express.static(publicDir));
 
-// --------------------
-// API
-// --------------------
-// Auth (público)
+// ---------------------------------------------------
+// API ROUTES
+// ---------------------------------------------------
+
 app.use("/api/auth", authRoutes);
 
-// Público (se tiver rotas que precisam ser públicas, mantém)
 app.use("/api/public/customers", publicCustomersRoutes);
 
-// ✅ Dashboard (protegido) — aqui é o #3
 app.use("/api/dashboard", requireAuth, dashboardRoutes);
 
-// Admin (protegido)
+app.use("/api/sheets", requireAuth, sheetsRoutes); // ✅ ContFlow
+
 app.use("/api/admin/users", requireAdmin, adminUsersRoutes);
+
 app.use("/api/admin/modules", requireAdmin, adminModulesRoutes);
 
-// --------------------
-// Rotas HTML
-// --------------------
-// raiz → tela de login
+// ---------------------------------------------------
+// HTML ROUTES
+// ---------------------------------------------------
+
 app.get("/", (req, res) => {
-  return res.sendFile(loginPath);
+  res.sendFile(loginPath);
 });
 
-// garante /login/login.html
 app.get("/login/login.html", (req, res) => {
-  return res.sendFile(loginPath);
+  res.sendFile(loginPath);
 });
 
-// fallback
+// ---------------------------------------------------
+// FALLBACK
+// ---------------------------------------------------
+
 app.use((req, res) => {
   if (req.path.startsWith("/api/")) {
     return res.status(404).json({ error: "Rota não encontrada." });
   }
-  return res.sendFile(loginPath);
+
+  res.sendFile(loginPath);
 });
 
-// --------------------
-// Porta
-// --------------------
+// ---------------------------------------------------
+// SERVER START
+// ---------------------------------------------------
+
 const PORT = process.env.PORT ? Number(process.env.PORT) : 3000;
 
 const server = app.listen(PORT, "0.0.0.0", () => {
-  console.log(`✅ ContHub LE rodando em http://localhost:${PORT}`);
-  console.log(`➡️ Login: http://localhost:${PORT}/login/login.html`);
+  console.log("=================================");
+  console.log(`✅ ContHub rodando`);
+  console.log(`🌐 http://localhost:${PORT}`);
+  console.log(`🔐 http://localhost:${PORT}/login/login.html`);
+  console.log("=================================");
 });
 
-// --------------------
-// Shutdown limpo (bom pra DB)
-// --------------------
+// ---------------------------------------------------
+// GRACEFUL SHUTDOWN
+// ---------------------------------------------------
+
 async function gracefulShutdown(signal) {
   try {
-    console.log(`\n🛑 Recebido ${signal}. Encerrando com segurança...`);
+    console.log(`\n🛑 ${signal} recebido`);
 
-    if (db && typeof db.close === "function") {
+    if (db?.close) {
       await db.close();
     }
 
     server.close(() => {
-      console.log("✅ Servidor encerrado.");
+      console.log("✅ servidor encerrado");
       process.exit(0);
     });
 
     setTimeout(() => {
-      console.log("⚠️ Forçando encerramento.");
+      console.log("⚠️ encerramento forçado");
       process.exit(1);
     }, 5000).unref();
   } catch (err) {
-    console.error("❌ Erro ao encerrar:", err);
+    console.error("Erro no shutdown:", err);
     process.exit(1);
   }
 }
 
-process.on("SIGINT", () => gracefulShutdown("SIGINT"));
-process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
+process.on("SIGINT", gracefulShutdown);
+process.on("SIGTERM", gracefulShutdown);

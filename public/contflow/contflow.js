@@ -15,12 +15,58 @@ const SESSION_USER_KEY = "conthub_user";
 =========================== */
 const CF_STORAGE_KEY = "conthub:contflow:data";
 const CF_VERSIONS_KEY = "conthub:contflow:versions";
-
-// ✅ chave para o Dashboard detectar atualização
 const CF_LAST_UPDATE_KEY = "conthub:contflow:last_update";
-
-// ✅ canal para notificação instantânea (quando dashboard/contflow estão abertos ao mesmo tempo)
 const CF_BC_NAME = "conthub:contflow:bc";
+
+/* ===========================
+   API
+=========================== */
+const CF_API_SHEET_KEY = "contflow";
+const CF_API_SHEET_URL = `/api/sheets/${CF_API_SHEET_KEY}`;
+const CF_API_IMPORT_URL = `/api/sheets/${CF_API_SHEET_KEY}/import-local`;
+
+async function apiFetch(url, options = {}) {
+  return fetch(url, {
+    credentials: "include",
+    headers: {
+      Accept: "application/json",
+      ...(options.headers || {}),
+    },
+    ...options,
+  });
+}
+
+async function requireAuthOrRedirect() {
+  try {
+    const resp = await apiFetch("/api/auth/me", { method: "GET" });
+
+    if (!resp.ok) {
+      localStorage.removeItem(SESSION_USER_KEY);
+      localStorage.removeItem(CURRENT_USER_KEY_LEGACY);
+      goto(LOGIN_PAGE_URL);
+      return null;
+    }
+
+    const data = await resp.json().catch(() => null);
+    const me = data && typeof data === "object" ? (data.user || data) : null;
+
+    if (!me || typeof me !== "object") {
+      localStorage.removeItem(SESSION_USER_KEY);
+      localStorage.removeItem(CURRENT_USER_KEY_LEGACY);
+      goto(LOGIN_PAGE_URL);
+      return null;
+    }
+
+    localStorage.setItem(SESSION_USER_KEY, JSON.stringify(me));
+    localStorage.setItem(CURRENT_USER_KEY_LEGACY, String(me.id));
+
+    return me;
+  } catch (err) {
+    console.warn("Falha ao validar sessão no ContFlow:", err);
+    goto(LOGIN_PAGE_URL);
+    return null;
+  }
+}
 
 const MAX_UNDO = 150;
 const MAX_VERSIONS = 12;
@@ -70,8 +116,6 @@ let findResults = [];
 let findIndex = -1;
 
 let ctxMenuEl = null;
-
-// ✅ BroadcastChannel (se disponível)
 let cfBC = null;
 
 /* ===========================
@@ -81,7 +125,6 @@ function goto(url) {
   const target = String(url || "").trim();
   if (!target) return;
 
-  // ✅ GARANTE salvar antes de navegar
   try {
     flushSaveNow(true);
   } catch (_) {}
@@ -118,8 +161,10 @@ function getSessionUser() {
       if (u && typeof u === "object") return u;
     }
   } catch (_) {}
+
   const id = getLegacyCurrentUserId();
   if (!id) return null;
+
   const users = loadLegacyUsers();
   return users.find((x) => Number(x.id) === Number(id)) || null;
 }
@@ -135,10 +180,13 @@ function avatarFromName(name) {
   return t ? t[0].toUpperCase() : "U";
 }
 
-function logout() {
-  // ✅ salva antes de sair (evita perder cadastro)
+async function logout() {
   try {
     flushSaveNow(true);
+  } catch (_) {}
+
+  try {
+    await apiFetch("/api/auth/logout", { method: "POST" });
   } catch (_) {}
 
   localStorage.removeItem(SESSION_USER_KEY);
@@ -185,10 +233,58 @@ function deepClone(obj) {
   return JSON.parse(JSON.stringify(obj));
 }
 
+async function loadBaseFromApi() {
+  const resp = await apiFetch(CF_API_SHEET_URL, {
+    method: "GET",
+  });
+
+  const data = await resp.json().catch(() => null);
+
+  if (!resp.ok) {
+    throw new Error(data?.error || "Erro ao carregar ContFlow da API.");
+  }
+
+  return data;
+}
+
+function hydrateContFlowFromApiPayload(payload) {
+  const cols = Array.isArray(payload?.columns) ? payload.columns : [];
+  const rows = Array.isArray(payload?.rows) ? payload.rows : [];
+  const cells = Array.isArray(payload?.cells) ? payload.cells : [];
+
+  CF_COLUMNS = ensureUniqueKeys(
+    cols.map((c) => ({
+      key: String(c.key || "").trim(),
+      label: String(c.label || c.key || "Coluna").trim(),
+    }))
+  );
+
+  CF_COLUMNS.forEach((c) => setDefaultWidthForCol(c.key));
+
+  const rowMap = new Map();
+
+  rows.forEach((r) => {
+    const rowObj = {};
+    CF_COLUMNS.forEach((col) => {
+      rowObj[col.key] = "";
+    });
+    rowObj.__id = String(r.clientRowId || genId());
+    rowMap.set(Number(r.id), rowObj);
+  });
+
+  cells.forEach((cell) => {
+    const rowObj = rowMap.get(Number(cell.rowId));
+    if (!rowObj) return;
+    if (!(cell.colKey in rowObj)) return;
+    rowObj[cell.colKey] = String(cell.value ?? "");
+  });
+
+  cfData = Array.from(rowMap.values());
+  cfData = coerceRowsToCurrentColumns(cfData);
+}
+
 /* ===========================
-   🔥 FIX CRÍTICO: Num Quotas (SEM RECURSÃO)
-   - Você tinha duas funções com o mesmo nome getNumQuotaKey()
-   - Isso gerava chamada infinita e quebrava o render (RangeError)
+   Num Quotas
 =========================== */
 function findColKeyByLabelRegex(re) {
   const col = (CF_COLUMNS || []).find((c) => re.test(normalizeLabel(c.label)));
@@ -196,7 +292,6 @@ function findColKeyByLabelRegex(re) {
 }
 
 function getNumQuotasKey() {
-  // tenta achar pelo label, mas SEMPRE cai no fallback correto
   return (
     findColKeyByLabelRegex(/\bnum\b.*\bquota\b/) ||
     findColKeyByLabelRegex(/\bquota\b.*\bnum\b/) ||
@@ -204,7 +299,6 @@ function getNumQuotasKey() {
   );
 }
 
-// garante 1..3, default 3, e limpa quota2/quota3 quando necessário
 function normalizeNumQuotas(row) {
   if (!row) return;
 
@@ -219,7 +313,6 @@ function normalizeNumQuotas(row) {
   if (num < 2 && row.quota2 != null) row.quota2 = "";
 }
 
-// alias para manter teu commitEdit funcionando
 function syncQuotasByNum(row) {
   normalizeNumQuotas(row);
 }
@@ -231,7 +324,6 @@ function createEmptyRow() {
   const nqKey = getNumQuotasKey();
   if (row[nqKey] != null && String(row[nqKey]).trim() === "") row[nqKey] = "3";
 
-  // já normaliza e limpa quotas extras se precisar
   normalizeNumQuotas(row);
 
   row.__id = row.__id || genId();
@@ -282,15 +374,14 @@ function isFilterActive(f) {
 }
 
 /* ===========================
-   “SALVAMENTO” ROBUSTO
+   SAVE
 =========================== */
 function scheduleAutoSave() {
   if (autoSaveTimeout) clearTimeout(autoSaveTimeout);
-  autoSaveTimeout = setTimeout(() => saveBase(true), 650); // mais rápido
+  autoSaveTimeout = setTimeout(() => saveBase(true), 650);
 }
 
 function flushSaveNow(silent = true) {
-  // commit do que estiver editando + salva imediatamente
   try {
     if (editing) commitEdit();
   } catch (_) {}
@@ -413,8 +504,6 @@ function applyUndoRedo(action, dir) {
 
   rebuildViewMap();
   renderTable();
-
-  // ✅ undo/redo é ação crítica → salva logo
   flushSaveNow(true);
 }
 
@@ -483,8 +572,6 @@ function restoreVersion() {
 
   rebuildViewMap();
   renderTable();
-
-  // ✅ restauração é crítica → salva logo
   flushSaveNow(true);
 }
 
@@ -540,8 +627,6 @@ function addColumnAfter(colIndex, label) {
 
   rebuildViewMap();
   renderTable();
-
-  // ✅ estrutura mudou → salva logo
   flushSaveNow(true);
 }
 
@@ -583,8 +668,6 @@ function deleteColumn(colIndex) {
   activeCol = clamp(activeCol, 0, CF_COLUMNS.length - 1);
   rebuildViewMap();
   renderTable();
-
-  // ✅ estrutura mudou → salva logo
   flushSaveNow(true);
 }
 
@@ -604,8 +687,6 @@ function moveColumn(fromIndex, toIndex) {
 
   activeCol = clamp(toIndex, 0, CF_COLUMNS.length - 1);
   renderTable();
-
-  // ✅ estrutura mudou → salva logo
   flushSaveNow(true);
 }
 
@@ -673,8 +754,7 @@ function clearAllFilters() {
 }
 
 /* ===========================
-   FILTER DROPDOWN (Excel-like)
-   ✅ CORRIGIDO: Agora só aplica no botão "Confirmar"
+   FILTER DROPDOWN
 =========================== */
 let cfFilterDD = null;
 
@@ -738,12 +818,9 @@ function openFilterDropdownForHeader(thEl, colIndex) {
   const menu = ensureFilterDropdown();
   menu.innerHTML = "";
 
-  //isola o dropdown do teclado/mouse do grid
-  //impede o handleGlobalKeyDown do document de "roubar" o input/checkbx
   menu.addEventListener("keydown", (ev) => ev.stopPropagation(), true);
   menu.addEventListener("keypress", (ev) => ev.stopPropagation(), true);
   menu.addEventListener("keyup", (ev) => ev.stopPropagation(), true);
-
 
   const colKey = col.key;
   const colLabel = col.label;
@@ -1024,7 +1101,7 @@ function updateStatusBar(rowMin, rowMax, colMin, colMax) {
 }
 
 /* ===========================
-   SCROLL + FIX “SOBREPOSIÇÃO”
+   SCROLL
 =========================== */
 function getStickyOffsets() {
   const headerTh = document.querySelector(".cf-table thead th");
@@ -1235,14 +1312,12 @@ function commitEdit() {
   let finalAfter = after;
 
   if (colKey === "num_quotas") {
-    // normaliza e sincroniza quotas 2/3
     cfData[dataIndex][colKey] = finalAfter;
     syncQuotasByNum(cfData[dataIndex]);
     el.textContent = cfData[dataIndex][colKey];
     finalAfter = cfData[dataIndex][colKey];
   }
 
-  // se apagar Num Quotas, volta para 3
   if (colKey === "num_quotas" && String(finalAfter).trim() === "") {
     finalAfter = "3";
     cfData[dataIndex][colKey] = "3";
@@ -1349,8 +1424,6 @@ async function pasteFromClipboard() {
 
     if (changes.length) pushUndo({ type: "batch", changes });
     renderTable();
-
-    // ✅ colagem grande → salva logo
     flushSaveNow(true);
     return;
   }
@@ -1398,7 +1471,7 @@ async function pasteFromClipboard() {
 }
 
 /* ===========================
-   CTRL+SETA (Excel-like)
+   CTRL+SETA
 =========================== */
 function ctrlJump(viewRow, colIndex, dRow, dCol) {
   if (!viewMap.length || !CF_COLUMNS.length) return { r: 0, c: 0 };
@@ -1623,7 +1696,6 @@ function renderTable() {
     if (tbody) return tbody;
 
     tbody = table.querySelector("tbody");
-    // 🔥 FIX: aqui você tinha `if ("tbody")` (sempre true) e criava bug
     if (!tbody) {
       tbody = document.createElement("tbody");
       table.appendChild(tbody);
@@ -1780,8 +1852,6 @@ function clearSelectionValues() {
 
   if (changes.length) pushUndo({ type: "batch", changes });
   renderTable();
-
-  // ✅ limpeza de bloco: salva logo (evita “não refletir”)
   flushSaveNow(true);
 }
 
@@ -1914,19 +1984,16 @@ async function handleGlobalKeyDown(e) {
 
   if (e.key === "Enter") {
     e.preventDefault();
-    let targetRow = activeRow + (isShift ? -1 : 1);
+    let targetRow = activeRow + (e.shiftKey ? -1 : 1);
     targetRow = clamp(targetRow, 0, maxRow);
 
-    if (!isShift && activeRow === maxRow) {
+    if (!e.shiftKey && activeRow === maxRow) {
       const newRow = createEmptyRow();
       cfData.push(newRow);
       pushUndo({ type: "rows_insert", at: cfData.length - 1, rows: [deepClone(newRow)] });
       rebuildViewMap();
       renderTable();
-
-      // ✅ criação de linha (Enter no fim) → salva logo
       flushSaveNow(true);
-
       targetRow = clamp(activeRow + 1, 0, viewMap.length - 1);
     }
 
@@ -1938,7 +2005,7 @@ async function handleGlobalKeyDown(e) {
   if (e.key === "Tab") {
     e.preventDefault();
     let targetRow = activeRow;
-    let targetCol = activeCol + (isShift ? -1 : 1);
+    let targetCol = activeCol + (e.shiftKey ? -1 : 1);
 
     if (targetCol > maxCol) {
       targetCol = 0;
@@ -2023,8 +2090,6 @@ function insertRowBelow() {
 
   rebuildViewMap();
   renderTable();
-
-  // ✅ inserção é crítica → salva logo
   flushSaveNow(true);
 
   const newView = viewMap.indexOf(at);
@@ -2067,8 +2132,6 @@ function deleteSelectedRows() {
 
   rebuildViewMap();
   renderTable();
-
-  // ✅ exclusão é crítica → salva logo
   flushSaveNow(true);
 
   setSingleActiveCell(clamp(activeRow, 0, viewMap.length - 1), clamp(activeCol, 0, CF_COLUMNS.length - 1));
@@ -2092,8 +2155,6 @@ function duplicateSelectedRows() {
 
   rebuildViewMap();
   renderTable();
-
-  // ✅ duplicação é crítica → salva logo
   flushSaveNow(true);
 
   const startView = viewMap.indexOf(at);
@@ -2324,8 +2385,6 @@ function handleImportFile(e) {
     selectionAnchor = null;
 
     renderTable();
-
-    // ✅ importação é crítica → salva logo (pra dashboard ver)
     flushSaveNow(true);
   };
 
@@ -2402,7 +2461,7 @@ function handleExportXLSX() {
 }
 
 /* ===========================
-   SAVE / LOAD  + “UPDATE EVENT”
+   SAVE / LOAD LOCAL
 =========================== */
 function initBroadcast() {
   try {
@@ -2504,7 +2563,6 @@ function publishContFlowUpdate(eventPayload) {
 
 function saveBase(silent = false) {
   try {
-    // lê anterior pra calcular delta
     let prev = null;
     try {
       const rawPrev = localStorage.getItem(CF_STORAGE_KEY);
@@ -2525,10 +2583,8 @@ function saveBase(silent = false) {
 
     localStorage.setItem(CF_STORAGE_KEY, JSON.stringify(payload));
 
-    // ✅ delta para o dashboard saber “o que mudou”
     const delta = computeDelta(prev, payload);
 
-    // ✅ evento mais rico
     publishContFlowUpdate({
       ts: new Date().toISOString(),
       kind: "contflow_update",
@@ -2877,7 +2933,7 @@ function openContextMenu(e, ctx) {
 }
 
 /* ===========================
-   FIND UI (Ctrl+F)
+   FIND UI
 =========================== */
 function injectExtraStyles() {
   if (document.getElementById("cf-extra-styles")) return;
@@ -3060,17 +3116,13 @@ function applyFindHighlights() {
 /* ===========================
    INIT
 =========================== */
-document.addEventListener("DOMContentLoaded", () => {
+document.addEventListener("DOMContentLoaded", async () => {
   injectExtraStyles();
   initBroadcast();
 
-  const sessionUser = getSessionUser();
-  if (!sessionUser) {
-    logout();
-    return;
-  }
+  const me = await requireAuthOrRedirect();
+  if (!me) return;
 
-  // ✅ garante salvar se o usuário fechar/atualizar a página no meio da edição
   window.addEventListener("beforeunload", () => {
     try {
       flushSaveNow(true);
@@ -3105,9 +3157,9 @@ document.addEventListener("DOMContentLoaded", () => {
     e.preventDefault();
     goto(USER_PAGE_URL);
   });
-  btnLogout?.addEventListener("click", (e) => {
+  btnLogout?.addEventListener("click", async (e) => {
     e.preventDefault();
-    logout();
+    await logout();
   });
   renderUserCard();
 
@@ -3170,8 +3222,6 @@ document.addEventListener("DOMContentLoaded", () => {
     renderTable();
     closeModal();
     setSingleActiveCell(viewMap.length - 1, 0);
-
-    // ✅ adicionar linha (botão) → salva logo
     flushSaveNow(true);
   });
 
@@ -3218,13 +3268,28 @@ document.addEventListener("DOMContentLoaded", () => {
 
   window.addEventListener("mouseup", () => (mouseSelecting = false));
 
-  const loaded = loadBase();
-  if (!loaded) {
-    cfData = Array.from({ length: 15 }, () => createEmptyRow());
-    CF_COLUMNS.forEach((c) => setDefaultWidthForCol(c.key));
+  try {
+    const payload = await loadBaseFromApi();
+    hydrateContFlowFromApiPayload(payload);
 
-    // ✅ cria base inicial já persistida (evita divergência)
-    flushSaveNow(true);
+    if (!cfData.length) {
+      cfData = Array.from({ length: 15 }, () => createEmptyRow());
+      CF_COLUMNS.forEach((c) => setDefaultWidthForCol(c.key));
+      flushSaveNow(true);
+    }
+
+    console.log("✅ ContFlow carregado da API.");
+  } catch (err) {
+    console.warn("⚠️ Falha ao carregar da API, usando fallback local:", err);
+
+    const loaded = loadBase();
+    if (!loaded) {
+      cfData = Array.from({ length: 15 }, () => createEmptyRow());
+      CF_COLUMNS.forEach((c) => setDefaultWidthForCol(c.key));
+      flushSaveNow(true);
+    }
+
+    console.log("✅ ContFlow carregado do localStorage.");
   }
 
   rebuildViewMap();
@@ -3235,5 +3300,5 @@ document.addEventListener("DOMContentLoaded", () => {
   renderTable();
   setTimeout(() => setSingleActiveCell(0, 0), 0);
 
-  console.log("✅ ContFlow pronto (salvamento robusto + delta update + BroadcastChannel)!");
+  console.log("✅ ContFlow pronto (API + fallback local)!");
 });
