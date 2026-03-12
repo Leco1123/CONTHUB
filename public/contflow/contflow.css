@@ -14,15 +14,12 @@ body {
 
 body {
   margin: 0;
-  font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial;
+  font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
   color: var(--text);
-  background: linear-gradient(
-      180deg,
-      rgba(0, 140, 255, 0.205),
-      rgba(10, 12, 18, 0.94)
-    ),
+  background:
+    linear-gradient(180deg, rgba(0, 140, 255, 0.205), rgba(10, 12, 18, 0.94)),
     var(--bg);
-  overflow: hidden; /* 🔒 travo scroll global */
+  overflow: hidden;
 }
 
 :root {
@@ -42,7 +39,7 @@ body {
   --shadow-soft: 0 12px 30px rgba(0, 0, 0, 0.35);
   --ring: 0 0 0 4px rgba(78, 204, 163, 0.18);
 
-  --sb-w: 340px;
+  --sb-w: 320px;
 }
 
 .muted {
@@ -76,31 +73,29 @@ body.sidebar-open .overlay {
 ========================================================= */
 .sidebar {
   position: fixed;
-  top: 12px;
-  left: 12px;
-  width: min(var(--sb-w), calc(100vw - 24px));
-  height: calc(100vh - 24px);
-  padding: 18px;
-  border-radius: var(--radius);
+  top: 8px;
+  left: 8px;
+  width: min(var(--sb-w), calc(100vw - 16px));
+  height: calc(100vh - 16px);
+  padding: 18px 16px 14px;
+  border-radius: 18px;
 
-  background: linear-gradient(
-    180deg,
-    rgba(0, 140, 255, 0.205),
-    rgba(10, 12, 18, 0.94)
-  );
-  border: 1px solid var(--stroke);
+  background:
+    radial-gradient(circle at 50% 12%, rgba(255, 255, 255, 0.08), transparent 20%),
+    linear-gradient(180deg, #04315a 0%, #02172e 52%, #010b18 100%);
+  border: 1px solid rgba(255, 255, 255, 0.08);
   backdrop-filter: blur(14px);
-  box-shadow: var(--shadow);
+  box-shadow: 0 18px 55px rgba(0, 0, 0, 0.42);
 
-  transform: translateX(-120%);
-  transition: transform 0.25s ease;
   z-index: 50;
-
   display: flex;
   flex-direction: column;
   gap: 14px;
-
   overflow-y: auto;
+  transition: transform 0.25s ease;
+
+  /* começa fechada */
+  transform: translateX(-120%);
 }
 
 body.sidebar-open .sidebar {
@@ -112,13 +107,20 @@ body.sidebar-open .sidebar {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 12px;
+  padding: 10px 8px 4px;
   border-radius: 14px;
+}
+
+.brand__text {
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .brand__name {
   font-size: 16px;
   font-weight: 900;
+  color: #f5f8ff;
 }
 
 .titulo-sidebar {
@@ -126,8 +128,10 @@ body.sidebar-open .sidebar {
   justify-content: center;
   font-size: 11px;
   font-weight: 900;
-  letter-spacing: 0.2px;
+  letter-spacing: 0.3px;
   text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.92);
+  margin-bottom: 2px;
 }
 
 .modulos-sidebar {
@@ -143,38 +147,69 @@ button.cf-btn {
 }
 
 .cards-modulos {
-  display: inline-grid;
-  grid-template-columns: 42px 1fr auto;
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr) auto;
   gap: 12px;
   align-items: center;
 
-  padding: 12px;
+  width: 100%;
+  padding: 10px 14px;
   border-radius: 16px;
-  background: rgba(255, 255, 255, 0.035);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.055),
+    rgba(255, 255, 255, 0.025)
+  );
+  border: 1px solid rgba(255, 255, 255, 0.08);
 
   color: var(--text);
   cursor: pointer;
-  transition: 0.15s ease;
+  transition:
+    background 0.18s ease,
+    border-color 0.18s ease,
+    transform 0.18s ease,
+    box-shadow 0.18s ease;
 
   appearance: none;
   -webkit-appearance: none;
   text-align: left;
-  width: 100%;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
 }
 
 .cards-modulos:hover {
-  background: rgba(0, 140, 255, 0.212);
+  background: linear-gradient(
+    180deg,
+    rgba(18, 90, 160, 0.34),
+    rgba(10, 38, 74, 0.26)
+  );
+  border-color: rgba(255, 255, 255, 0.12);
   transform: translateY(-1px);
 }
 
 .cards-modulos.is-active {
   background: linear-gradient(
     180deg,
-    rgba(78, 204, 163, 0.22),
-    rgba(78, 204, 163, 0.12)
+    rgba(24, 111, 128, 0.5),
+    rgba(10, 68, 76, 0.38)
   );
-  border-color: rgba(78, 204, 163, 0.45);
+  border-color: rgba(65, 208, 202, 0.52);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.04),
+    0 0 0 1px rgba(65, 208, 202, 0.08);
+}
+
+.cards-modulos.is-disabled,
+.cards-modulos[data-disabled="true"],
+.cards-modulos[data-noaccess="true"] {
+  opacity: 0.72;
+}
+
+.cards-modulos[data-disabled="true"] .placeholder-titulo,
+.cards-modulos[data-noaccess="true"] .placeholder-titulo,
+.cards-modulos[data-disabled="true"] .placeholder,
+.cards-modulos[data-noaccess="true"] .placeholder {
+  color: rgba(232, 237, 246, 0.6);
 }
 
 .icone-modulo {
@@ -183,8 +218,15 @@ button.cf-btn {
   border-radius: 14px;
   display: grid;
   place-items: center;
-  background: rgba(255, 255, 255, 0.07);
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  font-size: 16px;
+
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.08),
+    rgba(255, 255, 255, 0.045)
+  );
+  border: 1px solid rgba(255, 255, 255, 0.11);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
 }
 
 .usercard__avatar {
@@ -200,12 +242,18 @@ button.cf-btn {
 
 .plaquinha-de-nome {
   display: grid;
-  justify-content: center;
-  align-items: center;
+  justify-items: start;
+  align-content: center;
+  min-width: 0;
+  text-align: left;
+  gap: 2px;
 }
 
 .placeholder-titulo {
   font-weight: 900;
+  font-size: 15px;
+  line-height: 1.1;
+  color: #f3f6fc;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -213,13 +261,17 @@ button.cf-btn {
 
 .placeholder {
   font-size: 12px;
-  color: var(--muted);
+  line-height: 1.15;
+  color: rgba(232, 237, 246, 0.72);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* status pills */
 .status {
-  min-width: 64px;
-  height: 22px;
+  min-width: 62px;
+  height: 24px;
   padding: 0 10px;
   border-radius: 999px;
 
@@ -227,52 +279,90 @@ button.cf-btn {
   align-items: center;
   justify-content: center;
 
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 900;
-  letter-spacing: 0.5px;
+  letter-spacing: 0.3px;
   text-transform: uppercase;
 
   border: 1px solid transparent;
+  white-space: nowrap;
 }
 
 .status[data-status="online"] {
-  background: rgba(0, 140, 255, 0.25);
-  border-color: rgba(0, 140, 255, 0.45);
+  background: linear-gradient(
+    180deg,
+    rgba(22, 151, 255, 0.48),
+    rgba(12, 112, 199, 0.32)
+  );
+  border-color: rgba(61, 169, 255, 0.48);
   color: #ffffff;
+}
+
+.status[data-status="offline"] {
+  background: rgba(120, 35, 59, 0.2);
+  border-color: rgba(255, 92, 122, 0.35);
+  color: #ff8aa4;
+}
+
+.status[data-status="dev"] {
+  background: rgba(158, 96, 255, 0.16);
+  border-color: rgba(180, 120, 255, 0.34);
+  color: #d7b7ff;
 }
 
 .status[data-status="admin"] {
   background: linear-gradient(
     180deg,
     rgba(78, 204, 163, 0.95),
-    rgba(46, 229, 157, 0.75)
+    rgba(46, 229, 157, 0.76)
   );
   color: #071014;
-  border-color: rgba(78, 204, 163, 0.6);
+  border-color: rgba(78, 204, 163, 0.58);
 }
 
 /* footer */
 .sidebar__footer {
   margin-top: auto;
-  padding-top: 16px;
-}
-
-.usercard-wrap {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.cards-modulos.usercard {
-  flex: 1 1 auto;
+  padding-top: 14px;
   min-width: 0;
 }
 
+.usercard-wrap {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  min-width: 0;
+}
+
+.cards-modulos.usercard {
+  min-width: 0;
+  width: 100%;
+  overflow: hidden;
+  grid-template-columns: 42px minmax(0, 1fr);
+}
+
 .cards-modulos.usercard .plaquinha-de-nome {
-  justify-content: start;
-  align-items: start;
+  justify-items: start;
+  align-content: center;
   text-align: left;
   gap: 2px;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.usercard__info {
+  min-width: 0;
+  overflow: hidden;
+}
+
+.usercard__name,
+.usercard__role {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .btn {
@@ -287,23 +377,25 @@ button.cf-btn {
 
 .btn--sair {
   height: 36px;
-  padding: 0 12px;
+  min-width: 58px;
+  padding: 0 14px;
   border-radius: 12px;
   font-size: 12px;
-  font-weight: 900;
-  background: rgba(255, 107, 107, 0.2);
+  font-weight: 500;
+  background: rgba(255, 107, 107, 0.12);
   border: 1px solid rgba(255, 107, 107, 0.35);
-  color: var(--danger);
+  color: #ff8b8b;
   cursor: pointer;
   white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .btn--sair:hover {
-  background: rgba(255, 107, 107, 0.3);
+  background: rgba(255, 107, 107, 0.2);
 }
 
 /* =========================================================
-   MAIN (layout certo com sidebar)
+   MAIN
 ========================================================= */
 .main {
   height: 100vh;
@@ -313,11 +405,7 @@ button.cf-btn {
   display: flex;
   flex-direction: column;
   gap: 12px;
-}
-
-/* quando abrir sidebar */
-body.sidebar-open .main {
-  margin-left: calc(min(var(--sb-w), calc(100vw - 24px)) + 24px);
+  min-width: 0;
 }
 
 /* =========================================================
@@ -358,7 +446,7 @@ body.sidebar-open .main {
 }
 
 /* =========================================================
-   CARD DO CONTflow
+   CARD DO CONTFLOW
 ========================================================= */
 .cf-card {
   flex: 1;
@@ -393,10 +481,11 @@ body.sidebar-open .main {
   display: flex;
   gap: 10px;
   align-items: center;
+  flex-wrap: wrap;
 }
 
 /* =========================================================
-   BOTÕES DO CONTflow
+   BOTÕES DO CONTFLOW
 ========================================================= */
 .cf-btn {
   background: rgba(255, 255, 255, 0.06);
@@ -428,7 +517,7 @@ body.sidebar-open .main {
 }
 
 /* =========================================================
-   GRID (único scroll)
+   GRID
 ========================================================= */
 .cf-grid-container {
   flex: 1;
@@ -437,7 +526,7 @@ body.sidebar-open .main {
   border-radius: 14px;
   border: 1px solid rgba(255, 255, 255, 0.08);
   background: rgba(2, 6, 23, 0.5);
-  position: relative; /* importante p/ sticky layers */
+  position: relative;
 }
 
 .table-wrapper {
@@ -457,7 +546,6 @@ body.sidebar-open .main {
 .cf-table td {
   border: 1px solid rgba(255, 255, 255, 0.08);
   padding: 6px 8px;
-  font-size: 12px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -465,11 +553,6 @@ body.sidebar-open .main {
   font-family: Arial, Helvetica, sans-serif;
   font-size: 11px;
 }
-
-/* =========================================================
-   STICKY FIX DEFINITIVO (SEM SOBREPOR)
-   Ordem correta: canto > thead > primeira coluna > células
-========================================================= */
 
 /* células normais */
 .cf-table td {
@@ -480,12 +563,12 @@ body.sidebar-open .main {
   caret-color: var(--text);
 }
 
-/* cabeçalho horizontal (acima da coluna de índice) */
+/* cabeçalho horizontal */
 .cf-table thead th {
   position: sticky;
   top: 0;
   z-index: 20;
-  background: rgba(2, 6, 23, 0.98); /* mais opaco */
+  background: rgba(2, 6, 23, 0.98);
   color: rgba(232, 237, 246, 0.75);
   cursor: pointer;
   height: 30px;
@@ -497,7 +580,8 @@ body.sidebar-open .main {
   padding-bottom: 0;
 }
 
-.cf.table tbody td {
+/* células do body */
+.cf-table tbody td {
   height: 30px;
   min-height: 30px;
   max-height: 30px;
@@ -507,7 +591,7 @@ body.sidebar-open .main {
   padding-bottom: 0;
 }
 
-/* coluna index sticky (abaixo do thead) */
+/* coluna index sticky */
 .cf-row-index {
   height: 20px;
   line-height: 20px;
@@ -524,7 +608,7 @@ body.sidebar-open .main {
   user-select: none;
 }
 
-/* canto (#) — topo absoluto */
+/* canto (#) */
 #cf-corner-select {
   position: sticky;
   top: 0;
@@ -633,12 +717,83 @@ body.sidebar-open .main {
 /* =========================================================
    RESPONSIVO
 ========================================================= */
+@media (max-width: 980px) {
+  .sidebar {
+    transform: translateX(-120%);
+  }
+
+  body.sidebar-open .sidebar {
+    transform: translateX(0);
+  }
+
+  .main {
+    margin-left: 0;
+  }
+}
+
 @media (max-width: 640px) {
+  .sidebar {
+    top: 6px;
+    left: 6px;
+    width: calc(100vw - 12px);
+    height: calc(100vh - 12px);
+    padding: 16px 14px 12px;
+    border-radius: 16px;
+  }
+
+  .cards-modulos {
+    grid-template-columns: 44px minmax(0, 1fr) auto;
+    gap: 10px;
+    padding: 10px 12px;
+  }
+
+  .icone-modulo {
+    width: 38px;
+    height: 38px;
+    border-radius: 12px;
+    font-size: 15px;
+  }
+
+  .placeholder-titulo {
+    font-size: 14px;
+  }
+
+  .placeholder {
+    font-size: 11px;
+  }
+
+  .status {
+    min-width: 56px;
+    height: 22px;
+    padding: 0 8px;
+    font-size: 10px;
+  }
+
   .usercard-wrap {
-    flex-direction: column;
+    grid-template-columns: 1fr;
     align-items: stretch;
   }
+
+  .cards-modulos.usercard {
+    width: 100%;
+  }
+
   .btn--sair {
     width: 100%;
+    min-width: 0;
+  }
+
+  .topbar {
+    grid-template-columns: 42px 1fr;
+  }
+
+  .cf-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .cf-actions {
+    width: 100%;
+    flex-wrap: wrap;
   }
 }
