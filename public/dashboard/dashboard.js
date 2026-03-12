@@ -28,6 +28,13 @@
   const DEFAULT_MANUAL = ["", "", "", ""];
   const DEFAULT_CHECKS = [false, false, false, false, false, false];
 
+  const STATUS_LABEL = {
+    online: "ONLINE",
+    dev: "DEV",
+    offline: "OFFLINE",
+    admin: "ADMIN",
+  };
+
   // ----------------------------
   // HELPERS
   // ----------------------------
@@ -92,16 +99,22 @@
   }
 
   async function apiFetch(path, options = {}) {
+    const {
+      redirectOn401 = false,
+      headers = {},
+      ...rest
+    } = options || {};
+
     const resp = await fetch(path, {
       credentials: "include",
       headers: {
         Accept: "application/json",
-        ...(options.headers || {}),
+        ...headers,
       },
-      ...options,
+      ...rest,
     });
 
-    if (resp.status === 401) {
+    if (resp.status === 401 && redirectOn401) {
       goto("../login/login.html");
       return null;
     }
@@ -114,7 +127,11 @@
   // ----------------------------
   async function requireAuthOrRedirect() {
     try {
-      const resp = await apiFetch("/api/auth/me", { method: "GET" });
+      const resp = await apiFetch("/api/auth/me", {
+        method: "GET",
+        redirectOn401: true,
+      });
+
       if (!resp || !resp.ok) {
         goto("../login/login.html");
         return null;
@@ -171,6 +188,95 @@
       MODULES_MAP = {};
       return MODULES_MAP;
     }
+  }
+
+  function getSidebarCards() {
+    return Array.from(
+      document.querySelectorAll(".modulos-sidebar .cards-modulos[data-module-id]")
+    );
+  }
+
+  function getShortcutCards() {
+    return Array.from(
+      document.querySelectorAll("[data-module-id]")
+    ).filter((el) => !el.closest(".modulos-sidebar"));
+  }
+
+  function ensureStatusSpan(btn) {
+    let pill = btn.querySelector("[data-status]") || btn.querySelector(".status");
+    if (!pill) return null;
+
+    if (!pill.getAttribute("data-status")) {
+      const txt = String(pill.textContent || "").trim().toLowerCase();
+      pill.setAttribute("data-status", txt === "admin" ? "admin" : "online");
+    }
+
+    return pill;
+  }
+
+  function applyStatusToCard(card, moduleId, status) {
+    if (!card || !moduleId) return;
+
+    const finalStatus = moduleId === "contadmin" ? "admin" : status || "online";
+    const pill = ensureStatusSpan(card);
+    if (!pill) return;
+
+    pill.setAttribute("data-status", finalStatus);
+    pill.textContent = STATUS_LABEL[finalStatus] || "ONLINE";
+
+    const isOffline = finalStatus === "offline";
+    const noAccess = card.getAttribute("data-noaccess") === "true";
+
+    card.setAttribute("data-disabled", isOffline ? "true" : "false");
+
+    if (isOffline || noAccess) {
+      card.classList.add("is-disabled");
+    } else {
+      card.classList.remove("is-disabled");
+    }
+  }
+
+  function syncSidebarFromStore() {
+    const store = MODULES_MAP || {};
+
+    getSidebarCards().forEach((btn) => {
+      const moduleId = String(btn.dataset.moduleId || "").trim().toLowerCase();
+      if (!moduleId) return;
+
+      const def = moduleId === "contadmin" ? "admin" : "online";
+      applyStatusToCard(btn, moduleId, store[moduleId] || def);
+    });
+  }
+
+  function syncShortcutsFromStore() {
+    const store = MODULES_MAP || {};
+
+    getShortcutCards().forEach((btn) => {
+      const moduleId = String(btn.dataset.moduleId || "").trim().toLowerCase();
+      if (!moduleId) return;
+
+      const def = moduleId === "contadmin" ? "admin" : "online";
+      applyStatusToCard(btn, moduleId, store[moduleId] || def);
+    });
+  }
+
+  function applyRoleToSidebar() {
+    const u = getSessionUser();
+    const role = String(u?.role || "user").toLowerCase();
+
+    getSidebarCards().forEach((card) => {
+      const moduleId = String(card.dataset.moduleId || "").trim().toLowerCase();
+      if (!moduleId) return;
+
+      const blocked = role === "user" && moduleId === "contadmin";
+      card.setAttribute("data-noaccess", blocked ? "true" : "false");
+
+      if (blocked) {
+        card.classList.add("is-disabled");
+      } else if (card.getAttribute("data-disabled") !== "true") {
+        card.classList.remove("is-disabled");
+      }
+    });
   }
 
   // ----------------------------
@@ -554,6 +660,7 @@
   function fillModulesStats() {
     const store = MODULES_MAP || {};
     const moduleIds = [
+      "dashboard",
       "contflow",
       "contanalytics",
       "contdocs",
@@ -586,8 +693,32 @@
   function bindGotoButtons() {
     document.querySelectorAll("[data-goto]").forEach((btn) => {
       btn.addEventListener("click", () => {
+        const disabled = btn.getAttribute("data-disabled") === "true";
+        const noAccess = btn.getAttribute("data-noaccess") === "true";
+
+        if (disabled || noAccess) return;
+
         const url = btn.getAttribute("data-goto");
         goto(url);
+      });
+    });
+
+    getSidebarCards().forEach((button) => {
+      if (button.__navBound) return;
+      button.__navBound = true;
+
+      button.addEventListener("click", (e) => {
+        const disabled = button.getAttribute("data-disabled") === "true";
+        const noAccess = button.getAttribute("data-noaccess") === "true";
+
+        if (disabled || noAccess) {
+          e.preventDefault();
+          e.stopPropagation();
+          return;
+        }
+
+        const src = button.dataset.src;
+        if (src) goto(src);
       });
     });
   }
@@ -637,96 +768,96 @@
   }
 
   async function renderNextActions() {
-  const el = document.getElementById("nextActionsList");
-  if (!el) return;
+    const el = document.getElementById("nextActionsList");
+    if (!el) return;
 
-  const state = await getNextActionsState();
+    const state = await getNextActionsState();
 
-  el.innerHTML = "";
+    el.innerHTML = "";
 
-  for (let i = 0; i < 6; i++) {
-    const text = String(state.manual[i] || "").trim();
-    const checked = Boolean(state.checks[i]);
+    for (let i = 0; i < 6; i++) {
+      const text = String(state.manual[i] || "").trim();
+      const checked = Boolean(state.checks[i]);
 
-    const row = document.createElement("div");
-    row.className = "todo__row" + (checked ? " is-done" : "");
-    row.dataset.index = String(i);
+      const row = document.createElement("div");
+      row.className = "todo__row" + (checked ? " is-done" : "");
+      row.dataset.index = String(i);
 
-    row.innerHTML = `
-      <input type="checkbox" data-check="${i}" ${checked ? "checked" : ""} />
-      <input
-        class="todo__text ${text ? "" : "is-empty"}"
-        type="text"
-        value="${escapeHTML(text)}"
-        placeholder="Clique aqui para anotar…"
-        data-edit="${i}"
-        maxlength="220"
-      />
-      <button class="todo__del" type="button" title="Apagar" aria-label="Apagar" data-del="${i}">
-        🗑
-      </button>
-    `;
+      row.innerHTML = `
+        <input type="checkbox" data-check="${i}" ${checked ? "checked" : ""} />
+        <input
+          class="todo__text ${text ? "" : "is-empty"}"
+          type="text"
+          value="${escapeHTML(text)}"
+          placeholder="Clique aqui para anotar…"
+          data-edit="${i}"
+          maxlength="220"
+        />
+        <button class="todo__del" type="button" title="Apagar" aria-label="Apagar" data-del="${i}">
+          🗑
+        </button>
+      `;
 
-    el.appendChild(row);
-  }
-
-  el.onclick = async (e) => {
-    const delBtn = e.target.closest("[data-del]");
-    if (delBtn) {
-      const i = Number(delBtn.getAttribute("data-del"));
-      if (!Number.isFinite(i) || i < 0 || i > 5) return;
-
-      const st = await getNextActionsState();
-      st.manual[i] = "";
-      st.checks[i] = false;
-      await saveNextActionsState(st);
-      await renderNextActions();
-      return;
+      el.appendChild(row);
     }
-  };
 
-  el.onchange = async (e) => {
-    const chk = e.target.closest("[data-check]");
-    if (chk) {
-      const i = Number(chk.getAttribute("data-check"));
-      if (!Number.isFinite(i) || i < 0 || i > 5) return;
+    el.onclick = async (e) => {
+      const delBtn = e.target.closest("[data-del]");
+      if (delBtn) {
+        const i = Number(delBtn.getAttribute("data-del"));
+        if (!Number.isFinite(i) || i < 0 || i > 5) return;
 
-      const st = await getNextActionsState();
-      st.checks[i] = Boolean(chk.checked);
-      await saveNextActionsState(st);
-      await renderNextActions();
-      return;
-    }
-  };
-
-  el.querySelectorAll("[data-edit]").forEach((input) => {
-    const idx = Number(input.getAttribute("data-edit"));
-    if (!Number.isFinite(idx)) return;
-
-    input.addEventListener("focus", () => {
-      input.classList.remove("is-empty");
-    });
-
-    input.addEventListener("blur", async () => {
-      const st = await getNextActionsState();
-      st.manual[idx] = String(input.value || "").trim().slice(0, 220);
-      await saveNextActionsState(st);
-      input.classList.toggle("is-empty", !st.manual[idx]);
-    });
-
-    input.addEventListener("keydown", async (e) => {
-      if (e.key === "Enter") {
-        e.preventDefault();
-        input.blur();
+        const st = await getNextActionsState();
+        st.manual[i] = "";
+        st.checks[i] = false;
+        await saveNextActionsState(st);
+        await renderNextActions();
+        return;
       }
+    };
+
+    el.onchange = async (e) => {
+      const chk = e.target.closest("[data-check]");
+      if (chk) {
+        const i = Number(chk.getAttribute("data-check"));
+        if (!Number.isFinite(i) || i < 0 || i > 5) return;
+
+        const st = await getNextActionsState();
+        st.checks[i] = Boolean(chk.checked);
+        await saveNextActionsState(st);
+        await renderNextActions();
+        return;
+      }
+    };
+
+    el.querySelectorAll("[data-edit]").forEach((input) => {
+      const idx = Number(input.getAttribute("data-edit"));
+      if (!Number.isFinite(idx)) return;
+
+      input.addEventListener("focus", () => {
+        input.classList.remove("is-empty");
+      });
+
+      input.addEventListener("blur", async () => {
+        const st = await getNextActionsState();
+        st.manual[idx] = String(input.value || "").trim().slice(0, 220);
+        await saveNextActionsState(st);
+        input.classList.toggle("is-empty", !st.manual[idx]);
+      });
+
+      input.addEventListener("keydown", async (e) => {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          input.blur();
+        }
+      });
+
+      input.classList.toggle("is-empty", !String(input.value || "").trim());
     });
 
-    input.classList.toggle("is-empty", !String(input.value || "").trim());
-  });
-
-  bindAddResetButtons();
-  bindClearChecks();
-}
+    bindAddResetButtons();
+    bindClearChecks();
+  }
 
   function bindAddResetButtons() {
     const btnAdd = document.getElementById("btnAddNextAction");
@@ -810,6 +941,9 @@
     await loadModulesMap();
 
     fillHeroUser();
+    syncSidebarFromStore();
+    syncShortcutsFromStore();
+    applyRoleToSidebar();
     fillModulesStats();
     bindGotoButtons();
 

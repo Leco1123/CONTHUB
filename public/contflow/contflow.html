@@ -6,7 +6,7 @@
     <title>ContFlow • ContHub</title>
 
     <!-- XLSX (import/export) -->
-     <script src="/libs/xlsx.full.min.js"></script>
+    <script src="/libs/xlsx.full.min.js"></script>
 
     <link rel="stylesheet" href="./contflow.css" />
   </head>
@@ -164,7 +164,6 @@
 
       <!-- MAIN -->
       <main class="main">
-        <!-- TOPBAR (cabeçalho do app) -->
         <header class="topbar">
           <button id="menuBtn" class="iconbtn" type="button" aria-label="Abrir menu">☰</button>
 
@@ -174,13 +173,13 @@
           </div>
         </header>
 
-        <!-- CONTEÚDO DO CONTflow -->
         <section class="cf-card">
           <header class="cf-header">
             <h2>ContFlow</h2>
 
             <div class="cf-actions">
-              <button id="cf-base-btn" class="cf-btn">Base</button>
+              <button id="cf-save-cells" class="cf-btn" type="button">🧩 Salvar células</button>
+              <button id="cf-base-btn" class="cf-btn" type="button">Base</button>
               <span id="cf-status-bar" class="muted">Linhas: 0 · Selecionadas: 0 x 0</span>
             </div>
           </header>
@@ -209,8 +208,6 @@
                 <thead>
                   <tr>
                     <th id="cf-corner-select">#</th>
-
-                    <!-- ✅ agora com class + data-col-index (pra seleção por coluna funcionar) -->
                     <th class="cf-col-header" data-col-index="0">Cód.</th>
                     <th class="cf-col-header" data-col-index="1">Razão Social</th>
                     <th class="cf-col-header" data-col-index="2">CNPJ/CPF</th>
@@ -259,6 +256,7 @@
         <button id="cf-export-xlsx" class="cf-btn" type="button">⬇ Exportar XLSX</button>
 
         <button id="cf-save-base" class="cf-btn" type="button">💾 Salvar base</button>
+
         <button id="cf-delete-selected" class="cf-btn cf-btn--danger" type="button">
           🗑 Excluir seleção
         </button>

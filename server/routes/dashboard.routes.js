@@ -3,12 +3,39 @@ const express = require("express");
 const router = express.Router();
 const db = require("../db");
 
-// helper: garante userId
+// ===================================================
+// HELPERS
+// ===================================================
+
+/**
+ * Como o app já usa requireAuth no mount:
+ * app.use("/api/dashboard", requireAuth, dashboardRoutes)
+ *
+ * aqui basta extrair o id com segurança.
+ * Aceita:
+ * - number
+ * - string numérica ("1")
+ * - string id (uuid/cuid/etc), caso o schema use string
+ */
 function getUserId(req) {
-  const id = req?.session?.user?.id;
-  const userId = Number(id);
-  if (!Number.isFinite(userId) || userId <= 0) return null;
-  return userId;
+  const rawId = req?.session?.user?.id;
+
+  if (rawId === null || rawId === undefined) {
+    return null;
+  }
+
+  if (typeof rawId === "number" && Number.isFinite(rawId)) {
+    return rawId;
+  }
+
+  const asString = String(rawId).trim();
+  if (!asString) return null;
+
+  if (/^\d+$/.test(asString)) {
+    return Number(asString);
+  }
+
+  return asString;
 }
 
 // helper: normaliza arrays fixos
@@ -16,21 +43,24 @@ function normalizeManual(arr) {
   const out = Array.isArray(arr)
     ? arr.slice(0, 4).map((x) => String(x ?? "").slice(0, 220))
     : ["", "", "", ""];
+
   while (out.length < 4) out.push("");
   return out;
 }
+
 function normalizeChecks(arr) {
   const out = Array.isArray(arr)
     ? arr.slice(0, 4).map((x) => Boolean(x))
     : [false, false, false, false];
+
   while (out.length < 4) out.push(false);
   return out;
 }
 
-// ================================
-// NEXT ACTIONS (Dashboard)
-// ✅ GET/PUT no formato do front: { manual: [4], checks: [4] }
-// ================================
+// ===================================================
+// NEXT ACTIONS
+// GET/PUT no formato do front: { manual: [4], checks: [4] }
+// ===================================================
 
 /**
  * GET /api/dashboard/next-actions
@@ -39,7 +69,9 @@ function normalizeChecks(arr) {
 router.get("/next-actions", async (req, res) => {
   try {
     const userId = getUserId(req);
-    if (!userId) return res.status(401).json({ error: "Não autenticado." });
+    if (userId === null) {
+      return res.status(401).json({ error: "Não autenticado." });
+    }
 
     const rows = await db.dashboardNextAction.findMany({
       where: { userId },
@@ -67,12 +99,13 @@ router.get("/next-actions", async (req, res) => {
 /**
  * PUT /api/dashboard/next-actions
  * Body: { manual: string[4], checks: boolean[4] }
- * Salva tudo de uma vez
  */
 router.put("/next-actions", async (req, res) => {
   try {
     const userId = getUserId(req);
-    if (!userId) return res.status(401).json({ error: "Não autenticado." });
+    if (userId === null) {
+      return res.status(401).json({ error: "Não autenticado." });
+    }
 
     const manual = normalizeManual(req.body?.manual);
     const checks = normalizeChecks(req.body?.checks);
@@ -82,13 +115,22 @@ router.put("/next-actions", async (req, res) => {
       ops.push(
         db.dashboardNextAction.upsert({
           where: { userId_position: { userId, position } },
-          update: { text: manual[position], done: checks[position] },
-          create: { userId, position, text: manual[position], done: checks[position] },
+          update: {
+            text: manual[position],
+            done: checks[position],
+          },
+          create: {
+            userId,
+            position,
+            text: manual[position],
+            done: checks[position],
+          },
         })
       );
     }
 
     await db.$transaction(ops);
+
     return res.json({ manual, checks });
   } catch (err) {
     console.error("Erro ao salvar next-actions:", err);
@@ -98,14 +140,18 @@ router.put("/next-actions", async (req, res) => {
 
 /**
  * POST /api/dashboard/next-actions/reset
- * (Opcional)
  */
 router.post("/next-actions/reset", async (req, res) => {
   try {
     const userId = getUserId(req);
-    if (!userId) return res.status(401).json({ error: "Não autenticado." });
+    if (userId === null) {
+      return res.status(401).json({ error: "Não autenticado." });
+    }
 
-    await db.dashboardNextAction.deleteMany({ where: { userId } });
+    await db.dashboardNextAction.deleteMany({
+      where: { userId },
+    });
+
     return res.json({ success: true });
   } catch (err) {
     console.error("Erro ao resetar ações:", err);
@@ -113,10 +159,10 @@ router.post("/next-actions/reset", async (req, res) => {
   }
 });
 
-// ================================
-// CONTFLOW SNAPSHOT (Dashboard)
-// ✅ GET/PUT
-// ================================
+// ===================================================
+// CONTFLOW SNAPSHOT
+// GET/PUT
+// ===================================================
 
 /**
  * GET /api/dashboard/contflow-snapshot
@@ -125,13 +171,17 @@ router.post("/next-actions/reset", async (req, res) => {
 router.get("/contflow-snapshot", async (req, res) => {
   try {
     const userId = getUserId(req);
-    if (!userId) return res.status(401).json({ error: "Não autenticado." });
+    if (userId === null) {
+      return res.status(401).json({ error: "Não autenticado." });
+    }
 
     const snap = await db.contflowDashboardSnapshot.findUnique({
       where: { userId },
     });
 
-    if (!snap) return res.json(null);
+    if (!snap) {
+      return res.json(null);
+    }
 
     return res.json({
       ts: snap.ts ? snap.ts.toISOString() : null,
@@ -151,7 +201,9 @@ router.get("/contflow-snapshot", async (req, res) => {
 router.put("/contflow-snapshot", async (req, res) => {
   try {
     const userId = getUserId(req);
-    if (!userId) return res.status(401).json({ error: "Não autenticado." });
+    if (userId === null) {
+      return res.status(401).json({ error: "Não autenticado." });
+    }
 
     const ts = req.body?.ts ? new Date(req.body.ts) : new Date();
     const count = Number(req.body?.count ?? 0);
@@ -173,7 +225,7 @@ router.put("/contflow-snapshot", async (req, res) => {
     });
 
     return res.json({
-      ts: saved.ts.toISOString(),
+      ts: saved.ts ? saved.ts.toISOString() : null,
       count: saved.count ?? 0,
       data: Array.isArray(saved.data) ? saved.data : [],
     });
@@ -183,31 +235,31 @@ router.put("/contflow-snapshot", async (req, res) => {
   }
 });
 
-// ================================
-// CONTFLOW FEED (Dashboard)
-// ✅ GET/POST
-// ⚠️ Ajustado pro seu schema.prisma:
-// ContflowFeed: title, description, createdById, createdAt, sheetId
-// ================================
+// ===================================================
+// CONTFLOW FEED
+// GET/POST
+// ===================================================
 
 /**
  * GET /api/dashboard/contflow-feed
- * Retorna itens do feed do usuário (máx 12) no formato {ts,title,desc}
+ * Retorna itens no formato { ts, title, desc }
  */
 router.get("/contflow-feed", async (req, res) => {
   try {
     const userId = getUserId(req);
-    if (!userId) return res.status(401).json({ error: "Não autenticado." });
+    if (userId === null) {
+      return res.status(401).json({ error: "Não autenticado." });
+    }
 
     const items = await db.contflowFeed.findMany({
-      where: { createdById: userId }, // ✅ feed por usuário (pelo criador)
+      where: { createdById: userId },
       orderBy: { createdAt: "desc" },
       take: 12,
     });
 
     return res.json(
       items.map((x) => ({
-        ts: x.createdAt.toISOString(), // ✅ teu schema tem createdAt
+        ts: x.createdAt ? x.createdAt.toISOString() : null,
         title: x.title ?? "Atualização",
         desc: x.description ?? "",
       }))
@@ -225,13 +277,17 @@ router.get("/contflow-feed", async (req, res) => {
 router.post("/contflow-feed", async (req, res) => {
   try {
     const userId = getUserId(req);
-    if (!userId) return res.status(401).json({ error: "Não autenticado." });
+    if (userId === null) {
+      return res.status(401).json({ error: "Não autenticado." });
+    }
 
     const title = String(req.body?.title ?? "").trim();
     const desc = String(req.body?.desc ?? "").trim();
     const sheetIdRaw = req.body?.sheetId;
 
-    if (!title) return res.status(400).json({ error: "title obrigatório" });
+    if (!title) {
+      return res.status(400).json({ error: "title obrigatório" });
+    }
 
     const sheetId =
       sheetIdRaw === null || sheetIdRaw === undefined
@@ -248,7 +304,7 @@ router.post("/contflow-feed", async (req, res) => {
     });
 
     return res.json({
-      ts: created.createdAt.toISOString(),
+      ts: created.createdAt ? created.createdAt.toISOString() : null,
       title: created.title,
       desc: created.description ?? "",
     });
