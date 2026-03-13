@@ -1,71 +1,230 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>ContConfig - Em Desenvolvimento</title>
-  <link rel="stylesheet" href="/public/contconfig/contconfig.css" />
-</head>
-<body>
-  <div class="bg-orb orb-1"></div>
-  <div class="bg-orb orb-2"></div>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ContHub • ContConfig</title>
+    <link rel="stylesheet" href="./contconfig.css" />
+  </head>
 
-  <main class="dev-page">
-    <section class="dev-card">
-      <div class="top-badge">EM DESENVOLVIMENTO</div>
+  <body>
+    <div
+      class="app"
+      id="app"
+      data-current-module="contconfig"
+      data-module-title="ContConfig"
+      data-module-subtitle="Parâmetros e configurações gerais."
+    >
+      <div class="overlay" id="overlay" aria-hidden="true"></div>
 
-      <div class="robot-wrap">
-        <div class="robot" id="robot">
-          <div class="robot-antenna"></div>
-          <div class="robot-head">
-            <span class="eye eye-left"></span>
-            <span class="eye eye-right"></span>
-            <span class="mouth"></span>
-          </div>
-          <div class="robot-body">
-            <span class="bot-dot dot-1"></span>
-            <span class="bot-dot dot-2"></span>
-            <span class="bot-dot dot-3"></span>
+      <aside class="sidebar" id="sidebar" aria-label="Menu lateral de módulos">
+        <div class="sidebar__brand">
+          <div class="brand__text">
+            <div class="brand__name">ContHub</div>
           </div>
         </div>
-      </div>
 
-      <div class="panel-label">ContConfig/div>
+        <div class="titulo-sidebar">MÓDULOS DO CONTHUB</div>
 
-      <h1 class="title">Módulo em construção</h1>
+        <nav class="modulos-sidebar">
+          <button
+            class="cards-modulos"
+            type="button"
+            data-module-id="dashboard"
+            data-title="Dashboard"
+            data-src="../dashboard/dashboard.html"
+            data-subtitle="Visão geral do ContHub."
+          >
+            <span class="icone-modulo">🏠</span>
+            <span class="plaquinha-de-nome">
+              <span class="placeholder-titulo">Dashboard</span>
+              <span class="placeholder">Visão geral</span>
+            </span>
+            <span class="status" data-status="online">ONLINE</span>
+          </button>
 
-      <p class="subtitle">
-        Estamos preparando esta área do painel para receber novas funcionalidades,
-        melhorias visuais e recursos adicionais.
-      </p>
+          <button
+            class="cards-modulos"
+            type="button"
+            data-module-id="contflow"
+            data-title="ContFlow"
+            data-src="../contflow/contflow.html"
+            data-subtitle="Controle de rotinas e fluxo contábil."
+          >
+            <span class="icone-modulo">⚡</span>
+            <span class="plaquinha-de-nome">
+              <span class="placeholder-titulo">ContFlow</span>
+              <span class="placeholder">Rotinas e fluxo</span>
+            </span>
+            <span class="status" data-status="online">ONLINE</span>
+          </button>
 
-      <p class="highlight-text">
-        Mudanças e novidades em breve.
-      </p>
+          <button
+            class="cards-modulos"
+            type="button"
+            data-module-id="contanalytics"
+            data-title="ContAnalytics"
+            data-src="../contanalytics/contanalytics.html"
+            data-subtitle="KPIs, indicadores e painéis de análise."
+          >
+            <span class="icone-modulo">📊</span>
+            <span class="plaquinha-de-nome">
+              <span class="placeholder-titulo">ContAnalytics</span>
+              <span class="placeholder">KPIs e painel</span>
+            </span>
+            <span class="status" data-status="online">ONLINE</span>
+          </button>
 
-      <div class="status-row">
-        <div class="status-pill">
-          <span class="status-dot"></span>
-          Atualizações em andamento
+          <button
+            class="cards-modulos"
+            type="button"
+            data-module-id="contdocs"
+            data-title="ContDocs"
+            data-src="../contdocs/contdocs.html"
+            data-subtitle="Centralização e gestão de documentos."
+          >
+            <span class="icone-modulo">📁</span>
+            <span class="plaquinha-de-nome">
+              <span class="placeholder-titulo">ContDocs</span>
+              <span class="placeholder">Documentos</span>
+            </span>
+            <span class="status" data-status="online">ONLINE</span>
+          </button>
+
+          <button
+            class="cards-modulos"
+            type="button"
+            data-module-id="contrels"
+            data-title="ContRelatórios"
+            data-src="../contrelatorios/contrelatorios.html"
+            data-subtitle="Geração de relatórios e exportações."
+          >
+            <span class="icone-modulo">📈</span>
+            <span class="plaquinha-de-nome">
+              <span class="placeholder-titulo">ContRelatórios</span>
+              <span class="placeholder">Exportações</span>
+            </span>
+            <span class="status" data-status="online">ONLINE</span>
+          </button>
+
+          <button
+            class="cards-modulos"
+            type="button"
+            data-module-id="contconfig"
+            data-title="ContConfig"
+            data-src="../contconfig/contconfig.html"
+            data-subtitle="Parâmetros e configurações gerais."
+          >
+            <span class="icone-modulo">⚙️</span>
+            <span class="plaquinha-de-nome">
+              <span class="placeholder-titulo">ContConfig</span>
+              <span class="placeholder">Parâmetros</span>
+            </span>
+            <span class="status" data-status="online">ONLINE</span>
+          </button>
+
+          <button
+            class="cards-modulos"
+            type="button"
+            data-module-id="contadmin"
+            data-title="ContAdmin Hub"
+            data-src="../contadmin/contadmin.html"
+            data-subtitle="Área administrativa e de controle total."
+          >
+            <span class="icone-modulo">🛡️</span>
+            <span class="plaquinha-de-nome">
+              <span class="placeholder-titulo">ContAdmin Hub</span>
+              <span class="placeholder">Acesso total</span>
+            </span>
+            <span class="status" data-status="admin">ADMIN</span>
+          </button>
+        </nav>
+
+        <div class="sidebar__footer">
+          <div class="usercard-wrap">
+            <button
+              class="cards-modulos usercard"
+              type="button"
+              data-usercard
+              aria-label="Abrir perfil do usuário"
+            >
+              <span class="icone-modulo usercard__avatar" data-user-avatar>U</span>
+
+              <span class="plaquinha-de-nome usercard__info">
+                <span class="placeholder-titulo usercard__name" data-user-name>Usuário</span>
+                <span class="placeholder usercard__role muted" data-user-role>USER</span>
+              </span>
+            </button>
+
+            <button
+              class="btn btn--sair"
+              type="button"
+              data-logout
+              aria-label="Sair do ContHub"
+            >
+              Sair
+            </button>
+          </div>
         </div>
+      </aside>
 
-        <div class="mini-loader" aria-hidden="true">
-          <span></span>
-          <span></span>
-          <span></span>
-        </div>
-      </div>
+      <main class="main">
+        <header class="topbar">
+          <button id="menuBtn" class="iconbtn" type="button" aria-label="Abrir menu">☰</button>
+          <div class="topbar__title">
+            <h1 id="pageTitle">ContConfig</h1>
+            <p id="pageSubtitle" class="muted">Parâmetros e configurações gerais.</p>
+          </div>
+        </header>
 
-      <button class="ghost-btn" type="button" id="notifyBtn">
-        Acompanhar novidades
-      </button>
+        <section class="dev-shell">
+          <div class="dev-card">
+            <div class="dev-badge">Em desenvolvimento</div>
 
-      <p class="footer-note" id="footerMessage">
-        Esta tela ainda não está disponível para uso.
-      </p>
-    </section>
-  </main>
+            <div class="robot-wrap">
+              <div class="robot" id="robot">
+                <div class="robot-antenna"></div>
 
-  <script src="/public/contconfig/contconfig.js"></script>
-</body>
+                <div class="robot-head">
+                  <span class="eye eye-left"></span>
+                  <span class="eye eye-right"></span>
+                  <span class="mouth"></span>
+                </div>
+
+                <div class="robot-body">
+                  <span class="bot-dot dot-1"></span>
+                  <span class="bot-dot dot-2"></span>
+                  <span class="bot-dot dot-3"></span>
+                </div>
+              </div>
+            </div>
+
+            <div class="dev-module-name" id="devModuleName">ContConfig</div>
+
+            <h2 class="dev-title" id="devTitle">
+              ContConfig em desenvolvimento
+            </h2>
+
+            <p class="dev-subtitle" id="devSubtitle">
+              Estamos preparando este módulo para receber novas funcionalidades,
+              melhorias visuais e recursos adicionais.
+            </p>
+
+            <div class="dev-highlight">Mudanças e novidades em breve.</div>
+
+            <div class="dev-meta">
+              <span class="dev-dot"></span>
+              Atualizações em andamento
+            </div>
+
+            <p class="dev-footer-note">
+              Esta área do painel ainda não está disponível para uso completo.
+            </p>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <script src="./contconfig.js"></script>
+  </body>
 </html>
