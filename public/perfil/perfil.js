@@ -6,30 +6,19 @@
 // ✅ Busca logs do backend (GET /api/admin/users/:id/logs)
 // ✅ Fallback de logs locais apenas para visualização
 // ✅ Renderiza módulos usando status do banco (/api/admin/modules)
-// ---------------------------------------------------------
 
 (function () {
-  // ==============================
-  // CONFIG
-  // ==============================
   const LOGIN_PAGE_URL = "../login/login.html";
   const API_BASE = "";
   const API_USERS = `${API_BASE}/api/admin/users`;
   const API_MODULES = `${API_BASE}/api/admin/modules`;
   const API_USER_LOGS = (id) => `${API_USERS}/${id}/logs?limit=50`;
 
-  // fallback local apenas para logs
   const LOGS_KEY = "conthub_user_logs";
 
-  // ==============================
-  // STATE
-  // ==============================
   let AUTH_USER = null;
   let MODULES_MAP = {};
 
-  // ==============================
-  // DOM
-  // ==============================
   const elAvatar = document.getElementById("avatar");
   const elNome = document.getElementById("nome");
   const elEmail = document.getElementById("email");
@@ -47,9 +36,6 @@
   const btnVoltar = document.getElementById("btnVoltar");
   const btnSair = document.getElementById("btnSair");
 
-  // ==============================
-  // Helpers
-  // ==============================
   function readJSON(key, fallback) {
     try {
       const raw = localStorage.getItem(key);
@@ -140,9 +126,17 @@
     return "online";
   }
 
-  // ==============================
-  // API helper
-  // ==============================
+  function getSessionUserId(user) {
+    if (!user || typeof user !== "object") return null;
+
+    if (user.id != null && String(user.id).trim() !== "") {
+      const n = Number(user.id);
+      if (Number.isFinite(n) && n > 0) return n;
+    }
+
+    return null;
+  }
+
   async function fetchJson(url, opts = {}) {
     const session = getSessionUser();
 
@@ -241,9 +235,6 @@
     }
   }
 
-  // ==============================
-  // Modules (catálogo + status)
-  // ==============================
   const MODULE_CATALOG = [
     { id: "dashboard", name: "Dashboard", desc: "Visão geral do ContHub.", icon: "🏠" },
     { id: "contflow", name: "ContFlow", desc: "Controle de rotinas e fluxo contábil.", icon: "⚡" },
@@ -267,15 +258,14 @@
     return moduleId !== "contadmin";
   }
 
-  // ==============================
-  // Logs (LOCAL fallback)
-  // ==============================
   function pushLocalLog(userId, message) {
+    const safeKey = String(userId || "anon");
     const logsAll = readJSON(LOGS_KEY, {});
-    if (!Array.isArray(logsAll[userId])) logsAll[userId] = [];
 
-    logsAll[userId].unshift({ message, at: nowISO() });
-    logsAll[userId] = logsAll[userId].slice(0, 15);
+    if (!Array.isArray(logsAll[safeKey])) logsAll[safeKey] = [];
+
+    logsAll[safeKey].unshift({ message, at: nowISO() });
+    logsAll[safeKey] = logsAll[safeKey].slice(0, 15);
 
     writeJSON(LOGS_KEY, logsAll);
   }
@@ -283,8 +273,9 @@
   function renderLogsLocal(userId) {
     if (!elLogsList) return;
 
+    const safeKey = String(userId || "anon");
     const logsAll = readJSON(LOGS_KEY, {});
-    const list = Array.isArray(logsAll[userId]) ? logsAll[userId] : [];
+    const list = Array.isArray(logsAll[safeKey]) ? logsAll[safeKey] : [];
 
     if (!list.length) {
       elLogsList.innerHTML = `<div class="muted" style="font-size:12px;">Sem atividade registrada ainda.</div>`;
@@ -303,9 +294,6 @@
       .join("");
   }
 
-  // ==============================
-  // Logs (BACKEND)
-  // ==============================
   function normalizeLogLine(x) {
     const when = x.createdAt || x.timestamp || x.at || x.date || null;
     const action = x.action || x.event || x.type || "LOG";
@@ -322,7 +310,7 @@
   }
 
   async function loadLogsBackend(userId) {
-    if (!elLogsList) return;
+    if (!elLogsList || !userId) return;
 
     const old = elLogsList.innerHTML;
     elLogsList.innerHTML =
@@ -356,13 +344,10 @@
         .join("");
     } catch (err) {
       console.warn("Logs backend indisponíveis:", err?.message || err);
-      if (!old) renderLogsLocal(String(userId));
+      if (!old) renderLogsLocal(String(userId || "anon"));
     }
   }
 
-  // ==============================
-  // Render Profile
-  // ==============================
   function renderProfile(user) {
     const nome = String(user?.name ?? user?.nome ?? "Usuário").trim();
     const email = String(user?.email ?? "—").trim();
@@ -399,9 +384,6 @@
     }
   }
 
-  // ==============================
-  // Render Modules
-  // ==============================
   function renderModules(user) {
     if (!elModulesList) return;
 
@@ -442,26 +424,24 @@
     }).join("");
   }
 
-  // ==============================
-  // BOOT
-  // ==============================
   async function init() {
     const session = await requireAuthOrRedirect();
     if (!session) return;
 
-    const userId = session?.id != null ? Number(session.id) : null;
-    if (!userId) {
-      goto(LOGIN_PAGE_URL);
-      return;
-    }
+    const userId = getSessionUserId(session);
 
     await loadModulesFromApi();
 
     renderProfile(session);
     renderModules(session);
 
-    pushLocalLog(String(userId), "Acessou a página de perfil");
-    renderLogsLocal(String(userId));
+    pushLocalLog(String(userId || "anon"), "Acessou a página de perfil");
+    renderLogsLocal(String(userId || "anon"));
+
+    if (!userId) {
+      console.warn("Perfil carregado sem id na sessão. Mantendo página aberta sem redirecionar.");
+      return;
+    }
 
     try {
       const apiUser = await loadUserFromApi(userId);
@@ -477,14 +457,11 @@
     await loadLogsBackend(userId);
   }
 
-  // ==============================
-  // Events
-  // ==============================
   btnVoltar?.addEventListener("click", () => history.back());
 
   btnSair?.addEventListener("click", async () => {
-    const userId = AUTH_USER?.id != null ? String(AUTH_USER.id) : "0";
-    pushLocalLog(userId, "Saiu (logout)");
+    const userId = getSessionUserId(AUTH_USER);
+    pushLocalLog(String(userId || "anon"), "Saiu (logout)");
     await logout();
   });
 
