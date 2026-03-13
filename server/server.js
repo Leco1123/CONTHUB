@@ -14,7 +14,8 @@ const adminUsersRoutes = require("./routes/admin.users.routes");
 const adminModulesRoutes = require("./routes/admin.modules.routes");
 const publicCustomersRoutes = require("./routes/public.customers.routes");
 const dashboardRoutes = require("./routes/dashboard.routes");
-const sheetsRoutes = require("./routes/sheets.routes"); // ✅ ContFlow API
+const sheetsRoutes = require("./routes/sheets.routes");
+const reconciliacaoRoutes = require("./routes/reconciliacao.routes");
 
 const app = express();
 
@@ -29,7 +30,7 @@ app.use(
   })
 );
 
-app.use(express.json({ limit: "1mb" }));
+app.use(express.json({ limit: "10mb" }));
 
 app.use(
   session({
@@ -57,9 +58,11 @@ const { requireAuth, requireAdmin } = require("./middleware/auth");
 // ---------------------------------------------------
 
 const publicDir = path.join(__dirname, "..", "public");
+
 console.log("📁 Static:", publicDir);
 
 const loginPath = path.join(publicDir, "login", "login.html");
+
 console.log("🔎 login.html:", fs.existsSync(loginPath));
 
 app.use(express.static(publicDir));
@@ -74,7 +77,10 @@ app.use("/api/public/customers", publicCustomersRoutes);
 
 app.use("/api/dashboard", requireAuth, dashboardRoutes);
 
-app.use("/api/sheets", requireAuth, sheetsRoutes); // ✅ ContFlow
+app.use("/api/sheets", requireAuth, sheetsRoutes);
+
+// 🔵 ROTA NOVA DA RECONCILIAÇÃO (SEM AUTH TEMPORARIAMENTE)
+app.use("/api/reconciliacao", reconciliacaoRoutes);
 
 app.use("/api/admin/users", requireAdmin, adminUsersRoutes);
 
@@ -112,7 +118,7 @@ const PORT = process.env.PORT ? Number(process.env.PORT) : 3000;
 
 const server = app.listen(PORT, "0.0.0.0", () => {
   console.log("=================================");
-  console.log(`✅ ContHub rodando`);
+  console.log("✅ ContHub rodando");
   console.log(`🌐 http://localhost:${PORT}`);
   console.log(`🔐 http://localhost:${PORT}/login/login.html`);
   console.log("=================================");
