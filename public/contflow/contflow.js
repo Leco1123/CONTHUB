@@ -70,6 +70,7 @@ let CF_COLUMNS = [
   { key: "razao_social", label: "Razão Social" },
   { key: "cnpj_cpf", label: "CNPJ/CPF" },
   { key: "trib", label: "Trib." },
+  { key: "grupo", label: "Grupo" },
   { key: "resp1", label: "Resp.1" },
   { key: "resp2", label: "Resp.2" },
   { key: "tipo", label: "Tipo" },
@@ -430,6 +431,22 @@ function refreshDirtyVisuals() {
   }
 }
 
+function forceDefaultColumns(requiredCols) {
+  const currentByLabel = new Map(
+    (CF_COLUMNS || []).map((c) => [normalizeLabel(c.label), c])
+  );
+
+  const merged = [];
+  requiredCols.forEach((req) => {
+    const existing = currentByLabel.get(normalizeLabel(req.label));
+    merged.push(existing ? existing : req);
+  });
+
+  CF_COLUMNS = ensureUniqueKeys(merged);
+  CF_COLUMNS.forEach((c) => setDefaultWidthForCol(c.key));
+  cfData = coerceRowsToCurrentColumns(cfData);
+}
+
 function hydrateContFlowFromApiPayload(payload) {
   if (isApiRelationalPayload(payload)) {
     const cols = Array.isArray(payload?.columns) ? payload.columns : [];
@@ -443,7 +460,23 @@ function hydrateContFlowFromApiPayload(payload) {
       }))
     );
 
-    CF_COLUMNS.forEach((c) => setDefaultWidthForCol(c.key));
+    forceDefaultColumns([
+      { key: "cod", label: "Cód." },
+      { key: "razao_social", label: "Razão Social" },
+      { key: "cnpj_cpf", label: "CNPJ/CPF" },
+      { key: "trib", label: "Trib." },
+      { key: "grupo", label: "Grupo" },
+      { key: "resp1", label: "Resp.1" },
+      { key: "resp2", label: "Resp.2" },
+      { key: "tipo", label: "Tipo" },
+      { key: "num_quotas", label: "Num Quotas" },
+      { key: "quota1", label: "1º quota" },
+      { key: "quota2", label: "2º quota" },
+      { key: "quota3", label: "3º quota" },
+      { key: "obs", label: "Obs" },
+      { key: "mit", label: "MIT" },
+      { key: "controle_mit", label: "Controle de MIT" },
+    ]);
 
     const rowMap = new Map();
 
@@ -469,6 +502,11 @@ function hydrateContFlowFromApiPayload(payload) {
     sortState = payload?.sort || null;
     filters = payload?.filters || {};
     colWidths = payload?.colWidths || {};
+
+    CF_COLUMNS.forEach((c) => {
+      if (colWidths[c.key] == null) setDefaultWidthForCol(c.key);
+    });
+
     cfVersions = Array.isArray(payload?.versions) ? payload.versions.slice(0, MAX_VERSIONS) : [];
     lastSavedPayload = buildServerPayload();
     clearDirtyState();
@@ -483,13 +521,34 @@ function hydrateContFlowFromApiPayload(payload) {
       }))
     );
 
+    forceDefaultColumns([
+      { key: "cod", label: "Cód." },
+      { key: "razao_social", label: "Razão Social" },
+      { key: "cnpj_cpf", label: "CNPJ/CPF" },
+      { key: "trib", label: "Trib." },
+      { key: "grupo", label: "Grupo" },
+      { key: "resp1", label: "Resp.1" },
+      { key: "resp2", label: "Resp.2" },
+      { key: "tipo", label: "Tipo" },
+      { key: "num_quotas", label: "Num Quotas" },
+      { key: "quota1", label: "1º quota" },
+      { key: "quota2", label: "2º quota" },
+      { key: "quota3", label: "3º quota" },
+      { key: "obs", label: "Obs" },
+      { key: "mit", label: "MIT" },
+      { key: "controle_mit", label: "Controle de MIT" },
+    ]);
+
     cfData = coerceRowsToCurrentColumns(payload.data || []);
     sortState = payload.sort || null;
     filters = payload.filters || {};
     colWidths = payload.colWidths || {};
     cfVersions = Array.isArray(payload.versions) ? payload.versions.slice(0, MAX_VERSIONS) : [];
 
-    CF_COLUMNS.forEach((c) => setDefaultWidthForCol(c.key));
+    CF_COLUMNS.forEach((c) => {
+      if (colWidths[c.key] == null) setDefaultWidthForCol(c.key);
+    });
+
     lastSavedPayload = buildServerPayload();
     clearDirtyState();
     return;
@@ -855,7 +914,24 @@ function restoreVersion() {
    COLUNAS
 =========================== */
 function setDefaultWidthForCol(colKey) {
-  if (colWidths[colKey] == null) colWidths[colKey] = 140;
+  if (colWidths[colKey] != null) return;
+
+  if (colKey === "cod") colWidths[colKey] = 70;
+  else if (colKey === "razao_social") colWidths[colKey] = 240;
+  else if (colKey === "cnpj_cpf") colWidths[colKey] = 150;
+  else if (colKey === "trib") colWidths[colKey] = 160;
+  else if (colKey === "grupo") colWidths[colKey] = 140;
+  else if (colKey === "resp1") colWidths[colKey] = 140;
+  else if (colKey === "resp2") colWidths[colKey] = 80;
+  else if (colKey === "tipo") colWidths[colKey] = 110;
+  else if (colKey === "num_quotas") colWidths[colKey] = 110;
+  else if (colKey === "quota1") colWidths[colKey] = 110;
+  else if (colKey === "quota2") colWidths[colKey] = 110;
+  else if (colKey === "quota3") colWidths[colKey] = 110;
+  else if (colKey === "obs") colWidths[colKey] = 220;
+  else if (colKey === "mit") colWidths[colKey] = 120;
+  else if (colKey === "controle_mit") colWidths[colKey] = 220;
+  else colWidths[colKey] = 140;
 }
 
 function unionColumnsByLabel(currentCols, newCols) {
@@ -2644,6 +2720,24 @@ function handleImportFile(e) {
       const before = snapshotState();
 
       CF_COLUMNS = ensureUniqueKeys(cols);
+      forceDefaultColumns([
+        { key: "cod", label: "Cód." },
+        { key: "razao_social", label: "Razão Social" },
+        { key: "cnpj_cpf", label: "CNPJ/CPF" },
+        { key: "trib", label: "Trib." },
+        { key: "grupo", label: "Grupo" },
+        { key: "resp1", label: "Resp.1" },
+        { key: "resp2", label: "Resp.2" },
+        { key: "tipo", label: "Tipo" },
+        { key: "num_quotas", label: "Num Quotas" },
+        { key: "quota1", label: "1º quota" },
+        { key: "quota2", label: "2º quota" },
+        { key: "quota3", label: "3º quota" },
+        { key: "obs", label: "Obs" },
+        { key: "mit", label: "MIT" },
+        { key: "controle_mit", label: "Controle de MIT" },
+      ]);
+
       CF_COLUMNS.forEach((c) => setDefaultWidthForCol(c.key));
       cfData = coerceRowsToCurrentColumns(rows);
 
@@ -2657,7 +2751,24 @@ function handleImportFile(e) {
       const before = snapshotState();
 
       CF_COLUMNS = unionColumnsByLabel(CF_COLUMNS, cols);
-      CF_COLUMNS = ensureUniqueKeys(CF_COLUMNS);
+      forceDefaultColumns([
+        { key: "cod", label: "Cód." },
+        { key: "razao_social", label: "Razão Social" },
+        { key: "cnpj_cpf", label: "CNPJ/CPF" },
+        { key: "trib", label: "Trib." },
+        { key: "grupo", label: "Grupo" },
+        { key: "resp1", label: "Resp.1" },
+        { key: "resp2", label: "Resp.2" },
+        { key: "tipo", label: "Tipo" },
+        { key: "num_quotas", label: "Num Quotas" },
+        { key: "quota1", label: "1º quota" },
+        { key: "quota2", label: "2º quota" },
+        { key: "quota3", label: "3º quota" },
+        { key: "obs", label: "Obs" },
+        { key: "mit", label: "MIT" },
+        { key: "controle_mit", label: "Controle de MIT" },
+      ]);
+
       CF_COLUMNS.forEach((c) => setDefaultWidthForCol(c.key));
 
       const importMap = new Map(cols.map((c) => [normalizeLabel(c.label), c.key]));
@@ -2681,6 +2792,23 @@ function handleImportFile(e) {
     } else {
       const before = snapshotState();
       mergeImportRows(cols, rows);
+      forceDefaultColumns([
+        { key: "cod", label: "Cód." },
+        { key: "razao_social", label: "Razão Social" },
+        { key: "cnpj_cpf", label: "CNPJ/CPF" },
+        { key: "trib", label: "Trib." },
+        { key: "grupo", label: "Grupo" },
+        { key: "resp1", label: "Resp.1" },
+        { key: "resp2", label: "Resp.2" },
+        { key: "tipo", label: "Tipo" },
+        { key: "num_quotas", label: "Num Quotas" },
+        { key: "quota1", label: "1º quota" },
+        { key: "quota2", label: "2º quota" },
+        { key: "quota3", label: "3º quota" },
+        { key: "obs", label: "Obs" },
+        { key: "mit", label: "MIT" },
+        { key: "controle_mit", label: "Controle de MIT" },
+      ]);
       const after = snapshotState();
       pushUndo({ type: "snapshot", before, after });
       markStructureDirty();
@@ -3616,6 +3744,24 @@ document.addEventListener("DOMContentLoaded", async () => {
     console.log("✅ ContFlow carregado da API.");
   } catch (err) {
     console.error("❌ Falha ao carregar ContFlow da API:", err);
+
+    forceDefaultColumns([
+      { key: "cod", label: "Cód." },
+      { key: "razao_social", label: "Razão Social" },
+      { key: "cnpj_cpf", label: "CNPJ/CPF" },
+      { key: "trib", label: "Trib." },
+      { key: "grupo", label: "Grupo" },
+      { key: "resp1", label: "Resp.1" },
+      { key: "resp2", label: "Resp.2" },
+      { key: "tipo", label: "Tipo" },
+      { key: "num_quotas", label: "Num Quotas" },
+      { key: "quota1", label: "1º quota" },
+      { key: "quota2", label: "2º quota" },
+      { key: "quota3", label: "3º quota" },
+      { key: "obs", label: "Obs" },
+      { key: "mit", label: "MIT" },
+      { key: "controle_mit", label: "Controle de MIT" },
+    ]);
 
     cfData = Array.from({ length: 15 }, () => createEmptyRow());
     CF_COLUMNS.forEach((c) => setDefaultWidthForCol(c.key));

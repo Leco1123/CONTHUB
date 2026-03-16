@@ -88,11 +88,9 @@ body.sidebar-open .overlay {
   border: 1px solid var(--stroke);
   backdrop-filter: blur(14px);
   box-shadow: var(--shadow);
-
   transform: translateX(-120%);
   transition: transform 0.25s ease;
   z-index: 50;
-
   display: flex;
   flex-direction: column;
   gap: 14px;
@@ -486,8 +484,6 @@ button.iconbtn {
 
 .actions-card {
   padding: 16px 18px;
-  padding-top: 16px;
-  padding-bottom: 16px;
 }
 
 .actions-row {
@@ -546,10 +542,12 @@ button.iconbtn {
   display: grid;
   gap: 16px;
   padding-top: 20px;
+  background: transparent !important;
 }
 
 .progressbar-wrap {
   width: 100%;
+  background: transparent !important;
 }
 
 .progressbar-track {
@@ -578,28 +576,52 @@ button.iconbtn {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  gap: 16px;
-  padding: 12px 14px;
-  border-radius: 14px;
-  background: rgba(0, 140, 255, 0.10);
-  border: 1px solid rgba(0, 140, 255, 0.16);
+  gap: 12px;
+  padding: 0 !important;
+  margin: 0 !important;
+  background: transparent !important;
+  background-color: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
 }
 
 .progress-status {
   flex: 1 1 auto;
-  color: #dceafd;
-  font-size: 14px;
+  color: var(--muted);
+  font-size: 13px;
   line-height: 1.45;
   word-break: break-word;
+  background: transparent !important;
+  background-color: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
 }
 
 .progress-percent {
   flex: 0 0 auto;
   min-width: 48px;
   text-align: right;
-  color: #8ec5ff;
-  font-size: 13px;
+  color: var(--muted);
+  font-size: 12px;
   font-weight: 900;
+  background: transparent !important;
+  background-color: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+}
+
+.progress-card *,
+.progress-card *::before,
+.progress-card *::after {
+  box-shadow: none !important;
+}
+
+.progress-card .progress-meta,
+.progress-card .progress-status,
+.progress-card .progress-percent {
+  background: transparent !important;
+  background-color: transparent !important;
+  border: 0 !important;
 }
 
 /* =========================================================
@@ -708,4 +730,57 @@ button.iconbtn {
     min-width: auto;
     text-align: left;
   }
+}
+/* =========================================================
+   HOTFIX FINAL — REMOVER FAIXA AZUL DO PROGRESSO
+========================================================= */
+
+.progress-card {
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.06),
+    rgba(255, 255, 255, 0.03)
+  ) !important;
+}
+
+.progress-card .progress-meta,
+.progress-card #progressStatus,
+.progress-card #progressPercent {
+  background: transparent !important;
+  background-color: transparent !important;
+  background-image: none !important;
+  border: 0 !important;
+  box-shadow: none !important;
+}
+
+.progress-card .progress-meta {
+  display: flex !important;
+  justify-content: space-between !important;
+  align-items: center !important;
+  gap: 12px !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  min-height: auto !important;
+  height: auto !important;
+}
+
+.progress-card #progressStatus {
+  color: var(--muted) !important;
+  font-size: 13px !important;
+  line-height: 1.45 !important;
+}
+
+.progress-card #progressPercent {
+  color: var(--muted) !important;
+  font-size: 12px !important;
+  font-weight: 900 !important;
+  min-width: 48px !important;
+  text-align: right !important;
+}
+
+/* mantém a barra normal */
+.progress-card .progressbar-wrap,
+.progress-card .progressbar-track,
+.progress-card .progressbar-fill {
+  background-image: unset;
 }

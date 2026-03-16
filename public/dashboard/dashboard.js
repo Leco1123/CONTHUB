@@ -1,11 +1,5 @@
 // ============================
 // DASHBOARD • JS (POSTGRES + SESSION COOKIE)
-// - Auth real via /api/auth/me (cookie conthub.sid)
-// - Next Actions: Postgres (/api/dashboard/next-actions)
-// - ContFlow Feed/Snapshot: Postgres
-// - Módulos: banco (/api/admin/modules)
-// - ContFlow base ainda localStorage (por enquanto)
-// - Fallback local apenas para recursos em migração
 // ============================
 
 (function () {
@@ -18,7 +12,7 @@
   const API_BASE = "";
   const API_MODULES = `${API_BASE}/api/admin/modules`;
 
-  const CONTFLOW_KEY = "conthub:contflow:data"; // base do ContFlow (ainda local)
+  const CONTFLOW_KEY = "conthub:contflow:data";
 
   // LEGADO (fallback apenas)
   const CF_SNAPSHOT_PREFIX = "conthub:dashboard:contflow_snapshot:";
@@ -81,6 +75,11 @@
     } catch {
       return now.toISOString().slice(0, 10);
     }
+  }
+
+  function formatDateBR(date) {
+    if (!(date instanceof Date) || Number.isNaN(date.getTime())) return "--";
+    return date.toLocaleDateString("pt-BR");
   }
 
   function getSessionUser() {
@@ -295,10 +294,10 @@
       return { manual: [...DEFAULT_MANUAL], checks: [...DEFAULT_CHECKS] };
     }
 
-    const manual = Array.isArray(data.manual) ? data.manual.slice(0, 4) : [...DEFAULT_MANUAL];
+    const manual = Array.isArray(data.manual) ? data.manual.slice(0, 6) : [...DEFAULT_MANUAL];
     while (manual.length < 6) manual.push("");
 
-    const checks = Array.isArray(data.checks) ? data.checks.slice(0, 4) : [...DEFAULT_CHECKS];
+    const checks = Array.isArray(data.checks) ? data.checks.slice(0, 6) : [...DEFAULT_CHECKS];
     while (checks.length < 6) checks.push(false);
 
     return { manual, checks };
@@ -315,11 +314,11 @@
 
       const data = await resp.json().catch(() => null);
 
-      const manual = Array.isArray(data?.manual) ? data.manual.slice(0, 4) : [...DEFAULT_MANUAL];
-      while (manual.length < 4) manual.push("");
+      const manual = Array.isArray(data?.manual) ? data.manual.slice(0, 6) : [...DEFAULT_MANUAL];
+      while (manual.length < 6) manual.push("");
 
-      const checks = Array.isArray(data?.checks) ? data.checks.slice(0, 4) : [...DEFAULT_CHECKS];
-      while (checks.length < 4) checks.push(false);
+      const checks = Array.isArray(data?.checks) ? data.checks.slice(0, 6) : [...DEFAULT_CHECKS];
+      while (checks.length < 6) checks.push(false);
 
       return { manual, checks };
     } catch (e) {
@@ -558,7 +557,7 @@
   }
 
   // ----------------------------
-  // NEXT ACTIONS (auto from ContFlow)
+  // NEXT ACTIONS
   // ----------------------------
   function parseBRDateMaybe(s) {
     const t = String(s || "").trim();
@@ -636,6 +635,154 @@
         : "MIT: Nenhuma pendência identificada no ContFlow.";
 
     return [a1, a2];
+  }
+
+  // ----------------------------
+  // SLA MENSAL
+  // ----------------------------
+  function isBusinessDay(date) {
+    const day = date.getDay();
+    return day !== 0 && day !== 6;
+  }
+
+  function getLastDayOfMonth(baseDate = new Date()) {
+    return new Date(baseDate.getFullYear(), baseDate.getMonth() + 1, 0);
+  }
+
+  function subtractBusinessDays(date, businessDays) {
+    const result = new Date(date);
+    let count = 0;
+
+    while (count < businessDays) {
+      result.setDate(result.getDate() - 1);
+      if (isBusinessDay(result)) {
+        count += 1;
+      }
+    }
+
+    return result;
+  }
+
+  function countBusinessDaysBetween(startDate, endDate) {
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+
+    start.setHours(0, 0, 0, 0);
+    end.setHours(0, 0, 0, 0);
+
+    if (start.getTime() === end.getTime()) return 0;
+
+    const direction = start < end ? 1 : -1;
+    const current = new Date(start);
+    let count = 0;
+
+    while (current.getTime() !== end.getTime()) {
+      current.setDate(current.getDate() + direction);
+      if (isBusinessDay(current)) {
+        count += direction;
+      }
+    }
+
+    return count;
+  }
+
+  function getBusinessDaysInMonthUntil(date) {
+    const d = new Date(date);
+    const year = d.getFullYear();
+    const month = d.getMonth();
+
+    const start = new Date(year, month, 1);
+    const end = new Date(year, month + 1, 0);
+
+    let total = 0;
+    const cursor = new Date(start);
+
+    while (cursor <= end) {
+      if (isBusinessDay(cursor)) total += 1;
+      cursor.setDate(cursor.getDate() + 1);
+    }
+
+    return total;
+  }
+
+  function getElapsedBusinessDaysInMonth(date) {
+    const d = new Date(date);
+    const start = new Date(d.getFullYear(), d.getMonth(), 1);
+
+    let total = 0;
+    const cursor = new Date(start);
+
+    while (cursor <= d) {
+      if (isBusinessDay(cursor)) total += 1;
+      cursor.setDate(cursor.getDate() + 1);
+    }
+
+    return total;
+  }
+
+  function getSlaDateForMonth(baseDate = new Date()) {
+    const lastDay = getLastDayOfMonth(baseDate);
+    return subtractBusinessDays(lastDay, 7);
+  }
+
+  function renderMonthlySlaIndicator() {
+    const statusEl = document.getElementById("slaStatusText");
+    const deadlineEl = document.getElementById("slaDeadlineText");
+    const lastDayEl = document.getElementById("slaLastDayText");
+    const metaEl = document.getElementById("slaMetaText");
+    const refEl = document.getElementById("slaMonthRef");
+    const progressEl = document.getElementById("slaProgressBar");
+
+    if (!statusEl || !deadlineEl || !lastDayEl || !metaEl || !refEl || !progressEl) {
+      return;
+    }
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const lastDay = getLastDayOfMonth(today);
+    lastDay.setHours(0, 0, 0, 0);
+
+    const slaDate = getSlaDateForMonth(today);
+    slaDate.setHours(0, 0, 0, 0);
+
+    const monthRef = today.toLocaleDateString("pt-BR", {
+      month: "2-digit",
+      year: "numeric",
+    });
+
+    const diffBusiness = countBusinessDaysBetween(today, slaDate);
+
+    const totalBusinessDays = getBusinessDaysInMonthUntil(today);
+    const elapsedBusinessDays = getElapsedBusinessDaysInMonth(today);
+    const progress = totalBusinessDays > 0
+      ? Math.max(0, Math.min(100, (elapsedBusinessDays / totalBusinessDays) * 100))
+      : 0;
+
+    statusEl.classList.remove("ok", "warn", "danger");
+
+    deadlineEl.textContent = formatDateBR(slaDate);
+    lastDayEl.textContent = formatDateBR(lastDay);
+    refEl.textContent = monthRef;
+    progressEl.style.width = `${progress.toFixed(2)}%`;
+
+    if (today.getTime() < slaDate.getTime()) {
+      statusEl.textContent = "No prazo";
+      statusEl.classList.add("ok");
+      metaEl.textContent = `Faltam ${diffBusiness} dia(s) úteis para o prazo do SLA deste mês.`;
+      return;
+    }
+
+    if (today.getTime() === slaDate.getTime()) {
+      statusEl.textContent = "Vence hoje";
+      statusEl.classList.add("warn");
+      metaEl.textContent = "Hoje é o último dia útil do SLA deste mês.";
+      return;
+    }
+
+    statusEl.textContent = "Vencido";
+    statusEl.classList.add("danger");
+    metaEl.textContent = `Prazo encerrado há ${Math.abs(diffBusiness)} dia(s) úteis.`;
   }
 
   // ----------------------------
@@ -883,12 +1030,12 @@
     if (btnReset && !btnReset.__bound) {
       btnReset.__bound = true;
       btnReset.addEventListener("click", async () => {
-        const ok = confirm("Resetar as 4 ações manuais e checks deste usuário?");
+        const ok = confirm("Resetar as 6 ações manuais e checks deste usuário?");
         if (!ok) return;
 
         const st = {
-          manual: [...DEFAULT_MANUAL],
-          checks: [...DEFAULT_CHECKS],
+          manual: ["", "", "", "", "", ""],
+          checks: [false, false, false, false, false, false],
         };
 
         await saveNextActionsState(st);
@@ -904,7 +1051,7 @@
     btn.__bound = true;
     btn.addEventListener("click", async () => {
       const st = await getNextActionsState();
-      st.checks = [...DEFAULT_CHECKS];
+      st.checks = [false, false, false, false, false, false];
       await saveNextActionsState(st);
       await renderNextActions();
     });
@@ -918,6 +1065,7 @@
         await renderContFlowNewsBadge();
         await renderNextActions();
         await renderQuickAutoCard();
+        renderMonthlySlaIndicator();
       }
     });
 
@@ -927,6 +1075,7 @@
         await renderContFlowNewsBadge();
         await renderNextActions();
         await renderQuickAutoCard();
+        renderMonthlySlaIndicator();
       }
     });
   }
@@ -953,6 +1102,7 @@
     await renderNextActions();
     await renderQuickAutoCard();
 
+    renderMonthlySlaIndicator();
     bindContFlowAutoUpdates();
   });
 })();

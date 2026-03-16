@@ -10,13 +10,16 @@
 
   <body>
     <main class="wrap">
+
       <!-- HERO -->
       <section class="hero glass">
         <div class="hero__left">
           <div class="badge">CONTHUB • HOME</div>
+
           <h1 class="title">
             Bem-vindo(a), <span id="userName">Usuário</span> 👋
           </h1>
+
           <p class="subtitle" id="heroText">
             Aqui é o seu painel central: atalhos, status e próximas ações.
           </p>
@@ -26,22 +29,34 @@
               <div class="meta__label">Hoje</div>
               <div class="meta__value" id="todayText">--</div>
             </div>
+
             <div class="meta">
               <div class="meta__label">Perfil</div>
               <div class="meta__value" id="userRole">USER</div>
             </div>
+
             <div class="meta">
               <div class="meta__label">Status</div>
-              <div class="meta__value ok" id="sessionStatus">Sessão ativa</div>
+              <div class="meta__value ok" id="sessionStatus">
+                Sessão ativa
+              </div>
             </div>
           </div>
 
           <div class="hero__actions">
-            <button class="btn btn--primary" type="button" data-goto="../contflow/contflow.html">
+            <button
+              class="btn btn--primary"
+              type="button"
+              data-goto="../contflow/contflow.html"
+            >
               Abrir ContFlow
             </button>
 
-            <button class="btn btn--ghost" type="button" data-goto="../perfil/perfil.html">
+            <button
+              class="btn btn--ghost"
+              type="button"
+              data-goto="../perfil/perfil.html"
+            >
               Meu Perfil
             </button>
           </div>
@@ -51,9 +66,13 @@
           <div class="cardBig">
             <div class="cardBig__header">
               <div class="cardBig__icon">📌</div>
+
               <div class="cardBig__titles">
                 <div class="cardBig__title">Resumo rápido</div>
-                <div class="cardBig__sub">O que está acontecendo agora no seu ContHub</div>
+
+                <div class="cardBig__sub">
+                  O que está acontecendo agora no seu ContHub
+                </div>
               </div>
             </div>
 
@@ -62,10 +81,12 @@
                 <div class="stat__label">Módulos online</div>
                 <div class="stat__value" id="statOnline">0</div>
               </div>
+
               <div class="stat">
                 <div class="stat__label">Em DEV</div>
                 <div class="stat__value" id="statDev">0</div>
               </div>
+
               <div class="stat">
                 <div class="stat__label">Offline</div>
                 <div class="stat__value danger" id="statOff">0</div>
@@ -76,15 +97,18 @@
 
             <div class="tips">
               <div class="tips__title">Dicas rápidas</div>
-              <ul class="tips__list">
-                <li>Use o <b>ContFlow</b> para controlar rotinas e SLA.</li>
-                <li>No <b>ContAnalytics</b> você vê indicadores e painéis.</li>
-                <li>Em <b>ContDocs</b> você centraliza e encontra documentos.</li>
-              </ul>
 
-              
-                </ul>
-              </div>
+              <ul class="tips__list">
+                <li>
+                  Use o <b>ContFlow</b> para controlar rotinas e SLA.
+                </li>
+                <li>
+                  No <b>ContAnalytics</b> você vê indicadores e painéis.
+                </li>
+                <li>
+                  Em <b>ContDocs</b> você centraliza e encontra documentos.
+                </li>
+              </ul>
             </div>
           </div>
         </div>
@@ -92,7 +116,8 @@
 
       <!-- GRID -->
       <section class="grid">
-        <!-- Atalhos -->
+
+        <!-- ATALHOS -->
         <div class="panel glass">
           <div class="panel__header">
             <h2 class="h2">Atalhos</h2>
@@ -100,98 +125,205 @@
           </div>
 
           <div class="cards">
+
             <button class="card" type="button" data-goto="../contflow/contflow.html">
               <div class="card__icon">⚡</div>
+
               <div class="card__body">
                 <div class="card__title">ContFlow</div>
                 <div class="card__sub muted">Rotinas e fluxo</div>
               </div>
+
               <div class="pill" data-pill="contflow">ONLINE</div>
             </button>
 
             <button class="card" type="button" data-goto="../contanalytics/contanalytics.html">
               <div class="card__icon">📊</div>
+
               <div class="card__body">
                 <div class="card__title">ContAnalytics</div>
                 <div class="card__sub muted">KPIs e painel</div>
               </div>
+
               <div class="pill" data-pill="contanalytics">ONLINE</div>
             </button>
 
             <button class="card" type="button" data-goto="../contdocs/contdocs.html">
               <div class="card__icon">📁</div>
+
               <div class="card__body">
                 <div class="card__title">ContDocs</div>
                 <div class="card__sub muted">Documentos</div>
               </div>
+
               <div class="pill" data-pill="contdocs">ONLINE</div>
             </button>
 
             <button class="card" type="button" data-goto="../contrels/contrels.html">
               <div class="card__icon">📈</div>
+
               <div class="card__body">
                 <div class="card__title">ContRelatórios</div>
                 <div class="card__sub muted">Exportações</div>
               </div>
+
               <div class="pill" data-pill="contrels">ONLINE</div>
             </button>
 
             <button class="card" type="button" data-goto="../contconfig/contconfig.html">
               <div class="card__icon">⚙️</div>
+
               <div class="card__body">
                 <div class="card__title">ContConfig</div>
                 <div class="card__sub muted">Parâmetros</div>
               </div>
+
               <div class="pill" data-pill="contconfig">ONLINE</div>
             </button>
 
             <button class="card" type="button" data-goto="../contadmin/contadmin.html">
               <div class="card__icon">🛡️</div>
+
               <div class="card__body">
                 <div class="card__title">ContAdmin</div>
                 <div class="card__sub muted">Acesso total</div>
               </div>
+
               <div class="pill" data-pill="contadmin">ADMIN</div>
             </button>
+
           </div>
         </div>
 
-        <!-- Próximas ações (PERSONALIZÁVEL + 2 AUTOMÁTICAS) -->
+
+        <!-- PRÓXIMAS AÇÕES -->
         <div class="panel glass">
           <div class="panel__header panel__header--row">
+
             <div>
               <h2 class="h2">Próximas ações</h2>
               <p class="muted">Faça suas anotações aqui:</p>
             </div>
 
             <div class="panel__headerActions">
-              <button class="btn btn--ghost" type="button" id="btnAddNextAction">
+
+              <button
+                class="btn btn--ghost"
+                type="button"
+                id="btnAddNextAction"
+              >
                 + Adicionar ação
               </button>
-              <button class="btn" type="button" id="btnResetNextActions">
+
+              <button
+                class="btn"
+                type="button"
+                id="btnResetNextActions"
+              >
                 Reset
               </button>
+
             </div>
           </div>
 
-          <div class="todo" id="nextActionsList">
-            <!-- preenchido via JS (6 linhas) -->
-          </div>
+          <div class="todo" id="nextActionsList"></div>
 
           <div class="panel__footer">
-            <button class="btn btn--ghost" type="button" id="btnResetChecks">
+            <button
+              class="btn btn--ghost"
+              type="button"
+              id="btnResetChecks"
+            >
               Limpar checks
             </button>
-            <button class="btn" type="button" data-goto="../contadmin/contadmin.html">
+
+            <button
+              class="btn"
+              type="button"
+              data-goto="../contadmin/contadmin.html"
+            >
               Ir para ContAdmin
             </button>
           </div>
         </div>
+
+
+        <!-- INDICADOR SLA -->
+        <div class="panel glass">
+
+          <div class="panel__header">
+            <h2 class="h2">Indicador de SLA</h2>
+            <p class="muted">
+              7 dias úteis antes do último dia do mês.
+            </p>
+          </div>
+
+          <div class="slaMonthCard" id="slaMonthCard">
+
+            <div class="slaMonthCard__top">
+
+              <div>
+                <div class="slaMonthCard__label">STATUS SLA</div>
+
+                <div
+                  class="slaMonthCard__status ok"
+                  id="slaStatusText"
+                >
+                  Calculando...
+                </div>
+              </div>
+
+              <div
+                class="slaMonthCard__badge"
+                id="slaMonthRef"
+              >
+                --/----
+              </div>
+
+            </div>
+
+
+            <div class="slaMonthCard__meta">
+
+              <div class="slaMonthCard__item">
+                <span class="slaMonthCard__itemLabel">Prazo</span>
+                <strong id="slaDeadlineText">--</strong>
+              </div>
+
+              <div class="slaMonthCard__item">
+                <span class="slaMonthCard__itemLabel">
+                  Último dia do mês
+                </span>
+                <strong id="slaLastDayText">--</strong>
+              </div>
+
+            </div>
+
+
+            <div class="slaMonthCard__progress">
+              <div
+                class="slaMonthCard__progressBar"
+                id="slaProgressBar"
+              ></div>
+            </div>
+
+            <div
+              class="slaMonthCard__footer"
+              id="slaMetaText"
+            >
+              --
+            </div>
+
+          </div>
+        </div>
+
       </section>
 
       <footer class="footer muted">
-        ContHub • Painel inicial — <span id="yearText">2026</span>
+        ContHub • Painel inicial —
+        <span id="yearText">2026</span>
       </footer>
+
     </main>
 
     <script src="./dashboard.js"></script>
