@@ -178,6 +178,7 @@
 
         <div class="abas-conthub">
           <button class="aba-conthub ativa" data-visualizacao="usuarios" type="button">Usuários</button>
+          <button class="aba-conthub" data-visualizacao="equipes" type="button">Equipes</button>
           <button class="aba-conthub" data-visualizacao="acessos" type="button">Status de Acesso</button>
         </div>
 
@@ -186,7 +187,15 @@
             <h2>Usuários</h2>
             <p class="muted">Gerencie usuários, permissões e perfis.</p>
 
-            <button class="btn-acao bt-novo-usuario" id="btnNovoUsuario" type="button">Novo Usuário</button>
+            <div class="usuarios-toolbar">
+              <input
+                type="text"
+                id="usuariosFiltro"
+                class="usuarios-filtro"
+                placeholder="Filtrar por nome, email, cargo ou perfil"
+              />
+              <button class="btn-acao bt-novo-usuario" id="btnNovoUsuario" type="button">Novo Usuário</button>
+            </div>
 
             <div class="tabela-wrapper">
               <table class="tabela-usuarios">
@@ -194,7 +203,8 @@
                   <tr>
                     <th>Nome</th>
                     <th>Email</th>
-                    <th>Função</th>
+                    <th>Cargo</th>
+                    <th>Perfil de acesso</th>
                     <th>Status</th>
                     <th>Ações</th>
                   </tr>
@@ -204,47 +214,193 @@
             </div>
 
             <div class="modal" id="modalUsuario" aria-hidden="true">
-              <form class="form-usuario" id="formUsuario" autocomplete="off">
-                <h3>Novo Usuário</h3>
-
-                <input type="text" id="nome" name="nome" placeholder="Nome" required />
-                <input type="email" id="email" name="email" placeholder="Email" required />
-
-                <div class="select-cargo">
-                  <input type="text" id="cargo" name="cargo" placeholder="Cargo" readonly required />
-                  <ul class="lista-cargos">
-                    <li>Aprendiz</li>
-                    <li>Auxiliar Jr</li>
-                    <li>Auxiliar Pleno</li>
-                    <li>Auxiliar Sênior</li>
-                    <li>Assistente JR</li>
-                    <li>Assistente Pleno</li>
-                    <li>Assistente Sênior</li>
-                    <li>Analista JR</li>
-                    <li>Analista Pleno</li>
-                    <li>Analista Sênior</li>
-                    <li>Coordenador Jr</li>
-                    <li>Coordenador Pleno</li>
-                    <li>Coordenador Sênior</li>
-                    <li>Gerente</li>
-                    <li>Gerente Geral</li>
-                  </ul>
+              <form class="form-usuario form-usuario--wide" id="formUsuario" autocomplete="off">
+                <div class="form-usuario__header">
+                  <div>
+                    <span class="form-usuario__eyebrow">Gestão de usuários</span>
+                    <h3>Novo Usuário</h3>
+                    <p class="form-usuario__subtitle">Cadastre acessos, vínculo com equipe e nível de permissão.</p>
+                  </div>
+                  <button type="button" class="form-usuario__close" id="fecharModalUsuario" aria-label="Fechar modal">×</button>
                 </div>
 
-                <input type="password" id="senha" name="senha" placeholder="Senha" required />
-                <input
-                  type="password"
-                  id="confirmarSenha"
-                  name="confirmarSenha"
-                  placeholder="Confirmar Senha"
-                  required
-                />
+                <section class="form-usuario__section">
+                  <div class="form-usuario__section-head">
+                    <strong>Identificação</strong>
+                    <span>Informações principais do colaborador</span>
+                  </div>
+                  <div class="form-grid form-grid--two">
+                    <label class="form-field">
+                      <span>Nome</span>
+                      <input type="text" id="nome" name="nome" placeholder="Nome completo" required />
+                    </label>
+                    <label class="form-field">
+                      <span>Email</span>
+                      <input type="email" id="email" name="email" placeholder="nome@franco-rnc.com.br" required />
+                    </label>
+                  </div>
+                </section>
+
+                <section class="form-usuario__section">
+                  <div class="form-usuario__section-head">
+                    <strong>Estrutura</strong>
+                    <span>Coordenador, equipe e cargo</span>
+                  </div>
+                  <div class="form-grid form-grid--three">
+                    <label class="form-field">
+                      <span>Coordenador</span>
+                      <div class="select-cargo">
+                        <input
+                          type="text"
+                          id="coordenador"
+                          name="coordenador"
+                          placeholder="Selecione o coordenador"
+                          readonly
+                          required
+                        />
+                        <ul class="lista-cargos" id="listaCoordenadores"></ul>
+                      </div>
+                    </label>
+
+                    <label class="form-field">
+                      <span>Equipe</span>
+                      <div class="select-cargo">
+                        <input type="text" id="equipe" name="equipe" placeholder="Selecione a equipe" readonly required />
+                        <ul class="lista-cargos" id="listaEquipes"></ul>
+                      </div>
+                    </label>
+
+                    <label class="form-field">
+                      <span>Cargo</span>
+                      <div class="select-cargo">
+                        <input type="text" id="cargo" name="cargo" placeholder="Selecione o cargo" readonly required />
+                        <ul class="lista-cargos">
+                          <li>Gerente</li>
+                          <li>Coordenador</li>
+                          <li>Analista</li>
+                          <li>Assistente</li>
+                          <li>Auxiliar</li>
+                          <li>Estagiário</li>
+                        </ul>
+                      </div>
+                    </label>
+                  </div>
+                </section>
+
+                <section class="form-usuario__section">
+                  <div class="form-usuario__section-head">
+                    <strong>Segurança</strong>
+                    <span>Senha inicial e confirmação</span>
+                  </div>
+                  <div class="form-grid form-grid--two">
+                    <label class="form-field">
+                      <span>Senha</span>
+                      <div class="password-field">
+                        <input type="password" id="senha" name="senha" placeholder="Senha" required />
+                        <button type="button" class="password-toggle" data-target-input="senha">Mostrar</button>
+                      </div>
+                    </label>
+                    <label class="form-field">
+                      <span>Confirmar senha</span>
+                      <div class="password-field">
+                        <input
+                          type="password"
+                          id="confirmarSenha"
+                          name="confirmarSenha"
+                          placeholder="Confirme a senha"
+                          required
+                        />
+                        <button type="button" class="password-toggle" data-target-input="confirmarSenha">Mostrar</button>
+                      </div>
+                    </label>
+                  </div>
+                </section>
 
                 <div class="acoes-form">
+                  <button type="button" class="btn-acao btn-acao--ghost" id="cancelarModal">Cancelar</button>
                   <button type="submit" class="btn-acao">Salvar</button>
-                  <button type="button" class="btn-acao" id="cancelarModal">Cancelar</button>
                 </div>
               </form>
+            </div>
+          </section>
+
+          <section class="visualizacao-conthub" id="equipes">
+            <h2>Equipes</h2>
+            <p class="muted">Visualize as equipes por coordenador e edite a estrutura quando necessário.</p>
+
+            <div class="usuarios-toolbar">
+              <button class="btn-acao" id="btnGerenciarEquipes" type="button">Gerenciar Equipes</button>
+            </div>
+
+            <section class="equipes-overview" id="equipesOverview"></section>
+
+            <div class="modal" id="modalEquipes" aria-hidden="true">
+              <div class="form-usuario form-equipes form-equipes-hub" id="formEquipes" autocomplete="off">
+                <div class="team-hub-hero">
+                  <div>
+                    <span class="team-hub-hero__eyebrow">Central de coordenação</span>
+                    <h3>Coordenadores e equipes</h3>
+                    <p class="muted">Escolha a estrutura desejada para abrir o gerenciador de pessoas.</p>
+                  </div>
+                  <button type="button" class="form-usuario__close" id="fecharModalEquipesHeader" aria-label="Fechar modal">×</button>
+                </div>
+
+                <div class="equipes-grid" id="equipesGrid"></div>
+
+                <div class="acoes-form">
+                  <button type="button" class="btn-acao" id="cancelarEquipes">Fechar</button>
+                </div>
+              </div>
+            </div>
+
+            <div class="modal" id="modalEquipeMembros" aria-hidden="true">
+              <div class="form-usuario form-equipes form-equipe-membros">
+                <div class="people-manager">
+                  <div class="people-manager__header">
+                    <div>
+                      <span class="people-manager__eyebrow">Gestão de equipe</span>
+                      <h3 id="membrosEquipeTitulo">Equipe</h3>
+                      <p class="muted" id="membrosEquipeSubtitulo">Gerencie as pessoas desta equipe.</p>
+                    </div>
+                    <button type="button" class="form-usuario__close" id="fecharEquipeHeader" aria-label="Fechar modal">×</button>
+                  </div>
+
+                  <div class="people-manager__toolbar">
+                    <div class="people-manager__meta">
+                      <span class="people-manager__meta-pill" id="membrosEquipeCount">0 na equipe</span>
+                      <span class="people-manager__meta-pill" id="membrosEquipePoolCount">0 no diretório</span>
+                    </div>
+                    <input
+                      type="text"
+                      id="membrosEquipeBusca"
+                      class="people-manager__search"
+                      placeholder="Buscar por nome, cargo, email ou equipe"
+                    />
+                  </div>
+
+                  <div class="people-manager__grid">
+                    <section class="people-panel">
+                      <div class="people-panel__head">
+                        <strong>Pessoas na equipe</strong>
+                        <span id="membrosEquipeCountCard">0 registro(s)</span>
+                      </div>
+                      <div class="people-panel__list" id="membrosEquipeLista"></div>
+                    </section>
+
+                    <section class="people-panel">
+                      <div class="people-panel__head">
+                        <strong>Diretório de pessoas</strong>
+                        <span id="membrosEquipeAvailableCount">0 disponível(is)</span>
+                      </div>
+                      <div class="people-panel__list" id="membrosEquipeDisponiveis"></div>
+                    </section>
+                  </div>
+                </div>
+
+                <div class="acoes-form">
+                  <button type="button" class="btn-acao" id="fecharMembrosEquipe">Fechar</button>
+                </div>
+              </div>
             </div>
           </section>
 

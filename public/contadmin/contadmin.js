@@ -32,6 +32,24 @@ document.addEventListener("DOMContentLoaded", () => {
   const COMPANY_DOMAIN = "@franco-rnc.com.br";
   const PASSWORD_POLICY =
     /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{8,}$/;
+  const TEAMS_KEY = "conthub_contadmin_equipes";
+  const USER_TEAMS_KEY = "conthub_contadmin_user_teams";
+  const ACCESS_PROFILE_KEY = "conthub_contadmin_access_profiles";
+  const TEAM_COORDINATORS = ["Marcos", "Leticia", "Cleide", "Matheus"];
+  const DEFAULT_TEAM_CONFIG = {
+    Marcos: ["Equipe Marcos 1", "Equipe Marcos 2"],
+    Leticia: ["Equipe Leticia 1", "Equipe Leticia 2"],
+    Cleide: ["Equipe Cleide 1", "Equipe Cleide 2"],
+    Matheus: ["Equipe Matheus 1", "Equipe Matheus 2"],
+  };
+  const TEAM_EDITORS = ["leandro", "gabriella"];
+  const ACCESS_PROFILES = [
+    { value: "ti", label: "TI", description: "Controle total do sistema, usuários, módulos e configurações." },
+    { value: "gerencial", label: "Gerencial", description: "Visão ampla, relatórios e gestão global." },
+    { value: "coordenacao", label: "Coordenação", description: "Gestão da própria equipe e acompanhamento operacional." },
+    { value: "operacional", label: "Operacional", description: "Rotina diária e execução dos módulos de trabalho." },
+    { value: "consulta", label: "Consulta", description: "Acompanhamento somente leitura." },
+  ];
 
   // =======================================
   // STATE
@@ -39,6 +57,9 @@ document.addEventListener("DOMContentLoaded", () => {
   let currentUser = null;
   let moduleStatusMap = {};
   let modulesDbRows = [];
+  let teamConfig = {};
+  let userTeamMap = {};
+  let userAccessMap = {};
 
   // =======================================
   // NAV (TOP SAFE)
@@ -70,16 +91,304 @@ document.addEventListener("DOMContentLoaded", () => {
     return currentUser;
   }
 
-  function roleLabel(role) {
-    const r = String(role || "").toLowerCase();
-    if (r === "ti") return "TI";
-    if (r === "admin") return "ADMIN";
-    return "USER";
+  function accessProfileLabel(profile) {
+    const normalized = String(profile || "").trim().toLowerCase();
+    return ACCESS_PROFILES.find((item) => item.value === normalized)?.label || "Operacional";
+  }
+
+  function legacyRoleToAccessProfile(role) {
+    const normalized = String(role || "").trim().toLowerCase();
+    if (normalized === "ti") return "ti";
+    if (normalized === "admin") return "gerencial";
+    return "operacional";
+  }
+
+  function accessProfileToLegacyRole(profile) {
+    const normalized = String(profile || "").trim().toLowerCase();
+    if (normalized === "ti") return "ti";
+    if (normalized === "gerencial") return "admin";
+    return "user";
+  }
+
+  function normalizeAccessProfile(value) {
+    const normalized = String(value || "").trim().toLowerCase();
+    return ACCESS_PROFILES.some((item) => item.value === normalized) ? normalized : "operacional";
   }
 
   function avatarFromName(name) {
     const t = String(name || "").trim();
     return t ? t[0].toUpperCase() : "U";
+  }
+
+  function normalizeName(value) {
+    return String(value || "")
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .trim()
+      .toLowerCase();
+  }
+
+  function cloneDefaultTeamConfig() {
+    return JSON.parse(JSON.stringify(DEFAULT_TEAM_CONFIG));
+  }
+
+  function normalizeTeamConfig(raw) {
+    const base = cloneDefaultTeamConfig();
+    const source = raw && typeof raw === "object" ? raw : {};
+
+    TEAM_COORDINATORS.forEach((coordinator) => {
+      const next = Array.isArray(source[coordinator]) ? source[coordinator] : base[coordinator];
+      const cleaned = next.map((item) => String(item || "").trim()).filter(Boolean);
+      base[coordinator] = cleaned.length ? cleaned : [...DEFAULT_TEAM_CONFIG[coordinator]];
+    });
+
+    return base;
+  }
+
+  function readTeamConfigStore() {
+    try {
+      return normalizeTeamConfig(JSON.parse(localStorage.getItem(TEAMS_KEY) || "{}"));
+    } catch {
+      return cloneDefaultTeamConfig();
+    }
+  }
+
+  function writeTeamConfigStore() {
+    localStorage.setItem(TEAMS_KEY, JSON.stringify(teamConfig));
+  }
+
+  function readUserTeamStore() {
+    try {
+      const parsed = JSON.parse(localStorage.getItem(USER_TEAMS_KEY) || "{}");
+      if (!parsed || typeof parsed !== "object") return {};
+
+      return Object.fromEntries(
+        Object.entries(parsed).map(([key, value]) => [normalizeEntityId(key).toLowerCase(), value])
+      );
+    } catch {
+      return {};
+    }
+  }
+
+  function writeUserTeamStore() {
+    localStorage.setItem(USER_TEAMS_KEY, JSON.stringify(userTeamMap));
+  }
+
+  function readUserAccessStore() {
+    try {
+      const parsed = JSON.parse(localStorage.getItem(ACCESS_PROFILE_KEY) || "{}");
+      if (!parsed || typeof parsed !== "object") return {};
+
+      return Object.fromEntries(
+        Object.entries(parsed).map(([key, value]) => [
+          normalizeEntityId(key).toLowerCase(),
+          normalizeAccessProfile(value),
+        ])
+      );
+    } catch {
+      return {};
+    }
+  }
+
+  function writeUserAccessStore() {
+    localStorage.setItem(ACCESS_PROFILE_KEY, JSON.stringify(userAccessMap));
+  }
+
+  function canEditTeams(user) {
+    if (!user) return false;
+    if (getAccessProfile(user) === "ti") return true;
+    const name = normalizeName(user.nome);
+    const email = normalizeName(user.email);
+    return TEAM_EDITORS.some((entry) => name.includes(entry) || email.includes(entry));
+  }
+
+  function canManageUsers(user) {
+    return getAccessProfile(user) === "ti";
+  }
+
+  function canViewAdmin(user) {
+    const profile = getAccessProfile(user);
+    return profile === "ti" || profile === "gerencial";
+  }
+
+  function sameUserId(a, b) {
+    return String(a ?? "").trim() === String(b ?? "").trim();
+  }
+
+  function normalizeEntityId(value) {
+    return String(value ?? "").trim();
+  }
+
+  function resolveUserId(user) {
+    if (!user || typeof user !== "object") return "";
+
+    const candidates = [
+      user.id,
+      user.userId,
+      user.user_id,
+      user._id,
+      user.uuid,
+      user.email,
+    ];
+
+    for (const candidate of candidates) {
+      const normalized = normalizeEntityId(candidate);
+      if (normalized) return normalized;
+    }
+
+    return "";
+  }
+
+  function getUserTeamKeys(user) {
+    if (!user || typeof user !== "object") return [];
+
+    const keys = [
+      user.id,
+      user.userId,
+      user.user_id,
+      user._id,
+      user.uuid,
+      user.email,
+    ]
+      .map((value) => normalizeEntityId(value).toLowerCase())
+      .filter(Boolean);
+
+    return Array.from(new Set(keys));
+  }
+
+  function getStoredAssignment(user) {
+    const keys = getUserTeamKeys(user);
+    for (const key of keys) {
+      const assignment = userTeamMap[key];
+      if (assignment && typeof assignment === "object") return assignment;
+    }
+    return {};
+  }
+
+  function getStoredAccessProfile(user) {
+    const keys = getUserTeamKeys(user);
+    for (const key of keys) {
+      const profile = userAccessMap[key];
+      if (profile) return normalizeAccessProfile(profile);
+    }
+    return "";
+  }
+
+  function setStoredAssignment(user, assignment) {
+    const keys = getUserTeamKeys(user);
+    keys.forEach((key) => {
+      userTeamMap[key] = { ...assignment };
+    });
+  }
+
+  function setStoredAccessProfile(user, profile) {
+    const normalized = normalizeAccessProfile(profile);
+    const keys = getUserTeamKeys(user);
+    keys.forEach((key) => {
+      userAccessMap[key] = normalized;
+    });
+  }
+
+  function getAccessProfile(user) {
+    if (!user || typeof user !== "object") return "operacional";
+
+    return normalizeAccessProfile(
+      user.accessProfile ||
+        user.access_profile ||
+        getStoredAccessProfile(user) ||
+        legacyRoleToAccessProfile(user.role)
+    );
+  }
+
+  function applyUserMetaToState(userRef, assignment, accessProfile) {
+    const target = userRef || {};
+    const nextAssignment = {
+      coordenador: cleanText(assignment?.coordenador),
+      equipe: cleanText(assignment?.equipe),
+    };
+    const nextAccessProfile = normalizeAccessProfile(accessProfile);
+
+    setStoredAssignment(target, nextAssignment);
+    writeUserTeamStore();
+    setStoredAccessProfile(target, nextAccessProfile);
+    writeUserAccessStore();
+
+    const targetEmail = cleanText(target.email).toLowerCase();
+
+    usuarios = usuarios.map((user) => {
+      const sameById = target.id && sameUserId(user.id, target.id);
+      const sameByEmail = targetEmail && cleanText(user.email).toLowerCase() === targetEmail;
+      if (!sameById && !sameByEmail) return user;
+
+      return {
+        ...user,
+        coordenador: nextAssignment.coordenador,
+        equipe: nextAssignment.equipe,
+        accessProfile: nextAccessProfile,
+      };
+    });
+  }
+
+  function cleanText(value) {
+    if (value == null) return "";
+    if (typeof value === "object") {
+      if ("value" in value) return String(value.value || "").trim();
+      return "";
+    }
+    return String(value).trim();
+  }
+
+  function requiresTeamAssignment(cargo, accessProfile) {
+    const normalizedCargo = normalizeName(cargo);
+    const normalizedAccess = normalizeAccessProfile(accessProfile);
+    if (normalizedAccess === "gerencial") return false;
+    if (normalizedCargo === "gerente") return false;
+    return true;
+  }
+
+  function escapeHtml(value) {
+    return String(value ?? "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
+  }
+
+  function renderCollaboratorCard(user, options = {}) {
+    const mode = String(options.mode || "team");
+    const actionLabel = String(options.actionLabel || "");
+    const actionAttr = String(options.actionAttr || "");
+    const subtitle =
+      mode === "directory"
+        ? cleanText(user.equipe)
+          ? `${cleanText(user.cargo) || "Usuário"} • ${cleanText(user.coordenador) || "Sem coord."} / ${cleanText(user.equipe)}`
+          : `${cleanText(user.cargo) || "Usuário"} • ${cleanText(user.email) || "Sem email"}`
+        : `${cleanText(user.cargo) || "Usuário"} • ${cleanText(user.email) || "Sem email"}`;
+
+    const roleText = accessProfileLabel(user.accessProfile);
+    const initials = avatarFromName(cleanText(user.nome) || cleanText(user.email));
+
+    return `
+      <article class="collab-card collab-card--${escapeHtml(mode)}">
+        <div class="collab-card__avatar">${escapeHtml(initials)}</div>
+        <div class="collab-card__body">
+          <div class="collab-card__top">
+            <strong>${escapeHtml(cleanText(user.nome) || cleanText(user.email) || "Colaborador")}</strong>
+            <span>${escapeHtml(roleText)}</span>
+          </div>
+          <div class="collab-card__meta">${escapeHtml(subtitle)}</div>
+        </div>
+        <div class="collab-card__actions">
+          ${
+            actionLabel && actionAttr
+              ? `<button type="button" class="btn-acao ${mode === "directory" && cleanText(user.equipe) ? "btn-acao--ghost" : ""}" ${actionAttr}="${escapeHtml(user.id)}">${escapeHtml(actionLabel)}</button>`
+              : ""
+          }
+          <button type="button" class="btn-acao btn-acao--ghost" data-open-bi="${escapeHtml(user.id)}">BI</button>
+        </div>
+      </article>
+    `;
   }
 
   async function logout() {
@@ -178,11 +487,12 @@ document.addEventListener("DOMContentLoaded", () => {
   function normalizeUser(u) {
     if (!u || typeof u !== "object") return null;
 
-    const id = Number(u.id);
+    const id = resolveUserId(u);
     const nome = String(u.nome ?? u.name ?? "").trim();
     const email = String(u.email ?? "").trim().toLowerCase();
     const cargo = u.cargo != null ? String(u.cargo).trim() : "";
-    const role = String(u.role ?? "user").toLowerCase();
+    const role = String(u.role ?? accessProfileToLegacyRole(u.accessProfile) ?? "user").toLowerCase();
+    const accessProfile = getAccessProfile({ ...u, id, email, role });
 
     const ativo =
       typeof u.ativo === "boolean"
@@ -191,13 +501,25 @@ document.addEventListener("DOMContentLoaded", () => {
         ? u.active
         : true;
 
+    const assignment = getStoredAssignment({ ...u, id, email }) || {};
+    const assignedCoordinator = cleanText(
+      u.coordenador ?? u.coordinator ?? assignment.coordenador
+    );
+    const coordinator = TEAM_COORDINATORS.includes(assignedCoordinator) ? assignedCoordinator : "";
+    const availableTeams = coordinator ? teamConfig[coordinator] || [] : [];
+    const assignedTeam = cleanText(u.equipe ?? u.team ?? assignment.equipe);
+    const equipe = coordinator && availableTeams.includes(assignedTeam) ? assignedTeam : "";
+
     return {
       id,
       nome,
       email,
       cargo,
       role,
+      accessProfile,
       ativo,
+      coordenador,
+      equipe,
       createdAt: u.createdAt ?? null,
       updatedAt: u.updatedAt ?? null,
     };
@@ -535,25 +857,59 @@ document.addEventListener("DOMContentLoaded", () => {
   // MODAL + FORM
   // =======================================
   const listaUsuarios = document.getElementById("lista-usuarios");
+  const usuariosFiltro = document.getElementById("usuariosFiltro");
   const modal = document.getElementById("modalUsuario");
   const form = document.getElementById("formUsuario");
   const btnNovoUsuario = document.getElementById("btnNovoUsuario");
   const btnCancelar = document.getElementById("cancelarModal");
+  const btnFecharModalUsuario = document.getElementById("fecharModalUsuario");
+  const passwordToggleButtons = Array.from(document.querySelectorAll(".password-toggle"));
+  const btnGerenciarEquipes = document.getElementById("btnGerenciarEquipes");
+  const equipesOverview = document.getElementById("equipesOverview");
+  const modalEquipes = document.getElementById("modalEquipes");
+  const formEquipes = document.getElementById("formEquipes");
+  const equipesGrid = document.getElementById("equipesGrid");
+  const equipesMembers = document.getElementById("equipesMembers");
+  const cancelarEquipes = document.getElementById("cancelarEquipes");
+  const fecharModalEquipesHeader = document.getElementById("fecharModalEquipesHeader");
+  const modalEquipeMembros = document.getElementById("modalEquipeMembros");
+  const membrosEquipeTitulo = document.getElementById("membrosEquipeTitulo");
+  const membrosEquipeSubtitulo = document.getElementById("membrosEquipeSubtitulo");
+  const membrosEquipeLista = document.getElementById("membrosEquipeLista");
+  const membrosEquipeBusca = document.getElementById("membrosEquipeBusca");
+  const membrosEquipeDisponiveis = document.getElementById("membrosEquipeDisponiveis");
+  const fecharMembrosEquipe = document.getElementById("fecharMembrosEquipe");
+  const fecharEquipeHeader = document.getElementById("fecharEquipeHeader");
+  const inputCoordenador = document.getElementById("coordenador");
+  const inputEquipe = document.getElementById("equipe");
+  const listaCoordenadores = document.getElementById("listaCoordenadores");
+  const listaEquipes = document.getElementById("listaEquipes");
 
   let usuarios = [];
   let modoEdicao = false;
   let idEmEdicao = null;
+  let currentTeamModal = { coordinator: "", team: "" };
+  let currentTeamHubCoordinator = TEAM_COORDINATORS[0];
+
+  function syncBodyModalState() {
+    const hasOpenModal =
+      modal?.classList.contains("ativo") ||
+      modalEquipes?.classList.contains("ativo") ||
+      modalEquipeMembros?.classList.contains("ativo");
+
+    document.body.classList.toggle("modal-open", !!hasOpenModal);
+  }
 
   function openModal() {
     modal?.classList.add("ativo");
-    document.body.classList.add("modal-open");
     modal?.setAttribute("aria-hidden", "false");
+    syncBodyModalState();
   }
 
   function closeModal({ reset = true } = {}) {
     modal?.classList.remove("ativo");
-    document.body.classList.remove("modal-open");
     modal?.setAttribute("aria-hidden", "true");
+    syncBodyModalState();
 
     if (reset) form?.reset();
 
@@ -562,10 +918,65 @@ document.addEventListener("DOMContentLoaded", () => {
 
     if (form?.senha) form.senha.required = true;
     if (form?.confirmarSenha) form.confirmarSenha.required = true;
+
+    passwordToggleButtons.forEach((button) => {
+      const targetId = String(button.getAttribute("data-target-input") || "").trim();
+      const input = targetId ? document.getElementById(targetId) : null;
+      if (!input) return;
+      input.type = "password";
+      button.textContent = "Mostrar";
+    });
   }
 
-  modal?.addEventListener("click", (e) => {
-    if (e.target === modal) closeModal({ reset: true });
+  function setUserModalCopy(mode = "create") {
+    if (!form) return;
+
+    const title = form.querySelector("h3");
+    const subtitle = form.querySelector(".form-usuario__subtitle");
+
+    if (title) title.textContent = mode === "edit" ? "Editar Usuário" : "Novo Usuário";
+    if (subtitle) {
+      subtitle.textContent =
+        mode === "edit"
+          ? "Atualize dados de acesso, equipe e permissões deste colaborador."
+          : "Cadastre acessos, vínculo com equipe e nível de permissão.";
+    }
+  }
+
+  function openTeamsModal() {
+    currentTeamHubCoordinator = TEAM_COORDINATORS.includes(currentTeamHubCoordinator)
+      ? currentTeamHubCoordinator
+      : TEAM_COORDINATORS[0];
+    modalEquipes?.classList.add("ativo");
+    modalEquipes?.setAttribute("aria-hidden", "false");
+    syncBodyModalState();
+    renderTeamEditor();
+  }
+
+  function closeTeamsModal() {
+    modalEquipes?.classList.remove("ativo");
+    modalEquipes?.setAttribute("aria-hidden", "true");
+    syncBodyModalState();
+  }
+
+  function openTeamMembersModal(coordinator, team) {
+    currentTeamModal = { coordinator, team };
+    modalEquipeMembros?.classList.add("ativo");
+    modalEquipeMembros?.setAttribute("aria-hidden", "false");
+    if (membrosEquipeBusca) membrosEquipeBusca.value = "";
+    syncBodyModalState();
+    renderTeamMembersModal();
+  }
+
+  function closeTeamMembersModal() {
+    currentTeamModal = { coordinator: "", team: "" };
+    modalEquipeMembros?.classList.remove("ativo");
+    modalEquipeMembros?.setAttribute("aria-hidden", "true");
+    syncBodyModalState();
+  }
+
+  modalEquipeMembros?.addEventListener("click", (e) => {
+    if (e.target === modalEquipeMembros) closeTeamMembersModal();
   });
 
   // =======================================
@@ -587,16 +998,42 @@ document.addEventListener("DOMContentLoaded", () => {
         background:rgba(255,255,255,0.04);
       }
       .role-select{
+        appearance:none;
+        -webkit-appearance:none;
+        -moz-appearance:none;
         width:100%;
-        height:36px;
-        border-radius:10px;
-        border:1px solid rgba(255,255,255,0.12);
-        background:rgba(255,255,255,0.06);
-        color:rgba(232,237,246,0.9);
+        min-height:46px;
+        border-radius:12px;
+        border:1px solid rgba(93,188,255,0.22);
+        background:
+          linear-gradient(180deg, rgba(255,255,255,0.08), rgba(255,255,255,0.04)),
+          rgba(16,21,32,0.98);
+        color:#eef4fb;
         font-weight:900;
-        padding:0 10px;
+        padding:0 44px 0 14px;
         outline:none;
         cursor:pointer;
+        color-scheme:dark;
+        box-shadow:inset 0 1px 0 rgba(255,255,255,0.04);
+        background-image:
+          linear-gradient(45deg, transparent 50%, rgba(238,244,251,0.88) 50%),
+          linear-gradient(135deg, rgba(238,244,251,0.88) 50%, transparent 50%);
+        background-position:
+          calc(100% - 18px) calc(50% - 2px),
+          calc(100% - 12px) calc(50% - 2px);
+        background-size:6px 6px, 6px 6px;
+        background-repeat:no-repeat;
+      }
+      .role-select:focus{
+        border-color:rgba(93,188,255,0.45);
+        box-shadow:0 0 0 3px rgba(93,188,255,0.16);
+      }
+      .role-select option{
+        background:#101622;
+        color:#eef4fb;
+      }
+      .role-select option:disabled{
+        color:rgba(238,244,251,0.38);
       }
     `;
     document.head.appendChild(st);
@@ -624,26 +1061,469 @@ document.addEventListener("DOMContentLoaded", () => {
     const box = ensureRoleBox();
     if (!box) return;
 
-    const ctxRole = String(usuarioRef?.role || ROLE_DEFAULT).toLowerCase();
-    const disableTIOption = String(currentRole || "").toLowerCase() === "admin";
+    const currentAccessProfile = normalizeAccessProfile(usuarioRef?.accessProfile || legacyRoleToAccessProfile(usuarioRef?.role));
+    const canAssignTi = getAccessProfile({ role: currentRole }) === "ti";
 
     box.innerHTML = `
       <div style="font-weight:900; font-size:12px; letter-spacing:.4px; text-transform:uppercase; color:rgba(232,237,246,.85); margin:6px 0 10px 0;">
-        FUNÇÃO (ACESSO)
+        PERFIL DE ACESSO
       </div>
-      <select id="roleSelect" class="role-select">
-        <option value="user" ${ctxRole === "user" ? "selected" : ""}>USER</option>
-        <option value="admin" ${ctxRole === "admin" ? "selected" : ""}>ADMIN</option>
-        <option value="ti" ${ctxRole === "ti" ? "selected" : ""} ${disableTIOption ? "disabled" : ""}>TI</option>
-      </select>
+      <select id="accessProfileSelect" class="role-select"></select>
+      <div id="accessProfileHint" style="margin-top:10px; color:rgba(234,238,243,.64); font-size:12px; line-height:1.5;"></div>
     `;
+
+    const select = box.querySelector("#accessProfileSelect");
+    const hint = box.querySelector("#accessProfileHint");
+    if (!select || !hint) return;
+
+    select.innerHTML = ACCESS_PROFILES.map((profile) => {
+      const disabled = profile.value === "ti" && !canAssignTi ? "disabled" : "";
+      const selected = profile.value === currentAccessProfile ? "selected" : "";
+      return `<option value="${profile.value}" ${selected} ${disabled}>${profile.label}</option>`;
+    }).join("");
+
+    const syncHint = () => {
+      const selectedProfile = ACCESS_PROFILES.find((item) => item.value === select.value) || ACCESS_PROFILES[3];
+      hint.textContent = selectedProfile.description;
+      updateTeamAssignmentUI();
+    };
+
+    select.addEventListener("change", syncHint);
+    syncHint();
+  }
+
+  function updateTeamAssignmentUI() {
+    const accessProfileSel = document.getElementById("accessProfileSelect");
+    const selectedAccessProfile = normalizeAccessProfile(accessProfileSel?.value || "operacional");
+    const cargo = String(form?.cargo?.value || "").trim();
+    const needsAssignment = requiresTeamAssignment(cargo, selectedAccessProfile);
+
+    if (inputCoordenador) {
+      inputCoordenador.required = needsAssignment;
+      inputCoordenador.placeholder = needsAssignment ? "Selecione o coordenador" : "Nao se aplica para gerente";
+      inputCoordenador.classList.toggle("is-disabled", !needsAssignment);
+    }
+
+    if (inputEquipe) {
+      inputEquipe.required = needsAssignment;
+      inputEquipe.placeholder = needsAssignment ? "Selecione a equipe" : "Nao se aplica para gerente";
+      inputEquipe.classList.toggle("is-disabled", !needsAssignment);
+    }
+
+    if (!needsAssignment) {
+      if (inputCoordenador) inputCoordenador.value = "";
+      if (inputEquipe) inputEquipe.value = "";
+      if (listaCoordenadores) listaCoordenadores.style.display = "none";
+      if (listaEquipes) listaEquipes.style.display = "none";
+    } else if (!cleanText(inputCoordenador?.value) || !cleanText(inputEquipe?.value)) {
+      syncTeamSelectors(TEAM_COORDINATORS[0]);
+    }
+  }
+
+  function renderEquipesOverview() {
+    if (!equipesOverview) return;
+
+    equipesOverview.innerHTML = TEAM_COORDINATORS.map((coordinator) => {
+      const teams = teamConfig[coordinator] || [];
+      const totalMembers = teams.reduce((sum, team) => {
+        const members = usuarios.filter((user) => user.coordenador === coordinator && user.equipe === team);
+        return sum + members.length;
+      }, 0);
+
+      return `
+        <article class="equipe-card">
+          <div class="equipe-card__top">
+            <div>
+              <strong class="equipe-card__title">${coordinator}</strong>
+              <span class="equipe-card__meta">${teams.length} equipes • ${totalMembers} pessoas</span>
+            </div>
+          </div>
+          <div class="equipe-card__list">
+            ${
+              teams.length
+                ? teams
+                    .map((team) => {
+                      const members = usuarios.filter(
+                        (user) => user.coordenador === coordinator && user.equipe === team
+                      );
+                      return `
+                        <button
+                          type="button"
+                          class="equipe-summary-row"
+                          data-open-team-modal="true"
+                          data-coordinator="${coordinator}"
+                          data-equipe="${team}"
+                        >
+                          <strong>${team}</strong>
+                          <span>${members.length} pessoa(s)</span>
+                        </button>
+                      `;
+                    })
+                    .join("")
+                : '<div class="equipe-summary-row equipe-summary-row--empty">Sem equipes configuradas</div>'
+            }
+          </div>
+        </article>
+      `;
+    }).join("");
+  }
+
+  async function persistUserTeamAssignment(userId, coordinator, equipe) {
+    const targetUser = usuarios.find((user) => sameUserId(user.id, userId));
+    const nextAssignment = { coordenador: cleanText(coordinator), equipe: cleanText(equipe) };
+
+    if (!targetUser) return;
+
+    const updated = await apiUpdateUser(userId, {
+      id: targetUser.id,
+      nome: targetUser.nome,
+      email: targetUser.email,
+      cargo: targetUser.cargo,
+      role: targetUser.role,
+      accessProfile: targetUser.accessProfile,
+      coordenador: nextAssignment.coordenador,
+      equipe: nextAssignment.equipe,
+      ativo: targetUser.ativo,
+    });
+
+    applyUserMetaToState(
+      updated || targetUser,
+      nextAssignment,
+      getAccessProfile(updated || targetUser)
+    );
+
+    usuarios = usuarios.map((user) =>
+      sameUserId(user.id, userId)
+        ? {
+            ...user,
+            ...normalizeUser(updated || user),
+            coordenador: nextAssignment.coordenador,
+            equipe: nextAssignment.equipe,
+          }
+        : user
+    );
+  }
+
+  async function removeUserFromTeam(userId) {
+    const nextAssignment = {
+      coordenador: "",
+      equipe: "",
+    };
+
+    const targetUser = usuarios.find((user) => sameUserId(user.id, userId));
+    if (!targetUser) return;
+
+    const updated = await apiUpdateUser(userId, {
+      id: targetUser.id,
+      nome: targetUser.nome,
+      email: targetUser.email,
+      cargo: targetUser.cargo,
+      role: targetUser.role,
+      accessProfile: targetUser.accessProfile,
+      coordenador: "",
+      equipe: "",
+      ativo: targetUser.ativo,
+    });
+
+    applyUserMetaToState(
+      updated || targetUser,
+      nextAssignment,
+      getAccessProfile(updated || targetUser)
+    );
+
+    usuarios = usuarios.map((user) =>
+      sameUserId(user.id, userId)
+        ? {
+            ...user,
+            ...normalizeUser(updated || user),
+            coordenador: "",
+            equipe: "",
+          }
+        : user
+    );
+  }
+
+  function renderTeamMembersModal() {
+    if (
+      !membrosEquipeTitulo ||
+      !membrosEquipeSubtitulo ||
+      !membrosEquipeLista ||
+      !membrosEquipeDisponiveis
+    ) {
+      return;
+    }
+
+    const { coordinator, team } = currentTeamModal;
+    const members = usuarios.filter((user) => user.coordenador === coordinator && user.equipe === team);
+    const available = usuarios.filter(
+      (user) => user.ativo && !user.equipe
+    );
+    const transferCandidates = usuarios.filter(
+      (user) => user.ativo && user.equipe && !(user.coordenador === coordinator && user.equipe === team)
+    );
+    const countEl = document.getElementById("membrosEquipeCount");
+    const countCardEl = document.getElementById("membrosEquipeCountCard");
+    const availableCountEl = document.getElementById("membrosEquipeAvailableCount");
+    const transferCountCardEl = document.getElementById("membrosEquipeTransferCount");
+    const transferCountEl = document.getElementById("membrosEquipeTransferLabel");
+    const availableLabelEl = document.getElementById("membrosEquipeAvailableLabel");
+    const searchTerm = String(membrosEquipeBusca?.value || "").trim().toLowerCase();
+    const filteredMembers = !searchTerm
+      ? members
+      : members.filter((member) =>
+          [member.nome, member.email, member.cargo]
+            .map((value) => String(value || "").toLowerCase())
+            .some((value) => value.includes(searchTerm))
+        );
+    const filteredAvailable = !searchTerm
+      ? available
+      : available.filter((user) =>
+          [user.nome, user.email, user.cargo]
+            .map((value) => String(value || "").toLowerCase())
+            .some((value) => value.includes(searchTerm))
+        );
+    const filteredTransfers = !searchTerm
+      ? transferCandidates
+      : transferCandidates.filter((user) =>
+          [user.nome, user.email, user.cargo, user.coordenador, user.equipe]
+            .map((value) => String(value || "").toLowerCase())
+            .some((value) => value.includes(searchTerm))
+        );
+    const directory = [...filteredAvailable, ...filteredTransfers].sort((a, b) =>
+      String(cleanText(a.nome) || cleanText(a.email)).localeCompare(
+        String(cleanText(b.nome) || cleanText(b.email)),
+        "pt-BR",
+        { sensitivity: "base" }
+      )
+    );
+
+    membrosEquipeTitulo.textContent = team || "Equipe";
+    membrosEquipeSubtitulo.textContent = coordinator
+      ? `${coordinator} • gerencie as pessoas desta equipe`
+      : "Gerencie as pessoas desta equipe.";
+    if (countEl) countEl.textContent = `${members.length} na equipe`;
+    if (countCardEl) countCardEl.textContent = String(members.length);
+    if (availableCountEl) availableCountEl.textContent = `${available.length + transferCandidates.length} no diretorio`;
+    if (transferCountCardEl) transferCountCardEl.textContent = String(transferCandidates.length);
+    if (availableLabelEl) availableLabelEl.textContent = `${available.length} sem equipe`;
+    if (transferCountEl) transferCountEl.textContent = `${transferCandidates.length} em outras equipes`;
+
+    membrosEquipeLista.innerHTML = filteredMembers.length
+      ? filteredMembers
+          .map((member) =>
+            renderCollaboratorCard(member, {
+              mode: "team",
+              actionLabel: "Remover",
+              actionAttr: "data-remove-member",
+            })
+          )
+          .join("")
+      : `<div class="membros-equipe-vazio">${
+          members.length
+            ? "Nenhuma pessoa encontrada com esse filtro."
+            : "Nenhuma pessoa vinculada a esta equipe."
+        }</div>`;
+
+    membrosEquipeDisponiveis.innerHTML = directory.length
+      ? directory
+          .map((user) =>
+            renderCollaboratorCard(user, {
+              mode: "directory",
+              actionLabel: user.equipe ? "Mover" : "Adicionar",
+              actionAttr: user.equipe ? "data-move-member" : "data-add-member",
+            })
+          )
+          .join("")
+      : `<div class="membros-equipe-vazio">${
+          [...available, ...transferCandidates].length
+            ? "Nenhuma pessoa encontrada com esse filtro."
+            : "Nenhuma pessoa disponível no diretório."
+        }</div>`;
+  }
+
+  function renderEquipeMembers() {
+    if (!equipesMembers) return;
+
+    equipesMembers.innerHTML = TEAM_COORDINATORS.map((coordinator) => {
+      const teams = teamConfig[coordinator] || [];
+      const totalMembers = teams.reduce((sum, team) => {
+        const members = usuarios.filter((user) => user.coordenador === coordinator && user.equipe === team);
+        return sum + members.length;
+      }, 0);
+
+      return `
+        <article class="equipe-members-card">
+          <div class="equipe-members-card__head">
+            <div>
+              <h3>${coordinator}</h3>
+              <p>${teams.length} equipes configuradas</p>
+            </div>
+            <span class="equipe-members-card__count">${totalMembers} pessoas</span>
+          </div>
+
+          <div class="equipe-members-grid">
+            ${teams
+              .map((team) => {
+                const members = usuarios.filter(
+                  (user) => user.coordenador === coordinator && user.equipe === team
+                );
+
+                return `
+                  <section class="equipe-member-box">
+                    <div class="equipe-member-box__title">
+                      <div>
+                        <strong>${team}</strong>
+                        <span>${members.length} pessoas</span>
+                      </div>
+                      <button
+                        type="button"
+                        class="btn-acao btn-acao--ghost"
+                        data-open-team-modal="true"
+                        data-coordinator="${coordinator}"
+                        data-equipe="${team}"
+                      >
+                        Gerenciar
+                      </button>
+                    </div>
+
+                    <div class="equipe-member-list">
+                      ${
+                        members.length
+                          ? members
+                              .map(
+                                (member) => `
+                                  <div class="equipe-member-row">
+                                    <strong>${member.nome || member.email}</strong>
+                                    <span>${member.cargo || "Usuário"}</span>
+                                  </div>
+                                `
+                              )
+                              .join("")
+                          : '<div class="equipe-member-empty">Nenhuma pessoa nesta equipe.</div>'
+                      }
+                    </div>
+                  </section>
+                `;
+              })
+              .join("")}
+          </div>
+        </article>
+      `;
+    }).join("");
+  }
+
+  function renderTeamEditor() {
+    if (!equipesGrid) return;
+    const safeCoordinator = TEAM_COORDINATORS.includes(currentTeamHubCoordinator)
+      ? currentTeamHubCoordinator
+      : TEAM_COORDINATORS[0];
+    const teams = teamConfig[safeCoordinator] || [];
+    const totalMembers = teams.reduce((sum, team) => {
+      const members = usuarios.filter((user) => user.coordenador === safeCoordinator && user.equipe === team);
+      return sum + members.length;
+    }, 0);
+
+    equipesGrid.innerHTML = `
+      <div class="team-master">
+        <aside class="team-master__sidebar">
+          <div class="team-master__sidebar-head">
+            <strong>Coordenadores</strong>
+            <span>${TEAM_COORDINATORS.length} lideranças</span>
+          </div>
+          <div class="team-master__nav">
+            ${TEAM_COORDINATORS.map((coordinator) => {
+              const coordinatorTeams = teamConfig[coordinator] || [];
+              const coordinatorMembers = coordinatorTeams.reduce((sum, team) => {
+                const members = usuarios.filter((user) => user.coordenador === coordinator && user.equipe === team);
+                return sum + members.length;
+              }, 0);
+
+              return `
+                <button
+                  type="button"
+                  class="team-master__nav-item ${coordinator === safeCoordinator ? "is-active" : ""}"
+                  data-select-coordinator="${coordinator}"
+                >
+                  <strong>${coordinator}</strong>
+                  <span>${coordinatorTeams.length} equipes • ${coordinatorMembers} pessoas</span>
+                </button>
+              `;
+            }).join("")}
+          </div>
+        </aside>
+
+        <section class="team-master__content">
+          <div class="team-master__content-head">
+            <div>
+              <h4>${safeCoordinator}</h4>
+              <p>${teams.length} equipes ativas nessa coordenação</p>
+            </div>
+            <span class="team-master__content-badge">${totalMembers} pessoas</span>
+          </div>
+
+          <div class="team-master__rows">
+            ${
+              teams.length
+                ? teams.map((team) => {
+                    const members = usuarios.filter(
+                      (user) => user.coordenador === safeCoordinator && user.equipe === team
+                    );
+                    return `
+                      <button
+                        type="button"
+                        class="team-master__row"
+                        data-open-team-modal="true"
+                        data-coordinator="${safeCoordinator}"
+                        data-equipe="${team}"
+                      >
+                        <div class="team-master__row-main">
+                          <strong>${team}</strong>
+                          <small>Gerenciar pessoas desta equipe</small>
+                        </div>
+                        <div class="team-master__row-meta">
+                          <span>${members.length} pessoa(s)</span>
+                          <b>Abrir</b>
+                        </div>
+                      </button>
+                    `;
+                  }).join("")
+                : '<div class="team-master__empty">Nenhuma equipe configurada para este coordenador.</div>'
+            }
+          </div>
+        </section>
+      </div>
+    `;
+  }
+
+  function populateCoordinatorList(selected = "") {
+    if (!listaCoordenadores) return;
+    listaCoordenadores.innerHTML = TEAM_COORDINATORS.map(
+      (coordinator) => `<li data-value="${coordinator}">${coordinator}</li>`
+    ).join("");
+    if (inputCoordenador) inputCoordenador.value = selected || TEAM_COORDINATORS[0];
+  }
+
+  function populateTeamList(coordinator, selected = "") {
+    if (!listaEquipes) return;
+    const teams = teamConfig[coordinator] || [];
+    listaEquipes.innerHTML = teams
+      .map((team) => `<li data-value="${team}">${team}</li>`)
+      .join("");
+    if (inputEquipe) inputEquipe.value = selected && teams.includes(selected) ? selected : teams[0] || "";
+  }
+
+  function syncTeamSelectors(coordinator, team = "") {
+    const safeCoordinator = TEAM_COORDINATORS.includes(coordinator) ? coordinator : TEAM_COORDINATORS[0];
+    populateCoordinatorList(safeCoordinator);
+    populateTeamList(safeCoordinator, team);
   }
 
   // =======================================
   // SELECT CARGO (UI)
   // =======================================
   const inputCargo = document.getElementById("cargo");
-  const listaCargos = document.querySelector(".lista-cargos");
+  const cargoSelectWrap = inputCargo?.closest(".select-cargo") || null;
+  const listaCargos = cargoSelectWrap?.querySelector(".lista-cargos") || null;
 
   function setCargoOpen(open) {
     if (!listaCargos || !inputCargo) return;
@@ -669,11 +1549,44 @@ document.addEventListener("DOMContentLoaded", () => {
       if (!inputCargo) return;
       inputCargo.value = item.textContent.trim();
       setCargoOpen(false);
+      updateTeamAssignmentUI();
     });
   });
 
   document.addEventListener("click", (e) => {
-    if (!e.target.closest(".select-cargo")) setCargoOpen(false);
+    if (!e.target.closest(".select-cargo")) {
+      setCargoOpen(false);
+      if (listaCoordenadores) listaCoordenadores.style.display = "none";
+      if (listaEquipes) listaEquipes.style.display = "none";
+    }
+  });
+
+  inputCoordenador?.addEventListener("click", () => {
+    if (!listaCoordenadores) return;
+    const open = listaCoordenadores.style.display === "block";
+    listaCoordenadores.style.display = open ? "none" : "block";
+  });
+
+  inputEquipe?.addEventListener("click", () => {
+    if (!listaEquipes) return;
+    const open = listaEquipes.style.display === "block";
+    listaEquipes.style.display = open ? "none" : "block";
+  });
+
+  listaCoordenadores?.addEventListener("click", (e) => {
+    const item = e.target.closest("li[data-value]");
+    if (!item) return;
+    const coordinator = String(item.getAttribute("data-value") || "").trim();
+    syncTeamSelectors(coordinator);
+    listaCoordenadores.style.display = "none";
+    if (listaEquipes) listaEquipes.style.display = "block";
+  });
+
+  listaEquipes?.addEventListener("click", (e) => {
+    const item = e.target.closest("li[data-value]");
+    if (!item || !inputEquipe) return;
+    inputEquipe.value = String(item.getAttribute("data-value") || "").trim();
+    listaEquipes.style.display = "none";
   });
 
   // =======================================
@@ -708,10 +1621,9 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     const nome = u.nome || u.name || "Usuário";
-    const role = (u.role || "user").toLowerCase();
 
     if (elUserName) elUserName.textContent = nome;
-    if (elUserRole) elUserRole.textContent = roleLabel(role);
+    if (elUserRole) elUserRole.textContent = accessProfileLabel(getAccessProfile(u));
     if (elUserAvatar) elUserAvatar.textContent = avatarFromName(nome);
   }
 
@@ -774,13 +1686,12 @@ document.addEventListener("DOMContentLoaded", () => {
   // =======================================
   function applyRoleToSidebar() {
     const current = getSessionUser();
-    const role = (current?.role || "user").toLowerCase();
 
     getSidebarCards().forEach((card) => {
       const moduleId = card.dataset.moduleId;
       if (!moduleId) return;
 
-      const blocked = role === "user" && moduleId === "contadmin";
+      const blocked = moduleId === "contadmin" && !canViewAdmin(current);
       card.setAttribute("data-noaccess", blocked ? "true" : "false");
     });
   }
@@ -802,6 +1713,10 @@ document.addEventListener("DOMContentLoaded", () => {
         email: body.email,
         cargo: body.cargo,
         role: body.role,
+        access_profile: body.accessProfile,
+        accessProfile: body.accessProfile,
+        coordenador: body.coordenador,
+        equipe: body.equipe,
         active: body.ativo,
         ativo: body.ativo,
         password: body.senha,
@@ -822,6 +1737,10 @@ document.addEventListener("DOMContentLoaded", () => {
         email: body.email,
         cargo: body.cargo,
         role: body.role,
+        access_profile: body.accessProfile,
+        accessProfile: body.accessProfile,
+        coordenador: body.coordenador,
+        equipe: body.equipe,
         active: body.ativo,
         ativo: body.ativo,
       },
@@ -915,7 +1834,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const body = m.querySelector("#logsBody");
 
     title.textContent = `Logs • ${usuario.nome || "(sem nome)"}`;
-    sub.textContent = `${usuario.email || ""} • ${roleLabel(usuario.role)} • ${usuario.cargo || ""}`;
+        sub.textContent = `${usuario.email || ""} • ${accessProfileLabel(usuario.accessProfile)} • ${usuario.cargo || ""}`;
     body.textContent = "Carregando logs...";
 
     m.style.display = "grid";
@@ -954,11 +1873,25 @@ document.addEventListener("DOMContentLoaded", () => {
     if (!listaUsuarios) return;
     listaUsuarios.innerHTML = "";
 
-    if (!usuarios.length) {
+    const filterTerm = String(usuariosFiltro?.value || "").trim().toLowerCase();
+    const visibleUsers = !filterTerm
+      ? usuarios
+      : usuarios.filter((usuario) =>
+          [
+            usuario.nome,
+            usuario.email,
+            usuario.cargo,
+            accessProfileLabel(usuario.accessProfile),
+          ]
+            .map((value) => String(value || "").toLowerCase())
+            .some((value) => value.includes(filterTerm))
+        );
+
+    if (!visibleUsers.length) {
       listaUsuarios.innerHTML = `
         <tr>
-          <td colspan="5" class="muted" style="text-align:center;">
-            Nenhum usuário encontrado
+          <td colspan="6" class="muted" style="text-align:center;">
+            ${usuarios.length ? "Nenhum usuário encontrado para esse filtro" : "Nenhum usuário encontrado"}
           </td>
         </tr>
       `;
@@ -966,21 +1899,19 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     const current = getSessionUser();
-    const currentRole = (current?.role || "user").toLowerCase();
+    const currentAccessProfile = getAccessProfile(current);
+    const allowManagement = canManageUsers(current);
 
-    usuarios.forEach((usuario) => {
-      const protegido =
-        currentRole === "admin" && (usuario.role || "").toLowerCase() === "ti";
-      const funcao = roleLabel(usuario.role);
+    visibleUsers.forEach((usuario) => {
+      const protegido = currentAccessProfile !== "ti" && getAccessProfile(usuario) === "ti";
+      const accessProfile = accessProfileLabel(usuario.accessProfile);
 
       listaUsuarios.innerHTML += `
         <tr>
           <td>${usuario.nome || ""}</td>
           <td>${usuario.email || ""}</td>
-          <td>
-            ${usuario.cargo || ""}
-            <span class="muted" style="font-size:11px;">(${funcao})</span>
-          </td>
+          <td>${usuario.cargo || ""}</td>
+          <td><span class="muted-inline">${accessProfile}</span></td>
           <td>
             <span class="status ${usuario.ativo ? "ativo" : "inativo"}">
               ${usuario.ativo ? "Ativo" : "Inativo"}
@@ -988,7 +1919,9 @@ document.addEventListener("DOMContentLoaded", () => {
           </td>
           <td>
             ${
-              protegido
+              !allowManagement
+                ? `<span class="muted">Somente visualização</span>`
+                : protegido
                 ? `<span class="muted">Protegido</span>`
                 : `
                   <button class="btn-acao btn-editar" data-id="${usuario.id}">Editar</button>
@@ -1010,13 +1943,17 @@ document.addEventListener("DOMContentLoaded", () => {
   // =======================================
   async function carregarUsuariosDaAPI() {
     try {
-      usuarios = await apiListUsers();
+      usuarios = (await apiListUsers()).map((user) => normalizeUser(user));
       renderizarUsuarios();
+      renderEquipesOverview();
+      renderEquipeMembers();
     } catch (err) {
       console.error("❌ Falha ao listar usuários (API):", err);
       alert("Erro ao listar usuários. Veja o console (F12) para o detalhe.");
       usuarios = [];
       renderizarUsuarios();
+      renderEquipesOverview();
+      renderEquipeMembers();
     }
   }
 
@@ -1024,6 +1961,11 @@ document.addEventListener("DOMContentLoaded", () => {
   // NOVO / EDITAR
   // =======================================
   btnNovoUsuario?.addEventListener("click", () => {
+    if (!canManageUsers(getSessionUser())) {
+      alert("Somente TI pode criar usuários.");
+      return;
+    }
+
     modoEdicao = false;
     idEmEdicao = null;
     form?.reset();
@@ -1034,25 +1976,162 @@ document.addEventListener("DOMContentLoaded", () => {
     const current = getSessionUser();
     renderRoleSelect((current?.role || "user").toLowerCase(), {
       role: ROLE_DEFAULT,
+      accessProfile: "operacional",
     });
 
-    const h3 = form?.querySelector("h3");
-    if (h3) h3.textContent = "Novo Usuário";
-
+    setUserModalCopy("create");
+    syncTeamSelectors(TEAM_COORDINATORS[0]);
+    updateTeamAssignmentUI();
     openModal();
   });
 
+  usuariosFiltro?.addEventListener("input", () => renderizarUsuarios());
+
   btnCancelar?.addEventListener("click", () => closeModal({ reset: true }));
+  btnFecharModalUsuario?.addEventListener("click", () => closeModal({ reset: true }));
+  passwordToggleButtons.forEach((button) => {
+    button.addEventListener("click", () => {
+      const targetId = String(button.getAttribute("data-target-input") || "").trim();
+      const input = targetId ? document.getElementById(targetId) : null;
+      if (!input) return;
+
+      const showing = input.type === "text";
+      input.type = showing ? "password" : "text";
+      button.textContent = showing ? "Mostrar" : "Ocultar";
+    });
+  });
+
+  btnGerenciarEquipes?.addEventListener("click", () => {
+    if (!canEditTeams(getSessionUser())) {
+      alert("Somente você e a Gabriella podem editar as equipes.");
+      return;
+    }
+    renderTeamEditor();
+    openTeamsModal();
+  });
+
+  cancelarEquipes?.addEventListener("click", () => closeTeamsModal());
+  fecharModalEquipesHeader?.addEventListener("click", () => closeTeamsModal());
+
+  equipesGrid?.addEventListener("click", (e) => {
+    const coordinatorBtn = e.target.closest("button[data-select-coordinator]");
+    if (coordinatorBtn) {
+      const coordinator = String(coordinatorBtn.getAttribute("data-select-coordinator") || "").trim();
+      if (!coordinator) return;
+      currentTeamHubCoordinator = coordinator;
+      renderTeamEditor();
+      return;
+    }
+
+    const btn = e.target.closest("button[data-open-team-modal]");
+    if (!btn) return;
+
+    const coordinator = String(btn.getAttribute("data-coordinator") || "").trim();
+    const team = String(btn.getAttribute("data-equipe") || "").trim();
+    if (!coordinator || !team) return;
+
+    closeTeamsModal();
+    openTeamMembersModal(coordinator, team);
+  });
+
+  equipesMembers?.addEventListener("click", (e) => {
+    const btn = e.target.closest("button[data-open-team-modal]");
+    if (!btn) return;
+
+    const coordinator = String(btn.getAttribute("data-coordinator") || "").trim();
+    const team = String(btn.getAttribute("data-equipe") || "").trim();
+    if (!coordinator || !team) return;
+
+    openTeamMembersModal(coordinator, team);
+  });
+
+  equipesOverview?.addEventListener("click", (e) => {
+    const btn = e.target.closest("button[data-open-team-modal]");
+    if (!btn) return;
+
+    const coordinator = String(btn.getAttribute("data-coordinator") || "").trim();
+    const team = String(btn.getAttribute("data-equipe") || "").trim();
+    if (!coordinator || !team) return;
+
+    openTeamMembersModal(coordinator, team);
+  });
+
+  const rerenderAfterTeamChange = () => {
+    renderEquipesOverview();
+    renderEquipeMembers();
+    renderizarUsuarios();
+    renderTeamMembersModal();
+  };
+
+  membrosEquipeDisponiveis?.addEventListener("click", async (e) => {
+    const biBtn = e.target.closest("button[data-open-bi]");
+    if (biBtn) {
+      const userId = normalizeEntityId(biBtn.getAttribute("data-open-bi") || "");
+      const usuario = usuarios.find((u) => sameUserId(u.id, userId));
+      if (usuario) openLogsForUser(usuario);
+      return;
+    }
+
+    const btn = e.target.closest("button[data-add-member], button[data-move-member]");
+    if (!btn) return;
+
+    const userId = normalizeEntityId(
+      btn.getAttribute("data-add-member") || btn.getAttribute("data-move-member") || ""
+    );
+    const { coordinator, team } = currentTeamModal;
+    if (!userId || !coordinator || !team) return;
+
+    try {
+      await persistUserTeamAssignment(userId, coordinator, team);
+      rerenderAfterTeamChange();
+    } catch (err) {
+      console.error("❌ Falha ao salvar equipe do usuário:", err);
+      alert(`Erro ao salvar equipe: ${err?.message || err}`);
+    }
+  });
+
+  membrosEquipeLista?.addEventListener("click", async (e) => {
+    const biBtn = e.target.closest("button[data-open-bi]");
+    if (biBtn) {
+      const userId = normalizeEntityId(biBtn.getAttribute("data-open-bi") || "");
+      const usuario = usuarios.find((u) => sameUserId(u.id, userId));
+      if (usuario) openLogsForUser(usuario);
+      return;
+    }
+
+    const btn = e.target.closest("button[data-remove-member]");
+    if (!btn) return;
+
+    const userId = normalizeEntityId(btn.getAttribute("data-remove-member") || "");
+    if (!userId) return;
+
+    try {
+      await removeUserFromTeam(userId);
+      rerenderAfterTeamChange();
+    } catch (err) {
+      console.error("❌ Falha ao remover usuário da equipe:", err);
+      alert(`Erro ao remover da equipe: ${err?.message || err}`);
+    }
+  });
+
+  fecharMembrosEquipe?.addEventListener("click", () => closeTeamMembersModal());
+  fecharEquipeHeader?.addEventListener("click", () => closeTeamMembersModal());
+  membrosEquipeBusca?.addEventListener("input", () => renderTeamMembersModal());
 
   function editarUsuario(id) {
-    const usuario = usuarios.find((u) => Number(u.id) === Number(id));
+    if (!canManageUsers(getSessionUser())) {
+      alert("Somente TI pode editar usuários.");
+      return;
+    }
+
+    const usuario = usuarios.find((u) => sameUserId(u.id, id));
     if (!usuario) return;
 
     const current = getSessionUser();
-    const currentRole = (current?.role || "user").toLowerCase();
+    const currentAccessProfile = getAccessProfile(current);
 
-    if (currentRole === "admin" && (usuario.role || "").toLowerCase() === "ti") {
-      alert("ADMIN não pode alterar usuários TI.");
+    if (currentAccessProfile !== "ti" && getAccessProfile(usuario) === "ti") {
+      alert("Somente TI pode alterar usuários com perfil TI.");
       return;
     }
 
@@ -1062,6 +2141,7 @@ document.addEventListener("DOMContentLoaded", () => {
     form.nome.value = usuario.nome || "";
     form.email.value = usuario.email || "";
     form.cargo.value = usuario.cargo || "";
+    syncTeamSelectors(usuario.coordenador, usuario.equipe);
 
     if (form?.senha) {
       form.senha.value = "";
@@ -1073,28 +2153,32 @@ document.addEventListener("DOMContentLoaded", () => {
       form.confirmarSenha.required = false;
     }
 
-    const h3 = form?.querySelector("h3");
-    if (h3) h3.textContent = "Editar Usuário";
-
-    renderRoleSelect(currentRole, usuario);
+    setUserModalCopy("edit");
+    renderRoleSelect((current?.role || "user").toLowerCase(), usuario);
+    updateTeamAssignmentUI();
     openModal();
   }
 
   async function toggleStatusUsuario(id) {
-    const usuario = usuarios.find((u) => Number(u.id) === Number(id));
+    if (!canManageUsers(getSessionUser())) {
+      alert("Somente TI pode alterar status de usuários.");
+      return;
+    }
+
+    const usuario = usuarios.find((u) => sameUserId(u.id, id));
     if (!usuario) return;
 
     const current = getSessionUser();
-    const currentRole = (current?.role || "user").toLowerCase();
+    const currentAccessProfile = getAccessProfile(current);
 
-    if (currentRole === "admin" && (usuario.role || "").toLowerCase() === "ti") {
-      alert("ADMIN não pode alterar usuários TI.");
+    if (currentAccessProfile !== "ti" && getAccessProfile(usuario) === "ti") {
+      alert("Somente TI pode alterar usuários com perfil TI.");
       return;
     }
 
     try {
       const updated = await apiToggleUser(id);
-      usuarios = usuarios.map((u) => (Number(u.id) === Number(id) ? updated : u));
+      usuarios = usuarios.map((u) => (sameUserId(u.id, id) ? normalizeUser(updated) : u));
       renderizarUsuarios();
     } catch (err) {
       console.error("❌ Falha ao alternar status:", err);
@@ -1103,14 +2187,19 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   async function excluirUsuario(id) {
-    const usuario = usuarios.find((u) => Number(u.id) === Number(id));
+    if (!canManageUsers(getSessionUser())) {
+      alert("Somente TI pode excluir usuários.");
+      return;
+    }
+
+    const usuario = usuarios.find((u) => sameUserId(u.id, id));
     if (!usuario) return;
 
     const current = getSessionUser();
-    const currentRole = (current?.role || "user").toLowerCase();
+    const currentAccessProfile = getAccessProfile(current);
 
-    if (currentRole === "admin" && (usuario.role || "").toLowerCase() === "ti") {
-      alert("ADMIN não pode excluir usuário TI.");
+    if (currentAccessProfile !== "ti" && getAccessProfile(usuario) === "ti") {
+      alert("Somente TI pode excluir usuários com perfil TI.");
       return;
     }
 
@@ -1119,7 +2208,13 @@ document.addEventListener("DOMContentLoaded", () => {
 
     try {
       await apiDeleteUser(id);
-      usuarios = usuarios.filter((u) => Number(u.id) !== Number(id));
+      getUserTeamKeys(usuario).forEach((key) => {
+        delete userTeamMap[key];
+        delete userAccessMap[key];
+      });
+      writeUserTeamStore();
+      writeUserAccessStore();
+      usuarios = usuarios.filter((u) => !sameUserId(u.id, id));
       renderizarUsuarios();
     } catch (err) {
       console.error("❌ Falha ao excluir:", err);
@@ -1128,7 +2223,7 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   async function abrirLogsUsuario(id) {
-    const usuario = usuarios.find((u) => Number(u.id) === Number(id));
+    const usuario = usuarios.find((u) => sameUserId(u.id, id));
     if (!usuario) return;
     await openLogsForUser(usuario);
   }
@@ -1139,31 +2234,43 @@ document.addEventListener("DOMContentLoaded", () => {
   form?.addEventListener("submit", async (e) => {
     e.preventDefault();
 
+    if (!canManageUsers(getSessionUser())) {
+      alert("Somente TI pode criar ou editar usuários.");
+      return;
+    }
+
     const nome = String(form.nome?.value || "").trim();
     const emailRaw = String(form.email?.value || "").trim();
     const cargo = String(form.cargo?.value || "").trim();
+    const coordenador = String(form.coordenador?.value || "").trim();
+    const equipe = String(form.equipe?.value || "").trim();
     const senha = String(form.senha?.value || "");
     const confirmarSenha = form.confirmarSenha
       ? String(form.confirmarSenha.value || "")
       : "";
 
-    if (!nome || !emailRaw || !cargo) {
-      alert("Preencha todos os campos obrigatórios");
-      return;
-    }
-
     const emailCheck = ensureCompanyEmail(emailRaw);
     if (!emailCheck.ok) return alert(emailCheck.error);
     const email = emailCheck.value;
 
-    const roleSel = document.getElementById("roleSelect");
-    const selectedRole = String(roleSel?.value || ROLE_DEFAULT).toLowerCase();
+    const accessProfileSel = document.getElementById("accessProfileSelect");
+    const selectedAccessProfile = normalizeAccessProfile(accessProfileSel?.value || "operacional");
+    const selectedRole = accessProfileToLegacyRole(selectedAccessProfile);
+    const needsAssignment = requiresTeamAssignment(cargo, selectedAccessProfile);
+
+    if (!nome || !emailRaw || !cargo || (needsAssignment && (!coordenador || !equipe))) {
+      alert("Preencha todos os campos obrigatórios");
+      return;
+    }
+
+    const finalCoordenador = needsAssignment ? coordenador : "";
+    const finalEquipe = needsAssignment ? equipe : "";
 
     const current = getSessionUser();
-    const creatorRole = (current?.role || "user").toLowerCase();
+    const creatorAccessProfile = getAccessProfile(current);
 
-    if (creatorRole === "admin" && selectedRole === "ti") {
-      alert("ADMIN não pode criar/alterar usuário TI.");
+    if (creatorAccessProfile !== "ti" && selectedAccessProfile === "ti") {
+      alert("Somente TI pode criar ou alterar usuários com perfil TI.");
       return;
     }
 
@@ -1188,6 +2295,9 @@ document.addEventListener("DOMContentLoaded", () => {
           email,
           cargo,
           role: selectedRole,
+          accessProfile: selectedAccessProfile,
+          coordenador: finalCoordenador,
+          equipe: finalEquipe,
           ativo: true,
         });
 
@@ -1195,8 +2305,16 @@ document.addEventListener("DOMContentLoaded", () => {
           await apiUpdatePassword(id, senha);
         }
 
+        applyUserMetaToState(updated || { id, email }, { coordenador: finalCoordenador, equipe: finalEquipe }, selectedAccessProfile);
         usuarios = usuarios.map((u) =>
-          Number(u.id) === Number(id) ? updated : u
+          sameUserId(u.id, id)
+            ? {
+                ...normalizeUser(updated),
+                coordenador: finalCoordenador,
+                equipe: finalEquipe,
+                accessProfile: selectedAccessProfile,
+              }
+            : u
         );
       } else {
         const created = await apiCreateUser({
@@ -1204,18 +2322,59 @@ document.addEventListener("DOMContentLoaded", () => {
           email,
           cargo,
           role: selectedRole,
+          accessProfile: selectedAccessProfile,
+          coordenador: finalCoordenador,
+          equipe: finalEquipe,
           ativo: true,
           senha,
         });
 
+        applyUserMetaToState(created || { email }, { coordenador: finalCoordenador, equipe: finalEquipe }, selectedAccessProfile);
+
         if (!created || !created.id) {
-          await carregarUsuariosDaAPI();
+          const provisionalUser = normalizeUser({
+            id: email,
+            nome,
+            email,
+            cargo,
+            role: selectedRole,
+            active: true,
+            accessProfile: selectedAccessProfile,
+          });
+
+          if (provisionalUser && !usuarios.some((u) => cleanText(u.email).toLowerCase() === email.toLowerCase())) {
+            usuarios = [
+              {
+                ...provisionalUser,
+                coordenador: finalCoordenador,
+                equipe: finalEquipe,
+                accessProfile: selectedAccessProfile,
+              },
+              ...usuarios,
+            ];
+          }
+
+          setTimeout(() => {
+            carregarUsuariosDaAPI().catch((err) =>
+              console.warn("Falha ao sincronizar usuários após cadastro:", err)
+            );
+          }, 600);
         } else {
-          usuarios = [created, ...usuarios];
+          usuarios = [
+            {
+              ...normalizeUser(created),
+              coordenador: finalCoordenador,
+              equipe: finalEquipe,
+              accessProfile: selectedAccessProfile,
+            },
+            ...usuarios,
+          ];
         }
       }
 
       renderizarUsuarios();
+      renderEquipesOverview();
+      renderEquipeMembers();
       closeModal({ reset: true });
     } catch (err) {
       console.error("❌ Falha ao salvar usuário:", err);
@@ -1230,7 +2389,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const btn = e.target.closest("button[data-id]");
     if (!btn) return;
 
-    const id = Number(btn.dataset.id);
+    const id = normalizeEntityId(btn.dataset.id);
     if (!id) return;
 
     if (btn.classList.contains("btn-editar")) return editarUsuario(id);
@@ -1244,10 +2403,19 @@ document.addEventListener("DOMContentLoaded", () => {
   // =======================================
   async function init() {
     try {
+      teamConfig = readTeamConfigStore();
+      userTeamMap = readUserTeamStore();
+      userAccessMap = readUserAccessStore();
       await loadSessionUser();
 
       if (!currentUser) {
         goto(LOGIN_PAGE_URL);
+        return;
+      }
+
+      if (!canViewAdmin(currentUser)) {
+        alert("Seu perfil não possui acesso ao ContAdmin.");
+        goto("../contflow/contflow.html");
         return;
       }
 
@@ -1258,8 +2426,21 @@ document.addEventListener("DOMContentLoaded", () => {
       bindAdminPanelEvents();
       applyRoleToSidebar();
       renderUserCard();
+      renderEquipesOverview();
+      renderEquipeMembers();
+      populateCoordinatorList(TEAM_COORDINATORS[0]);
+      populateTeamList(TEAM_COORDINATORS[0], (teamConfig[TEAM_COORDINATORS[0]] || [])[0] || "");
+
+      if (btnNovoUsuario) {
+        btnNovoUsuario.style.display = canManageUsers(currentUser) ? "" : "none";
+      }
+
+      if (btnGerenciarEquipes) {
+        btnGerenciarEquipes.style.display = canEditTeams(currentUser) ? "" : "none";
+      }
 
       await carregarUsuariosDaAPI();
+      renderEquipeMembers();
 
       console.log("🎉 ContAdmin JS inicializado!");
     } catch (err) {

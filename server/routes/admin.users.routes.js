@@ -1,9 +1,12 @@
 // server/routes/admin.users.routes.js
 const express = require("express");
 const bcrypt = require("bcryptjs");
+const fs = require("fs");
+const path = require("path");
 const db = require("../db"); // PrismaClient
 
 const router = express.Router();
+const USER_META_FILE = path.join(__dirname, "..", "data", "user-metadata.json");
 
 /* ================================
  * ✅ NOVO: Role mapping (front <-> prisma enum/string)
@@ -34,7 +37,92 @@ function normalizeEmail(email) {
   return String(email || "").trim().toLowerCase();
 }
 
+function cleanText(value) {
+  return String(value ?? "").trim();
+}
+
+function normalizeAccessProfile(value, fallbackRole = "customer") {
+  const normalized = cleanText(value).toLowerCase();
+  if (["ti", "gerencial", "coordenacao", "operacional", "consulta"].includes(normalized)) {
+    return normalized;
+  }
+
+  const role = mapRoleOut(fallbackRole);
+  if (role === "ti") return "ti";
+  if (role === "admin") return "gerencial";
+  return "operacional";
+}
+
+function ensureUserMetaFile() {
+  const dir = path.dirname(USER_META_FILE);
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  if (!fs.existsSync(USER_META_FILE)) fs.writeFileSync(USER_META_FILE, "{}", "utf8");
+}
+
+function readUserMetaStore() {
+  try {
+    ensureUserMetaFile();
+    const raw = fs.readFileSync(USER_META_FILE, "utf8");
+    const parsed = raw ? JSON.parse(raw) : {};
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch (err) {
+    console.warn("⚠️ Falha ao ler metadata de usuários:", err?.message || err);
+    return {};
+  }
+}
+
+function writeUserMetaStore(store) {
+  ensureUserMetaFile();
+  fs.writeFileSync(USER_META_FILE, JSON.stringify(store, null, 2), "utf8");
+}
+
+function getUserMetaKeys(user) {
+  const keys = [user?.id, user?.email]
+    .map((value) => cleanText(value).toLowerCase())
+    .filter(Boolean);
+  return Array.from(new Set(keys));
+}
+
+function getUserMeta(user) {
+  const store = readUserMetaStore();
+  for (const key of getUserMetaKeys(user)) {
+    if (store[key] && typeof store[key] === "object") {
+      return store[key];
+    }
+  }
+  return {};
+}
+
+function saveUserMeta(user, metaInput = {}) {
+  const store = readUserMetaStore();
+  const current = getUserMeta(user);
+  const next = {
+    coordenador: cleanText(metaInput.coordenador ?? current.coordenador),
+    equipe: cleanText(metaInput.equipe ?? current.equipe),
+    accessProfile: normalizeAccessProfile(
+      metaInput.accessProfile ?? metaInput.access_profile ?? current.accessProfile,
+      user?.role
+    ),
+  };
+
+  getUserMetaKeys(user).forEach((key) => {
+    store[key] = { ...next };
+  });
+
+  writeUserMetaStore(store);
+  return next;
+}
+
+function deleteUserMeta(user) {
+  const store = readUserMetaStore();
+  getUserMetaKeys(user).forEach((key) => {
+    delete store[key];
+  });
+  writeUserMetaStore(store);
+}
+
 function pickUserSafe(u) {
+  const meta = getUserMeta(u);
   return {
     id: u.id,
     name: u.name ?? "",
@@ -43,6 +131,9 @@ function pickUserSafe(u) {
     role: mapRoleOut(u.role ?? "CUSTOMER"),
     active: typeof u.active === "boolean" ? u.active : true,
     cargo: u.cargo ?? null,
+    coordenador: cleanText(meta.coordenador),
+    equipe: cleanText(meta.equipe),
+    accessProfile: normalizeAccessProfile(meta.accessProfile, u.role ?? "CUSTOMER"),
     createdAt: u.createdAt ?? null,
     updatedAt: u.updatedAt ?? null,
   };
@@ -190,6 +281,11 @@ router.post("/", async (req, res) => {
     const created = await db.user.create({
       data: { name, email, password: hash, role, active, cargo },
     });
+    const meta = saveUserMeta(created, {
+      coordenador: req.body?.coordenador,
+      equipe: req.body?.equipe,
+      accessProfile: req.body?.accessProfile ?? req.body?.access_profile,
+    });
 
     // ✅ ALTERADO: log com meta enriquecido
     await writeUserLog({
@@ -201,6 +297,9 @@ router.post("/", async (req, res) => {
         role: created.role,
         active: created.active,
         cargo: created.cargo,
+        coordenador: meta.coordenador,
+        equipe: meta.equipe,
+        accessProfile: meta.accessProfile,
       },
       actor: getActorFromReq(req),
     });
@@ -241,6 +340,11 @@ router.put("/:id", async (req, res) => {
     if (data.cargo === "") data.cargo = null;
 
     const updated = await db.user.update({ where: { id }, data });
+    const meta = saveUserMeta(updated, {
+      coordenador: req.body?.coordenador,
+      equipe: req.body?.equipe,
+      accessProfile: req.body?.accessProfile ?? req.body?.access_profile,
+    });
 
     // ✅ ALTERADO: log com meta enriquecido
     await writeUserLog({
@@ -250,6 +354,9 @@ router.put("/:id", async (req, res) => {
       meta: {
         ...getAuditMeta(req), // ✅ NOVO
         fields: Object.keys(data),
+        coordenador: meta.coordenador,
+        equipe: meta.equipe,
+        accessProfile: meta.accessProfile,
       },
       actor: getActorFromReq(req),
     });
@@ -358,6 +465,7 @@ router.delete("/:id", async (req, res) => {
     });
 
     await db.user.delete({ where: { id } });
+    deleteUserMeta(u);
     return res.json({ ok: true });
   } catch (err) {
     console.error("Erro ao excluir usuário:", err);

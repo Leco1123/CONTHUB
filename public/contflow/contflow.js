@@ -133,6 +133,8 @@ const STATUS_LABEL = {
   admin: "ADMIN",
 };
 
+const CF_FROZEN_COL_KEYS = ["cod", "razao_social", "cnpj_cpf", "trib"];
+
 /* ===========================
    HELPERS
 =========================== */
@@ -141,13 +143,13 @@ function goto(url) {
   if (!target) return;
 
   try {
-    if (window.top && window.top !== window) {
-      window.top.location.href = target;
-      return;
-    }
-  } catch (_) {}
-
-  window.location.href = target;
+    const resolved = new URL(target, window.location.href).href;
+    console.log("Navegando para:", resolved);
+    window.location.assign(resolved);
+  } catch (err) {
+    console.error("Erro ao navegar para módulo:", target, err);
+    alert("Não foi possível abrir o módulo.");
+  }
 }
 
 function getSessionUser() {
@@ -202,8 +204,9 @@ function ensureUniqueKeys(cols) {
   return (cols || []).map((c) => {
     let k = String(c.key || "").trim();
     if (!k) k = slugKeyFromLabel(c.label || "col");
+    let base = k || "col";
     let i = 2;
-    while (used.has(k) || !k) k = `${k || "col"}_${i++}`;
+    while (used.has(k) || !k) k = `${base}_${i++}`;
     used.add(k);
     return { ...c, key: k };
   });
@@ -296,6 +299,65 @@ function clearDirtyState() {
 
 function hasPendingDirtyChanges() {
   return dirtyCells.size > 0 || hasStructuralChanges;
+}
+
+function getActiveWorkbookView() {
+  const activeBtn = document.querySelector(".cf-view-btn.is-active");
+  return String(activeBtn?.dataset.view || "contflow");
+}
+
+function hasAnyPendingChanges() {
+  const ptDirty =
+    window.PainelTributarioSheet && typeof window.PainelTributarioSheet.hasPendingChanges === "function"
+      ? window.PainelTributarioSheet.hasPendingChanges()
+      : false;
+  return hasPendingDirtyChanges() || ptDirty;
+}
+
+let lastPainelTributarioSyncSignature = "";
+
+function getContFlowRowsForPainelTributario() {
+  return (cfData || []).map((row) => ({
+    __id: String(row?.__id || "").trim(),
+    __sourceRowId: String(row?.__id || "").trim(),
+    cod: String(row?.cod ?? ""),
+    razao_social: String(row?.razao_social ?? ""),
+    tipo: String(row?.tipo ?? ""),
+    cnpj_cpf: String(row?.cnpj_cpf ?? ""),
+    class: "",
+    grupo: String(row?.grupo ?? ""),
+    trib: String(row?.trib ?? ""),
+    status: "",
+    resp1: String(row?.resp1 ?? ""),
+  }));
+}
+
+function syncPainelTributarioFromContFlow(force = false) {
+  if (
+    !window.PainelTributarioSheet ||
+    typeof window.PainelTributarioSheet.syncFromContFlowRows !== "function"
+  ) {
+    return;
+  }
+
+  const rows = getContFlowRowsForPainelTributario();
+  const signature = JSON.stringify(
+    rows.map((row) => [
+      row.__sourceRowId,
+      row.cod,
+      row.razao_social,
+      row.tipo,
+      row.cnpj_cpf,
+      row.grupo,
+      row.trib,
+      row.resp1,
+    ])
+  );
+
+  if (!force && signature === lastPainelTributarioSyncSignature) return;
+
+  lastPainelTributarioSyncSignature = signature;
+  window.PainelTributarioSheet.syncFromContFlowRows(rows);
 }
 
 /* ===========================
@@ -658,7 +720,9 @@ function coerceRowsToCurrentColumns(rows) {
 }
 
 function isEmptyValue(v) {
-  return String(v ?? "").trim() === "";
+  if (v == null) return true;
+  const s = String(v).trim().toLowerCase();
+  return s === "" || s === "null" || s === "undefined" || s === "-";
 }
 
 function isEmptyCell(rowOrIndex, colKey) {
@@ -1468,7 +1532,15 @@ function getStickyOffsets() {
 }
 
 function getGridScroller() {
-  return document.querySelector(".cf-grid-container") || document.scrollingElement || document.documentElement;
+  const activeView = document.querySelector(".cf-view.is-active");
+  return (
+    activeView?.querySelector(".table-wrapper") ||
+    activeView?.querySelector(".cf-grid-container") ||
+    document.querySelector(".table-wrapper") ||
+    document.querySelector(".cf-grid-container") ||
+    document.scrollingElement ||
+    document.documentElement
+  );
 }
 
 function scrollCellIntoView(cell) {
@@ -2045,6 +2117,85 @@ function renderHeaders() {
   bindHeaderInteractions();
 }
 
+function getContFlowFrozenIndexes() {
+  return CF_COLUMNS.reduce((acc, col, idx) => {
+    if (CF_FROZEN_COL_KEYS.includes(col.key)) acc.push(idx);
+    return acc;
+  }, []);
+}
+
+function applyContFlowFrozenColumns() {
+  const table = document.getElementById("cf-table");
+  if (!table) return;
+
+  const corner = document.getElementById("cf-corner-select");
+  if (corner) {
+    corner.style.setProperty("position", "sticky", "important");
+    corner.style.setProperty("left", "0px", "important");
+    corner.style.setProperty("top", "0px", "important");
+    corner.style.setProperty("z-index", "48", "important");
+  }
+
+  table.querySelectorAll(".cf-col-header, .cf-cell, .cf-row-index").forEach((el) => {
+    el.classList.remove("cf-frozen-col");
+    el.classList.remove("cf-frozen-col-last");
+    el.style.removeProperty("left");
+    el.style.removeProperty("width");
+    el.style.removeProperty("min-width");
+    el.style.removeProperty("max-width");
+    el.style.removeProperty("position");
+    el.style.removeProperty("top");
+    el.style.removeProperty("z-index");
+  });
+
+  table.querySelectorAll(".cf-row-index").forEach((cell) => {
+    cell.style.setProperty("position", "sticky", "important");
+    cell.style.setProperty("left", "0px", "important");
+    cell.style.setProperty("z-index", "24", "important");
+  });
+
+  const frozenIndexes = getContFlowFrozenIndexes();
+  if (!frozenIndexes.length) return;
+
+  let left = 40;
+
+  frozenIndexes.forEach((colIndex, frozenPos) => {
+    const col = CF_COLUMNS[colIndex];
+    if (!col) return;
+
+    const width = Number.isFinite(colWidths[col.key]) ? colWidths[col.key] : 140;
+    const leftPx = `${left}px`;
+    const widthPx = `${width}px`;
+    const isLastFrozen = frozenPos === frozenIndexes.length - 1;
+
+    const header = table.querySelector(`.cf-col-header[data-col-index="${colIndex}"]`);
+    if (header) {
+      header.classList.add("cf-frozen-col");
+      if (isLastFrozen) header.classList.add("cf-frozen-col-last");
+      header.style.setProperty("position", "sticky", "important");
+      header.style.setProperty("top", "0px", "important");
+      header.style.setProperty("left", leftPx, "important");
+      header.style.setProperty("width", widthPx, "important");
+      header.style.setProperty("min-width", widthPx, "important");
+      header.style.setProperty("max-width", widthPx, "important");
+      header.style.setProperty("z-index", isLastFrozen ? "46" : "45", "important");
+    }
+
+    table.querySelectorAll(`.cf-cell[data-col-index="${colIndex}"]`).forEach((cell) => {
+      cell.classList.add("cf-frozen-col");
+      if (isLastFrozen) cell.classList.add("cf-frozen-col-last");
+      cell.style.setProperty("position", "sticky", "important");
+      cell.style.setProperty("left", leftPx, "important");
+      cell.style.setProperty("width", widthPx, "important");
+      cell.style.setProperty("min-width", widthPx, "important");
+      cell.style.setProperty("max-width", widthPx, "important");
+      cell.style.setProperty("z-index", isLastFrozen ? "18" : "17", "important");
+    });
+
+    left += width;
+  });
+}
+
 function renderTable() {
   renderColgroup();
 
@@ -2145,6 +2296,8 @@ function renderTable() {
   }
 
   applyFindHighlights();
+  requestAnimationFrame(() => applyContFlowFrozenColumns());
+  syncPainelTributarioFromContFlow();
 }
 
 /* ===========================
@@ -2231,6 +2384,8 @@ function clearSelectionValues() {
 }
 
 async function handleGlobalKeyDown(e) {
+  if (getActiveWorkbookView() !== "contflow") return;
+
   if ((e.ctrlKey || e.metaKey) && (e.key === "f" || e.key === "F")) {
     e.preventDefault();
     openFindUI();
@@ -2398,8 +2553,8 @@ async function handleGlobalKeyDown(e) {
   if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(e.key)) {
     e.preventDefault();
 
-    let dRow = 0,
-      dCol = 0;
+    let dRow = 0;
+    let dCol = 0;
     if (e.key === "ArrowUp") dRow = -1;
     if (e.key === "ArrowDown") dRow = 1;
     if (e.key === "ArrowLeft") dCol = -1;
@@ -2443,7 +2598,6 @@ async function handleGlobalKeyDown(e) {
     e.preventDefault();
     selectionAnchor = { row: 0, col: 0 };
     applySelection(0, 0, maxRow, maxCol);
-    return;
   }
 }
 
@@ -2631,33 +2785,39 @@ function mergeImportRows(importCols, importRows) {
 
   cfData = coerceRowsToCurrentColumns(cfData);
 
-  const importMap = new Map((importCols || []).map((c) => [normalizeLabel(c.label), c.key]));
-
-  const incoming = coerceRowsToCurrentColumns(
-    (importRows || []).map((r) => {
-      const out = {};
-      CF_COLUMNS.forEach((c) => (out[c.key] = ""));
-      out.__id = genId();
-
-      CF_COLUMNS.forEach((c) => {
-        const ik = importMap.get(normalizeLabel(c.label));
-        if (ik && r[ik] != null) out[c.key] = r[ik];
-      });
-      return out;
-    })
+  const importMap = new Map(
+    (importCols || []).map((c) => [normalizeLabel(c.label), c.key])
   );
+
+  const incoming = (importRows || []).map((r) => {
+    const out = {};
+    CF_COLUMNS.forEach((c) => (out[c.key] = ""));
+
+    CF_COLUMNS.forEach((c) => {
+      const ik = importMap.get(normalizeLabel(c.label));
+      if (ik && r[ik] != null) {
+        out[c.key] = String(r[ik]).trim();
+      }
+    });
+
+    out.__id = genId();
+    return out;
+  });
 
   const keyCol = chooseMergeKey(CF_COLUMNS);
   if (!keyCol) {
+    const at = cfData.length;
     cfData.push(...incoming);
+    pushUndo({ type: "rows_insert", at, rows: deepClone(incoming) });
     markStructureDirty();
     return;
   }
 
   const keyKey = keyCol.key;
   const index = new Map();
+
   cfData.forEach((r, i) => {
-    const k = String(r[keyKey] ?? "").trim().toLowerCase();
+    const k = String(r[keyKey] || "").trim().toLowerCase();
     if (k) index.set(k, i);
   });
 
@@ -2665,38 +2825,55 @@ function mergeImportRows(importCols, importRows) {
   const inserted = [];
 
   incoming.forEach((r) => {
-    const k = String(r[keyKey] ?? "").trim().toLowerCase();
-    if (!k) {
-      inserted.push(r);
-      return;
-    }
-    const existingIndex = index.get(k);
-    if (existingIndex == null) {
+    const k = String(r[keyKey] || "").trim().toLowerCase();
+
+    if (!k || !index.has(k)) {
       inserted.push(r);
       return;
     }
 
+    const i = index.get(k);
+    const baseRow = cfData[i];
+
     CF_COLUMNS.forEach((c) => {
-      const newVal = String(r[c.key] ?? "");
-      if (newVal.trim() === "") return;
-      const before = String(cfData[existingIndex][c.key] ?? "");
-      const after = newVal;
-      if (before !== after) {
-        cfData[existingIndex][c.key] = after;
-        changes.push({ dataIndex: existingIndex, colKey: c.key, before, after });
-      }
+      const newVal = String(r[c.key] || "").trim();
+
+      if (!newVal) return;
+
+      const before = String(baseRow[c.key] || "").trim();
+      if (before === newVal) return;
+
+      baseRow[c.key] = newVal;
+
+      changes.push({
+        dataIndex: i,
+        colKey: c.key,
+        before,
+        after: newVal,
+      });
     });
   });
 
   if (inserted.length) {
     const at = cfData.length;
     cfData.push(...inserted);
-    pushUndo({ type: "rows_insert", at, rows: deepClone(inserted) });
+
+    pushUndo({
+      type: "rows_insert",
+      at,
+      rows: deepClone(inserted),
+    });
+
     markStructureDirty();
   }
+
   if (changes.length) {
     pushUndo({ type: "batch", changes });
-    markDirtyChanges(changes);
+
+    changes.forEach((c) => {
+      markCellDirty(c.dataIndex, c.colKey);
+    });
+    refreshDirtyVisuals();
   }
 }
 
@@ -3081,8 +3258,6 @@ function setOverlayState() {
   const overlay = document.getElementById("overlay");
   if (!overlay) return;
   const open = document.body.classList.contains("sidebar-open");
-  overlay.style.pointerEvents = open ? "auto" : "none";
-  overlay.style.opacity = open ? "1" : "0";
   overlay.setAttribute("aria-hidden", open ? "false" : "true");
 }
 
@@ -3541,7 +3716,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   applyRoleToSidebar();
 
   window.addEventListener("beforeunload", (e) => {
-    if (!hasPendingDirtyChanges()) return;
+    if (!hasAnyPendingChanges()) return;
     e.preventDefault();
     e.returnValue = "";
   });
@@ -3560,39 +3735,75 @@ document.addEventListener("DOMContentLoaded", async () => {
   });
 
   setOverlayState();
+  window.addEventListener("resize", () => requestAnimationFrame(() => applyContFlowFrozenColumns()));
 
   document.querySelectorAll(".modulos-sidebar .cards-modulos[data-src]").forEach((button) => {
-    button.addEventListener("click", (e) => {
-      const disabled = button.getAttribute("data-disabled") === "true";
-      const noAccess = button.getAttribute("data-noaccess") === "true";
+    button.onclick = null;
 
-      if (disabled || noAccess) {
+    button.addEventListener(
+      "click",
+      (e) => {
         e.preventDefault();
         e.stopPropagation();
-        return;
-      }
+        if (typeof e.stopImmediatePropagation === "function") {
+          e.stopImmediatePropagation();
+        }
 
-      if (hasPendingDirtyChanges()) {
-        const ok = confirm("Existem alterações não salvas. Deseja sair mesmo assim?");
-        if (!ok) {
-          e.preventDefault();
-          e.stopPropagation();
+        const disabled = button.getAttribute("data-disabled") === "true";
+        const noAccess = button.getAttribute("data-noaccess") === "true";
+        const src = String(button.dataset.src || "").trim();
+
+        console.log("Clique módulo:", {
+          module: button.dataset.moduleId,
+          disabled,
+          noAccess,
+          src,
+          dirty: hasAnyPendingChanges(),
+        });
+
+        if (disabled) {
+          alert("Este módulo está offline ou desabilitado.");
           return;
         }
-      }
 
-      const src = button.dataset.src;
-      if (src) goto(src);
-    });
+        if (noAccess) {
+          alert("Você não tem permissão para acessar este módulo.");
+          return;
+        }
+
+        if (!src) {
+          alert("Este módulo está sem rota configurada.");
+          return;
+        }
+
+        if (hasAnyPendingChanges()) {
+          const ok = confirm("Existem alterações não salvas. Deseja sair mesmo assim?");
+          if (!ok) return;
+        }
+
+        if (window.innerWidth <= 1100) {
+          document.body.classList.remove("sidebar-open");
+          setOverlayState();
+        }
+        window.location.href = src;
+      },
+      true
+    )
+  })
+
+  window.addEventListener("resize", () => {
+    if (window.innerWidth > 1100 && document.body.classList.contains("sidebar-open")) {
+      document.body.classList.remove("sidebar-open");
+    }
+    setOverlayState();
   });
-
   const userCard = document.querySelector("[data-usercard]");
   const btnLogout = document.querySelector("[data-logout]");
   userCard?.addEventListener("click", (e) => {
     if (e.target.closest("[data-logout]")) return;
     e.preventDefault();
 
-    if (hasPendingDirtyChanges()) {
+    if (hasAnyPendingChanges()) {
       const ok = confirm("Existem alterações não salvas. Deseja sair mesmo assim?");
       if (!ok) return;
     }
@@ -3604,7 +3815,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     e.preventDefault();
     e.stopPropagation();
 
-    if (hasPendingDirtyChanges()) {
+    if (hasAnyPendingChanges()) {
       const ok = confirm("Existem alterações não salvas. Deseja sair mesmo assim?");
       if (!ok) return;
     }
@@ -3613,6 +3824,11 @@ document.addEventListener("DOMContentLoaded", async () => {
   });
 
   renderUserCard();
+
+  if (window.PainelTributarioSheet && typeof window.PainelTributarioSheet.init === "function") {
+    window.PainelTributarioSheet.init();
+    syncPainelTributarioFromContFlow(true);
+  }
 
   const btnAdd = document.getElementById("cf-add-row");
   const inputFile = document.getElementById("cf-import");
@@ -3699,9 +3915,11 @@ document.addEventListener("DOMContentLoaded", async () => {
     await saveDirtyCells(false);
   });
 
-  btnSaveCellsTop?.addEventListener("click", async () => {
-    await saveDirtyCells(false);
-  });
+  if (btnSaveCellsTop) {
+    btnSaveCellsTop.addEventListener("click", async () => {
+      await saveDirtyCells(false);
+    });
+  }
 
   btnSaveBase?.addEventListener("click", async () => {
     await saveBase(false, { mode: "base" });
@@ -3723,6 +3941,12 @@ document.addEventListener("DOMContentLoaded", async () => {
       hideFilterDropdown();
       if (editing) cancelEdit();
       closeModal();
+      if (
+        window.PainelTributarioSheet &&
+        typeof window.PainelTributarioSheet.closeModal === "function"
+      ) {
+        window.PainelTributarioSheet.closeModal();
+      }
       if (findUI) findUI.style.display = "none";
     }
   });

@@ -173,70 +173,181 @@
           </div>
         </header>
 
-        <section class="cf-card">
-          <header class="cf-header">
-            <h2>ContFlow</h2>
-
-            <div class="cf-actions">
-              <button id="cf-save-cells" class="cf-btn" type="button">🧩 Salvar células</button>
-              <button id="cf-base-btn" class="cf-btn" type="button">Base</button>
-              <span id="cf-status-bar" class="muted">Linhas: 0 · Selecionadas: 0 x 0</span>
-            </div>
-          </header>
-
-          <div class="cf-grid-container">
-            <div class="table-wrapper">
-              <table class="cf-table">
-                <colgroup>
-                  <col style="width: 40px" />
-                  <col style="width: 70px" />
-                  <col style="width: 240px" />
-                  <col style="width: 150px" />
-                  <col style="width: 160px" />
-                  <col style="width: 140px" /> <!-- Grupo -->
-                  <col style="width: 140px" />
-                  <col style="width: 80px" />
-                  <col style="width: 110px" />
-                  <col style="width: 110px" />
-                  <col style="width: 110px" />
-                  <col style="width: 110px" />
-                  <col style="width: 220px" />
-                  <col style="width: 120px" />
-                  <col style="width: 220px" />
-                </colgroup>
-                
-                <thead>
-                  <tr>
-                    <th id="cf-corner-select">#</th>
-                    <th class="cf-col-header" data-col-index="0">Cód.</th>
-                    <th class="cf-col-header" data-col-index="1">Razão Social</th>
-                    <th class="cf-col-header" data-col-index="2">CNPJ/CPF</th>
-                    <th class="cf-col-header" data-col-index="3">Trib.</th>
-                    <th class="cf-col-header" data-col-index="4">Grupo</th>
-                    <th class="cf-col-header" data-col-index="5">Resp.1</th>
-                    <th class="cf-col-header" data-col-index="6">Resp.2</th>
-                    <th class="cf-col-header" data-col-index="7">Tipo</th>
-                    <th class="cf-col-header" data-col-index="8">Num Quotas</th>
-                    <th class="cf-col-header" data-col-index="9">1º quota</th>
-                    <th class="cf-col-header" data-col-index="10">2º quota</th>
-                    <th class="cf-col-header" data-col-index="11">3º quota</th>
-                    <th class="cf-col-header" data-col-index="12">Obs</th>
-                    <th class="cf-col-header" data-col-index="13">MIT</th>
-                    <th class="cf-col-header" data-col-index="14">Controle de MIT</th>
-                  </tr>
-                </thead>
-
-                <tbody id="cf-tbody">
-                  <!-- linhas via JS -->
-                </tbody>
-              </table>
-            </div>
+        <!-- SELETOR DE PLANILHAS -->
+        <section class="cf-view-switcher-wrap">
+          <div class="cf-view-switcher">
+            <button class="cf-view-btn is-active" type="button" data-view="contflow">
+              ContFlow
+            </button>
+            <button class="cf-view-btn" type="button" data-view="painel-tributario">
+              Painel Tributário
+            </button>
           </div>
+        </section>
+
+        <!-- VIEW CONTFLOW -->
+        <section id="view-contflow" class="cf-view is-active">
+          <section class="cf-card">
+            <header class="cf-header">
+              <h2>ContFlow</h2>
+
+              <div class="cf-actions">
+                <button id="cf-save-cells-top" class="cf-btn" type="button">🧩 Salvar células</button>
+                <button id="cf-base-btn" class="cf-btn" type="button">Base</button>
+                <span id="cf-status-bar" class="muted">Linhas: 0 · Selecionadas: 0 x 0</span>
+              </div>
+            </header>
+
+            <div class="cf-grid-container">
+              <div class="table-wrapper">
+                <table class="cf-table" id="cf-table">
+                  <colgroup>
+                    <col style="width: 40px" />
+                    <col style="width: 70px" />
+                    <col style="width: 240px" />
+                    <col style="width: 150px" />
+                    <col style="width: 160px" />
+                    <col style="width: 140px" />
+                    <col style="width: 140px" />
+                    <col style="width: 80px" />
+                    <col style="width: 110px" />
+                    <col style="width: 110px" />
+                    <col style="width: 110px" />
+                    <col style="width: 110px" />
+                    <col style="width: 220px" />
+                    <col style="width: 120px" />
+                    <col style="width: 220px" />
+                  </colgroup>
+
+                  <thead>
+                    <tr>
+                      <th id="cf-corner-select">#</th>
+                      <th class="cf-col-header" data-col-index="0">Cód.</th>
+                      <th class="cf-col-header" data-col-index="1">Razão Social</th>
+                      <th class="cf-col-header" data-col-index="2">CNPJ/CPF</th>
+                      <th class="cf-col-header" data-col-index="3">Trib.</th>
+                      <th class="cf-col-header" data-col-index="4">Grupo</th>
+                      <th class="cf-col-header" data-col-index="5">Resp.1</th>
+                      <th class="cf-col-header" data-col-index="6">Resp.2</th>
+                      <th class="cf-col-header" data-col-index="7">Tipo</th>
+                      <th class="cf-col-header" data-col-index="8">Num Quotas</th>
+                      <th class="cf-col-header" data-col-index="9">1º quota</th>
+                      <th class="cf-col-header" data-col-index="10">2º quota</th>
+                      <th class="cf-col-header" data-col-index="11">3º quota</th>
+                      <th class="cf-col-header" data-col-index="12">Obs</th>
+                      <th class="cf-col-header" data-col-index="13">MIT</th>
+                      <th class="cf-col-header" data-col-index="14">Controle de MIT</th>
+                    </tr>
+                  </thead>
+
+                  <tbody id="cf-tbody">
+                    <!-- linhas via JS -->
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </section>
+        </section>
+
+        <!-- VIEW PAINEL TRIBUTÁRIO -->
+        <section id="view-painel-tributario" class="cf-view">
+          <section class="cf-card">
+            <header class="cf-header">
+              <div class="cf-header-left">
+                <h2 id="pt-sheet-title">1º Trimestre</h2>
+
+                <div class="cf-sheet-tabs">
+                  <button class="cf-btn cf-sheet-tab is-active" type="button" data-sheet="0">
+                    1º Trimestre
+                  </button>
+                  <button class="cf-btn cf-sheet-tab" type="button" data-sheet="1">
+                    2º Trimestre
+                  </button>
+                  <button class="cf-btn cf-sheet-tab" type="button" data-sheet="2">
+                    3º Trimestre
+                  </button>
+                  <button class="cf-btn cf-sheet-tab" type="button" data-sheet="3">
+                    4º Trimestre
+                  </button>
+                </div>
+              </div>
+
+              <div class="cf-actions">
+                <input
+                  id="pt-search"
+                  class="cf-search"
+                  type="text"
+                  placeholder="Buscar..."
+                />
+
+                <button id="pt-save-cells-top" class="cf-btn" type="button">🧩 Salvar células</button>
+                <button id="pt-base-btn" class="cf-btn" type="button">Base</button>
+                <span id="pt-status-bar" class="muted">Linhas: 0 · Selecionadas: 0 x 0</span>
+              </div>
+            </header>
+
+            <div class="cf-grid-container">
+              <div class="table-wrapper">
+                <table class="cf-table" id="pt-table">
+                  <colgroup>
+                    <col style="width: 40px" />
+
+                    <col style="width: 70px" />
+                    <col style="width: 240px" />
+                    <col style="width: 110px" />
+                    <col style="width: 150px" />
+                    <col style="width: 90px" />
+                    <col style="width: 120px" />
+                    <col style="width: 90px" />
+                    <col style="width: 120px" />
+                    <col style="width: 120px" />
+                    <col style="width: 130px" />
+
+                    <col style="width: 90px" />
+                    <col style="width: 110px" />
+                    <col style="width: 110px" />
+                    <col style="width: 110px" />
+                    <col style="width: 110px" />
+
+                    <col style="width: 90px" />
+                    <col style="width: 110px" />
+                    <col style="width: 110px" />
+                    <col style="width: 110px" />
+                    <col style="width: 110px" />
+
+                    <col style="width: 90px" />
+                    <col style="width: 110px" />
+                    <col style="width: 110px" />
+                    <col style="width: 110px" />
+                    <col style="width: 110px" />
+
+                    <col style="width: 120px" />
+                    <col style="width: 120px" />
+                    <col style="width: 120px" />
+                    <col style="width: 120px" />
+                    <col style="width: 120px" />
+                    <col style="width: 120px" />
+
+                    <col style="width: 110px" />
+                    <col style="width: 110px" />
+                    <col style="width: 110px" />
+                    <col style="width: 130px" />
+                    <col style="width: 120px" />
+                    <col style="width: 130px" />
+                  </colgroup>
+
+                  <thead id="pt-thead"></thead>
+                  <tbody id="pt-tbody"></tbody>
+                  <tfoot id="pt-tfoot"></tfoot>
+                </table>
+              </div>
+            </div>
+          </section>
         </section>
       </main>
     </div>
 
-    <!-- MODAL -->
+    <!-- MODAL CONTFLOW -->
     <div id="cf-modal-backdrop"></div>
 
     <div id="cf-modal" role="dialog" aria-modal="true" aria-label="Base ContFlow">
@@ -264,6 +375,102 @@
       </div>
     </div>
 
+    <!-- MODAL PAINEL TRIBUTÁRIO -->
+    <div id="pt-modal-backdrop"></div>
+
+    <div id="pt-modal" role="dialog" aria-modal="true" aria-label="Base Painel Tributário">
+      <header>
+        <strong id="pt-modal-title">Base Painel Tributário</strong>
+        <button id="pt-modal-close" class="cf-btn cf-btn--ghost" type="button">✕</button>
+      </header>
+
+      <section id="pt-quota-panel" class="pt-quota-panel" hidden>
+        <div class="pt-quota-summary">
+          <span class="pt-quota-section-label">Fechamento do trimestre</span>
+          <div class="pt-quota-hero">
+            <div class="pt-quota-hero-copy">
+              <span id="pt-quota-chip" class="pt-quota-chip">IRPJ</span>
+              <span id="pt-quota-total-label" class="pt-quota-eyebrow">Valor liquido para recolhimento</span>
+              <span id="pt-quota-total" class="pt-quota-total">R$ 0,00</span>
+            </div>
+
+            <div class="pt-quota-breakdown">
+              <div class="pt-quota-breakdown-row">
+                <span id="pt-quota-gross-label">IRPJ Devido</span>
+                <strong id="pt-quota-gross">R$ 0,00</strong>
+              </div>
+
+              <div class="pt-quota-breakdown-row is-negative">
+                <span id="pt-quota-retention-label">Retenções</span>
+                <strong id="pt-quota-retention">- R$ 0,00</strong>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <section class="pt-quota-block">
+          <div class="pt-quota-block-head">
+            <span>Parcelamento principal</span>
+            <strong id="pt-quota-rule-title">Quota unica</strong>
+          </div>
+
+          <div class="pt-quota-grid">
+            <div class="pt-quota-field" id="pt-quota-card-1">
+              <span>1a quota</span>
+              <strong id="pt-quota-1">R$ 0,00</strong>
+            </div>
+
+            <div class="pt-quota-field" id="pt-quota-card-2">
+              <span>2a quota</span>
+              <strong id="pt-quota-2">R$ 0,00</strong>
+            </div>
+
+            <div class="pt-quota-field" id="pt-quota-card-3">
+              <span>3a quota</span>
+              <strong id="pt-quota-3">R$ 0,00</strong>
+            </div>
+          </div>
+        </section>
+
+        <section class="pt-quota-preview" id="pt-quota-preview">
+          <div class="pt-quota-preview-head">
+            <span>Simulação alternativa</span>
+            <strong id="pt-quota-preview-label">Se o cliente optar por 2x</strong>
+          </div>
+
+          <div class="pt-quota-preview-grid">
+            <div class="pt-quota-preview-card">
+              <span>1a quota</span>
+              <strong id="pt-quota-2x-1">R$ 0,00</strong>
+            </div>
+
+            <div class="pt-quota-preview-card">
+              <span>2a quota</span>
+              <strong id="pt-quota-2x-2">R$ 0,00</strong>
+            </div>
+          </div>
+        </section>
+      </section>
+
+      <div class="cf-modal-actions">
+        <button id="pt-add-row" class="cf-btn" type="button">➕ Nova linha</button>
+
+        <label class="cf-file">
+          Importar JSON
+          <input id="pt-import" type="file" accept=".json" hidden />
+        </label>
+
+        <button id="pt-export-json" class="cf-btn" type="button">⬇ Exportar JSON</button>
+        <button id="pt-save-cells" class="cf-btn" type="button">🧩 Salvar células</button>
+        <button id="pt-save-base" class="cf-btn" type="button">💾 Salvar base</button>
+
+        <button id="pt-delete-selected" class="cf-btn cf-btn--danger" type="button">
+          🗑 Excluir seleção
+        </button>
+      </div>
+    </div>
+
     <script src="./contflow.js"></script>
+    <script src="./painel-tributario-sheet.js"></script>
   </body>
 </html>
