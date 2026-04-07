@@ -250,38 +250,33 @@
                     <label class="form-field">
                       <span>Coordenador</span>
                       <div class="select-cargo">
-                        <input
-                          type="text"
+                        <select
                           id="coordenador"
                           name="coordenador"
-                          placeholder="Selecione o coordenador"
-                          readonly
                           required
-                        />
-                        <ul class="lista-cargos" id="listaCoordenadores"></ul>
+                        ></select>
                       </div>
                     </label>
 
                     <label class="form-field">
                       <span>Equipe</span>
                       <div class="select-cargo">
-                        <input type="text" id="equipe" name="equipe" placeholder="Selecione a equipe" readonly required />
-                        <ul class="lista-cargos" id="listaEquipes"></ul>
+                        <select id="equipe" name="equipe" required></select>
                       </div>
                     </label>
 
                     <label class="form-field">
                       <span>Cargo</span>
                       <div class="select-cargo">
-                        <input type="text" id="cargo" name="cargo" placeholder="Selecione o cargo" readonly required />
-                        <ul class="lista-cargos">
-                          <li>Gerente</li>
-                          <li>Coordenador</li>
-                          <li>Analista</li>
-                          <li>Assistente</li>
-                          <li>Auxiliar</li>
-                          <li>Estagiário</li>
-                        </ul>
+                        <select id="cargo" name="cargo" required>
+                          <option value="">Selecione o cargo</option>
+                          <option value="Gerente">Gerente</option>
+                          <option value="Coordenador">Coordenador</option>
+                          <option value="Analista">Analista</option>
+                          <option value="Assistente">Assistente</option>
+                          <option value="Auxiliar">Auxiliar</option>
+                          <option value="Estagiário">Estagiário</option>
+                        </select>
                       </div>
                     </label>
                   </div>
@@ -314,6 +309,14 @@
                       </div>
                     </label>
                   </div>
+                </section>
+
+                <section class="form-usuario__section form-usuario__section--role">
+                  <div class="form-usuario__section-head">
+                    <strong>Perfil de acesso</strong>
+                    <span>Defina o nível de permissão deste colaborador</span>
+                  </div>
+                  <div id="roleBox"></div>
                 </section>
 
                 <div class="acoes-form">
@@ -378,21 +381,47 @@
                     />
                   </div>
 
+                  <div class="people-manager__stats">
+                    <article class="people-stat-card">
+                      <span class="people-stat-card__label">Na equipe</span>
+                      <strong id="membrosEquipeCountCard">0</strong>
+                      <small id="membrosEquipeCountLabel">Sem pessoas vinculadas</small>
+                    </article>
+                    <article class="people-stat-card">
+                      <span class="people-stat-card__label">Sem equipe</span>
+                      <strong id="membrosEquipeAvailableLabel">0</strong>
+                      <small>Prontos para adicionar</small>
+                    </article>
+                    <article class="people-stat-card">
+                      <span class="people-stat-card__label">Outras equipes</span>
+                      <strong id="membrosEquipeTransferCount">0</strong>
+                      <small id="membrosEquipeTransferLabel">Disponíveis para mover</small>
+                    </article>
+                  </div>
+
                   <div class="people-manager__grid">
                     <section class="people-panel">
                       <div class="people-panel__head">
                         <strong>Pessoas na equipe</strong>
-                        <span id="membrosEquipeCountCard">0 registro(s)</span>
+                        <span id="membrosEquipeCountHead">0 registro(s)</span>
                       </div>
                       <div class="people-panel__list" id="membrosEquipeLista"></div>
                     </section>
 
                     <section class="people-panel">
                       <div class="people-panel__head">
-                        <strong>Diretório de pessoas</strong>
+                        <strong>Pessoas sem equipe</strong>
                         <span id="membrosEquipeAvailableCount">0 disponível(is)</span>
                       </div>
                       <div class="people-panel__list" id="membrosEquipeDisponiveis"></div>
+                    </section>
+
+                    <section class="people-panel">
+                      <div class="people-panel__head">
+                        <strong>Pessoas em outras equipes</strong>
+                        <span id="membrosEquipeTransferHeadCount">0 em outras equipes</span>
+                      </div>
+                      <div class="people-panel__list" id="membrosEquipeTransferiveis"></div>
                     </section>
                   </div>
                 </div>

@@ -1,30 +1,29 @@
 // public/perfil/perfil.js
 // PERFIL • JS (100% SESSION + API)
 // ✅ Sessão real via /api/auth/me
-// ✅ Logout real via /api/auth/logout
-// ✅ Busca dados atualizados do usuário via API (/api/admin/users)
-// ✅ Busca logs do backend (GET /api/admin/users/:id/logs)
-// ✅ Fallback de logs locais apenas para visualização
-// ✅ Renderiza módulos usando status do banco (/api/admin/modules)
+// ✅ Perfil atualizado via /api/auth/profile
+// ✅ Logs do backend via /api/admin/users/:id/logs
+// ✅ Módulos do backend via /api/admin/modules
 
 (function () {
   const LOGIN_PAGE_URL = "../login/login.html";
   const API_BASE = "";
-  const API_USERS = `${API_BASE}/api/admin/users`;
   const API_MODULES = `${API_BASE}/api/admin/modules`;
-  const API_USER_LOGS = (id) => `${API_USERS}/${id}/logs?limit=50`;
-
-  const LOGS_KEY = "conthub_user_logs";
+  const API_USER_LOGS = (id) => `${API_BASE}/api/admin/users/${id}/logs?limit=50`;
 
   let AUTH_USER = null;
-  let MODULES_MAP = {};
+  let MODULES_ROWS = [];
 
   const elAvatar = document.getElementById("avatar");
   const elNome = document.getElementById("nome");
   const elEmail = document.getElementById("email");
   const elNivelAcesso = document.getElementById("nivelAcesso");
+  const elPerfilAcesso = document.getElementById("perfilAcesso");
   const elCargo = document.getElementById("cargo");
   const elStatus = document.getElementById("status");
+  const elCoordenador = document.getElementById("coordenador");
+  const elEquipe = document.getElementById("equipe");
+  const elUpdatedAt = document.getElementById("updatedAt");
 
   const elRoleBadge = document.getElementById("roleBadge");
   const elCargoBadge = document.getElementById("cargoBadge");
@@ -36,19 +35,16 @@
   const btnVoltar = document.getElementById("btnVoltar");
   const btnSair = document.getElementById("btnSair");
 
-  function readJSON(key, fallback) {
-    try {
-      const raw = localStorage.getItem(key);
-      if (!raw) return fallback;
-      return JSON.parse(raw);
-    } catch {
-      return fallback;
-    }
-  }
-
-  function writeJSON(key, value) {
-    localStorage.setItem(key, JSON.stringify(value));
-  }
+  const MODULE_CATALOG = [
+    { id: "dashboard", name: "Dashboard", desc: "Visão geral do ContHub.", icon: "🏠" },
+    { id: "contflow", name: "ContFlow", desc: "Controle de rotinas e fluxo contábil.", icon: "⚡" },
+    { id: "contanalytics", name: "ContAnalytics", desc: "KPIs, indicadores e painéis.", icon: "📊" },
+    { id: "contdocs", name: "ContDocs", desc: "Centralização e gestão de documentos.", icon: "📁" },
+    { id: "contmit", name: "ContMIT", desc: "MIT, apurações e cálculos periódicos.", icon: "🧾" },
+    { id: "contrelatorios", name: "ContRelatórios", desc: "Geração de relatórios e exportações.", icon: "📈" },
+    { id: "contconfig", name: "ContConfig", desc: "Parâmetros e configurações gerais.", icon: "⚙️" },
+    { id: "contadmin", name: "ContAdmin Hub", desc: "Área administrativa e controle total.", icon: "🛡️" },
+  ];
 
   function goto(url) {
     const target = String(url || "").trim();
@@ -83,32 +79,45 @@
   }
 
   function roleLabel(role) {
-    const r = String(role || "user").toLowerCase();
-    if (r === "ti") return "TI";
-    if (r === "admin") return "ADMIN";
+    const normalized = String(role || "user").trim().toLowerCase();
+    if (normalized === "ti") return "TI";
+    if (normalized === "admin") return "ADMIN";
     return "USER";
   }
 
-  function avatarFromName(name) {
-    const t = String(name || "").trim();
-    return t ? t[0].toUpperCase() : "U";
+  function accessProfileLabel(profile) {
+    const normalized = String(profile || "").trim().toLowerCase();
+    if (normalized === "ti") return "TI";
+    if (normalized === "gerencial") return "Gerencial";
+    if (normalized === "coordenacao") return "Coordenação";
+    if (normalized === "consulta") return "Consulta";
+    return "Operacional";
   }
 
-  function nowISO() {
-    return new Date().toISOString();
+  function normalizeName(value) {
+    return String(value || "")
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .trim()
+      .toLowerCase();
+  }
+
+  function avatarFromName(name) {
+    const text = String(name || "").trim();
+    return text ? text[0].toUpperCase() : "U";
   }
 
   function fmtTime(iso) {
     try {
-      const d = new Date(iso);
-      return d.toLocaleString("pt-BR");
+      const date = new Date(iso);
+      return date.toLocaleString("pt-BR");
     } catch {
       return "—";
     }
   }
 
-  function escapeHtml(s) {
-    return String(s ?? "")
+  function escapeHtml(value) {
+    return String(value ?? "")
       .replaceAll("&", "&amp;")
       .replaceAll("<", "&lt;")
       .replaceAll(">", "&gt;")
@@ -116,25 +125,31 @@
       .replaceAll("'", "&#039;");
   }
 
+  function cleanText(value) {
+    return String(value ?? "").trim();
+  }
+
+  function getDisplayValue(value, fallback = "—") {
+    const text = cleanText(value);
+    return text || fallback;
+  }
+
   function normalizeModuleStatus(status, active) {
-    const s = String(status || "").trim().toLowerCase();
+    const normalized = String(status || "").trim().toLowerCase();
 
     if (active === false) return "offline";
-    if (s === "offline" || s === "off") return "offline";
-    if (s === "dev") return "dev";
-    if (s === "admin") return "admin";
+    if (normalized === "offline" || normalized === "off") return "offline";
+    if (normalized === "dev") return "dev";
+    if (normalized === "admin") return "admin";
     return "online";
   }
 
   function getSessionUserId(user) {
     if (!user || typeof user !== "object") return null;
+    if (user.id == null || String(user.id).trim() === "") return null;
 
-    if (user.id != null && String(user.id).trim() !== "") {
-      const n = Number(user.id);
-      if (Number.isFinite(n) && n > 0) return n;
-    }
-
-    return null;
+    const numeric = Number(user.id);
+    return Number.isFinite(numeric) ? numeric : null;
   }
 
   async function fetchJson(url, opts = {}) {
@@ -168,8 +183,8 @@
         return null;
       }
 
-      const msg = (data && (data.error || data.message)) || `HTTP ${res.status}`;
-      const err = new Error(msg);
+      const message = (data && (data.error || data.message)) || `HTTP ${res.status}`;
+      const err = new Error(message);
       err.status = res.status;
       err.payload = data;
       throw err;
@@ -197,15 +212,21 @@
     }
   }
 
-  async function loadUserFromApi(userId) {
-    const payload = await fetchJson(API_USERS, { method: "GET" });
-    const list = Array.isArray(payload?.users)
-      ? payload.users
-      : Array.isArray(payload)
-      ? payload
-      : [];
+  async function loadProfileFromApi() {
+    const payload = await fetchJson("/api/auth/me", { method: "GET" });
+    return payload && typeof payload === "object" ? payload.user || payload : null;
+  }
 
-    return list.find((x) => Number(x.id) === Number(userId)) || null;
+  async function loadModulesFromApi() {
+    try {
+      const payload = await fetchJson(API_MODULES, { method: "GET" });
+      MODULES_ROWS = Array.isArray(payload?.modules) ? payload.modules : [];
+      return MODULES_ROWS;
+    } catch (err) {
+      console.warn("Falha ao carregar módulos:", err?.message || err);
+      MODULES_ROWS = [];
+      return MODULES_ROWS;
+    }
   }
 
   async function loadLogsFromApi(userId) {
@@ -214,150 +235,138 @@
     return Array.isArray(list) ? list : [];
   }
 
-  async function loadModulesFromApi() {
-    try {
-      const payload = await fetchJson(API_MODULES, { method: "GET" });
-      const rows = Array.isArray(payload?.modules) ? payload.modules : [];
-
-      const map = {};
-      rows.forEach((m) => {
-        const slug = String(m.slug || "").trim().toLowerCase();
-        if (!slug) return;
-        map[slug] = normalizeModuleStatus(m.status, m.active);
-      });
-
-      MODULES_MAP = map;
-      return map;
-    } catch (err) {
-      console.warn("Falha ao carregar módulos:", err?.message || err);
-      MODULES_MAP = {};
-      return MODULES_MAP;
-    }
-  }
-
-  const MODULE_CATALOG = [
-    { id: "dashboard", name: "Dashboard", desc: "Visão geral do ContHub.", icon: "🏠" },
-    { id: "contflow", name: "ContFlow", desc: "Controle de rotinas e fluxo contábil.", icon: "⚡" },
-    { id: "contanalytics", name: "ContAnalytics", desc: "KPIs, indicadores e painéis.", icon: "📊" },
-    { id: "contdocs", name: "ContDocs", desc: "Centralização e gestão de documentos.", icon: "📁" },
-    { id: "contmit", name: "ContMIT", desc: "MIT, apurações e cálculos periódicos.", icon: "🧾" },
-    { id: "contrels", name: "ContRelatórios", desc: "Geração de relatórios e exportações.", icon: "📈" },
-    { id: "contconfig", name: "ContConfig", desc: "Parâmetros e configurações gerais.", icon: "⚙️" },
-    { id: "contadmin", name: "ContAdmin Hub", desc: "Área administrativa e controle total.", icon: "🛡️" },
-  ];
-
-  function getModuleStatus(id) {
-    if (id === "contadmin") return "admin";
-    return MODULES_MAP[id] || "online";
-  }
-
-  function canAccessModule(role, moduleId) {
-    const r = String(role || "user").toLowerCase();
-    if (r === "ti") return true;
-    if (r === "admin") return true;
-    return moduleId !== "contadmin";
-  }
-
-  function pushLocalLog(userId, message) {
-    const safeKey = String(userId || "anon");
-    const logsAll = readJSON(LOGS_KEY, {});
-
-    if (!Array.isArray(logsAll[safeKey])) logsAll[safeKey] = [];
-
-    logsAll[safeKey].unshift({ message, at: nowISO() });
-    logsAll[safeKey] = logsAll[safeKey].slice(0, 15);
-
-    writeJSON(LOGS_KEY, logsAll);
-  }
-
-  function renderLogsLocal(userId) {
-    if (!elLogsList) return;
-
-    const safeKey = String(userId || "anon");
-    const logsAll = readJSON(LOGS_KEY, {});
-    const list = Array.isArray(logsAll[safeKey]) ? logsAll[safeKey] : [];
-
-    if (!list.length) {
-      elLogsList.innerHTML = `<div class="muted" style="font-size:12px;">Sem atividade registrada ainda.</div>`;
-      return;
-    }
-
-    elLogsList.innerHTML = list
-      .map(
-        (l) => `
-          <div class="log">
-            <div class="log__msg">${escapeHtml(l.message)}</div>
-            <div class="log__time">${escapeHtml(fmtTime(l.at))}</div>
-          </div>
-        `
-      )
-      .join("");
-  }
-
-  function normalizeLogLine(x) {
-    const when = x.createdAt || x.timestamp || x.at || x.date || null;
-    const action = x.action || x.event || x.type || "LOG";
-    const by = x.actorEmail || x.actor || x.by || "";
-    const msg = x.message || x.detail || "";
+  function normalizeLogLine(log) {
+    const when = log.createdAt || log.timestamp || log.at || log.date || null;
+    const action = log.action || log.event || log.type || "LOG";
+    const by = log.actorEmail || log.actor || log.by || "";
+    const msg = log.message || log.detail || "";
 
     return {
       when: when ? fmtTime(when) : "—",
       action: String(action),
       by: String(by || ""),
       msg: String(msg || ""),
-      meta: x.meta ?? null,
     };
   }
 
-  async function loadLogsBackend(userId) {
-    if (!elLogsList || !userId) return;
+  function renderLogsMessage(message) {
+    if (!elLogsList) return;
+    elLogsList.innerHTML = `<div class="muted" style="font-size:12px;">${escapeHtml(message)}</div>`;
+  }
 
-    const old = elLogsList.innerHTML;
-    elLogsList.innerHTML =
-      old || `<div class="muted" style="font-size:12px;">Carregando atividade…</div>`;
+  async function renderLogs(userId) {
+    if (!elLogsList) return;
+
+    if (!userId) {
+      renderLogsMessage("Sem identificação de usuário para carregar atividade.");
+      return;
+    }
+
+    renderLogsMessage("Carregando atividade…");
 
     try {
       const logs = await loadLogsFromApi(userId);
 
       if (!logs.length) {
-        if (!old) {
-          elLogsList.innerHTML = `<div class="muted" style="font-size:12px;">Sem logs no servidor ainda.</div>`;
-        }
+        renderLogsMessage("Sem logs no servidor ainda.");
         return;
       }
 
-      const lines = logs.map(normalizeLogLine);
-
-      elLogsList.innerHTML = lines
+      elLogsList.innerHTML = logs
+        .map(normalizeLogLine)
         .map(
-          (l) => `
+          (line) => `
             <div class="log">
               <div class="log__msg">
-                <strong>${escapeHtml(l.action)}</strong>
-                ${l.msg ? " — " + escapeHtml(l.msg) : ""}
-                ${l.by ? `<span class="muted" style="margin-left:8px;">(${escapeHtml(l.by)})</span>` : ""}
+                <strong>${escapeHtml(line.action)}</strong>
+                ${line.msg ? " - " + escapeHtml(line.msg) : ""}
+                ${line.by ? `<span class="muted" style="margin-left:8px;">(${escapeHtml(line.by)})</span>` : ""}
               </div>
-              <div class="log__time">${escapeHtml(l.when)}</div>
+              <div class="log__time">${escapeHtml(line.when)}</div>
             </div>
           `
         )
         .join("");
     } catch (err) {
-      console.warn("Logs backend indisponíveis:", err?.message || err);
-      if (!old) renderLogsLocal(String(userId || "anon"));
+      console.warn("Falha ao carregar logs do perfil:", err?.message || err);
+      renderLogsMessage("Não foi possível carregar a atividade agora.");
     }
   }
 
+  function getModuleCatalogMap() {
+    return Object.fromEntries(MODULE_CATALOG.map((module) => [module.id, module]));
+  }
+
+  function getRenderableModules() {
+    const catalogMap = getModuleCatalogMap();
+    const rows = MODULES_ROWS.map((row) => {
+      const id = cleanText(row.slug).toLowerCase();
+      return {
+        id,
+        slug: id,
+        name: cleanText(row.name) || catalogMap[id]?.name || id,
+        desc: catalogMap[id]?.desc || "Módulo do ecossistema ContHub.",
+        icon: catalogMap[id]?.icon || "•",
+        status: row.status,
+        active: row.active,
+        access: row.access,
+        order: row.order,
+      };
+    });
+
+    const merged = new Map(rows.map((row) => [row.id, row]));
+    MODULE_CATALOG.forEach((module, index) => {
+      if (!merged.has(module.id)) {
+        merged.set(module.id, {
+          ...module,
+          slug: module.id,
+          status: "online",
+          active: true,
+          access: "user+admin",
+          order: index + 1,
+        });
+      }
+    });
+
+    return Array.from(merged.values()).sort((a, b) => Number(a.order || 0) - Number(b.order || 0));
+  }
+
+  function normalizeModuleAccess(access) {
+    return String(access || "")
+      .split("+")
+      .map((item) => cleanText(item).toLowerCase())
+      .filter(Boolean);
+  }
+
+  function canAccessModule(user, module) {
+    const role = cleanText(user?.role).toLowerCase();
+    const accessProfile = cleanText(user?.accessProfile).toLowerCase();
+    const moduleId = cleanText(module?.id || module?.slug).toLowerCase();
+    const rules = normalizeModuleAccess(module?.access);
+
+    if (role === "ti" || accessProfile === "ti") return true;
+    if (!rules.length || rules.includes("user+admin")) return moduleId !== "contadmin";
+    if (rules.includes("all") || rules.includes("*") || rules.includes("auth")) return true;
+    if (rules.includes(role) || rules.includes(accessProfile)) return true;
+    if (rules.includes("admin") && role === "admin") return true;
+    return false;
+  }
+
+  function roleDescription(user) {
+    const role = cleanText(user?.role).toLowerCase();
+    const accessProfile = cleanText(user?.accessProfile).toLowerCase();
+
+    if (role === "ti" || accessProfile === "ti") return "Acesso técnico total";
+    if (role === "admin" || accessProfile === "gerencial") return "Acesso gerencial";
+    if (accessProfile === "coordenacao") return "Acesso de coordenação";
+    if (accessProfile === "consulta") return "Acesso somente leitura";
+    return "Acesso operacional";
+  }
+
   function renderProfile(user) {
-    const nome = String(user?.name ?? user?.nome ?? "Usuário").trim();
-    const email = String(user?.email ?? "—").trim();
-    const cargo =
-      user?.cargo != null && String(user.cargo).trim() !== ""
-        ? String(user.cargo).trim()
-        : "—";
-
-    const roleRaw = String(user?.role ?? "user").toLowerCase();
-
+    const nome = getDisplayValue(user?.nome || user?.name, "Usuário");
+    const email = getDisplayValue(user?.email);
+    const cargo = getDisplayValue(user?.cargo);
     const active =
       typeof user?.active === "boolean"
         ? user.active
@@ -365,19 +374,19 @@
         ? user.ativo
         : true;
 
-    const role = roleLabel(roleRaw);
-
     if (elAvatar) elAvatar.textContent = avatarFromName(nome);
     if (elNome) elNome.textContent = nome;
     if (elEmail) elEmail.textContent = email;
-
-    if (elNivelAcesso) elNivelAcesso.textContent = role;
+    if (elPerfilAcesso) elPerfilAcesso.textContent = accessProfileLabel(user?.accessProfile);
+    if (elNivelAcesso) elNivelAcesso.textContent = roleDescription(user);
     if (elCargo) elCargo.textContent = cargo;
-    if (elStatus) elStatus.textContent = active ? "ATIVO" : "INATIVO";
+    if (elStatus) elStatus.textContent = active ? "Ativo" : "Inativo";
+    if (elCoordenador) elCoordenador.textContent = getDisplayValue(user?.coordenador);
+    if (elEquipe) elEquipe.textContent = getDisplayValue(user?.equipe);
+    if (elUpdatedAt) elUpdatedAt.textContent = user?.updatedAt ? fmtTime(user.updatedAt) : "—";
 
-    if (elRoleBadge) elRoleBadge.textContent = role;
+    if (elRoleBadge) elRoleBadge.textContent = roleLabel(user?.role);
     if (elCargoBadge) elCargoBadge.textContent = cargo;
-
     if (elStatusBadge) {
       elStatusBadge.textContent = active ? "ATIVO" : "INATIVO";
       elStatusBadge.classList.toggle("badge--off", !active);
@@ -387,81 +396,68 @@
   function renderModules(user) {
     if (!elModulesList) return;
 
-    const role = String(user?.role ?? "user").toLowerCase();
+    const modules = getRenderableModules();
+    elModulesList.innerHTML = modules
+      .map((module) => {
+        const allowed = canAccessModule(user, module);
+        const status = normalizeModuleStatus(module.status, module.active);
 
-    elModulesList.innerHTML = MODULE_CATALOG.map((m) => {
-      const allowed = canAccessModule(role, m.id);
-      const st = getModuleStatus(m.id);
+        const pillClass =
+          status === "dev" ? "pill--dev" : status === "offline" ? "pill--off" : "pill--online";
 
-      const pillClass =
-        st === "dev" ? "pill--dev" : st === "offline" ? "pill--off" : "pill--online";
+        const pillText =
+          status === "dev"
+            ? "DEV"
+            : status === "offline"
+            ? "OFF"
+            : status === "admin"
+            ? "ADMIN"
+            : "ONLINE";
 
-      const pillText =
-        st === "dev"
-          ? "DEV"
-          : st === "offline"
-          ? "OFF"
-          : st === "admin"
-          ? "ADMIN"
-          : "ONLINE";
+        return `
+          <div class="module ${allowed ? "" : "module--blocked"}">
+            <div class="module__left">
+              <div class="module__icon">${escapeHtml(module.icon)}</div>
+              <div class="module__text">
+                <div class="module__name">${escapeHtml(module.name)}</div>
+                <div class="module__desc">${escapeHtml(module.desc)}</div>
+              </div>
+            </div>
 
-      return `
-        <div class="module">
-          <div class="module__left">
-            <div class="module__icon">${escapeHtml(m.icon)}</div>
-            <div class="module__text">
-              <div class="module__name">${escapeHtml(m.name)}</div>
-              <div class="module__desc">${escapeHtml(m.desc)}</div>
+            <div class="module__right">
+              <span class="pill ${pillClass}">${escapeHtml(pillText)}</span>
+              <span class="lock">${allowed ? "Liberado" : "Bloqueado"}</span>
             </div>
           </div>
-
-          <div class="module__right">
-            <span class="pill ${pillClass}">${escapeHtml(pillText)}</span>
-            <span class="lock">${allowed ? "Liberado" : "Bloqueado"}</span>
-          </div>
-        </div>
-      `;
-    }).join("");
+        `;
+      })
+      .join("");
   }
 
   async function init() {
     const session = await requireAuthOrRedirect();
     if (!session) return;
 
-    const userId = getSessionUserId(session);
-
-    await loadModulesFromApi();
-
     renderProfile(session);
+    await loadModulesFromApi();
     renderModules(session);
-
-    pushLocalLog(String(userId || "anon"), "Acessou a página de perfil");
-    renderLogsLocal(String(userId || "anon"));
-
-    if (!userId) {
-      console.warn("Perfil carregado sem id na sessão. Mantendo página aberta sem redirecionar.");
-      return;
-    }
+    await renderLogs(getSessionUserId(session));
 
     try {
-      const apiUser = await loadUserFromApi(userId);
-      if (apiUser) {
-        AUTH_USER = { ...session, ...apiUser };
+      const profile = await loadProfileFromApi();
+      if (profile) {
+        AUTH_USER = { ...session, ...profile };
         renderProfile(AUTH_USER);
         renderModules(AUTH_USER);
+        await renderLogs(getSessionUserId(AUTH_USER));
       }
     } catch (err) {
-      console.warn("Perfil: falha ao atualizar dados via API:", err?.message || err);
+      console.warn("Falha ao carregar perfil atualizado:", err?.message || err);
     }
-
-    await loadLogsBackend(userId);
   }
 
   btnVoltar?.addEventListener("click", () => history.back());
-
   btnSair?.addEventListener("click", async () => {
-    const userId = getSessionUserId(AUTH_USER);
-    pushLocalLog(String(userId || "anon"), "Saiu (logout)");
     await logout();
   });
 

@@ -12,6 +12,7 @@ const db = require("./db");
 const authRoutes = require("./routes/auth.routes");
 const adminUsersRoutes = require("./routes/admin.users.routes");
 const adminModulesRoutes = require("./routes/admin.modules.routes");
+const adminTeamConfigRoutes = require("./routes/admin.team-config.routes");
 const publicCustomersRoutes = require("./routes/public.customers.routes");
 const dashboardRoutes = require("./routes/dashboard.routes");
 const sheetsRoutes = require("./routes/sheets.routes");
@@ -51,7 +52,7 @@ app.use(
 // AUTH MIDDLEWARE
 // ---------------------------------------------------
 
-const { requireAuth, requireAdmin } = require("./middleware/auth");
+const { requireAuth } = require("./middleware/auth");
 
 // ---------------------------------------------------
 // STATIC FILES
@@ -82,9 +83,11 @@ app.use("/api/sheets", requireAuth, sheetsRoutes);
 // 🔵 ROTA NOVA DA RECONCILIAÇÃO (SEM AUTH TEMPORARIAMENTE)
 app.use("/api/reconciliacao", reconciliacaoRoutes);
 
-app.use("/api/admin/users", requireAdmin, adminUsersRoutes);
+app.use("/api/admin/users", requireAuth, adminUsersRoutes);
 
-app.use("/api/admin/modules", requireAdmin, adminModulesRoutes);
+app.use("/api/admin/modules", requireAuth, adminModulesRoutes);
+
+app.use("/api/admin/team-config", requireAuth, adminTeamConfigRoutes);
 
 // ---------------------------------------------------
 // HTML ROUTES

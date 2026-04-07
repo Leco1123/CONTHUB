@@ -4,6 +4,7 @@ const bcrypt = require("bcryptjs");
 const fs = require("fs");
 const path = require("path");
 const db = require("../db"); // PrismaClient
+const { requireContAdminAccess, requireContAdminManage } = require("../middleware/auth");
 
 const router = express.Router();
 const USER_META_FILE = path.join(__dirname, "..", "data", "user-metadata.json");
@@ -83,7 +84,7 @@ function getUserMetaKeys(user) {
   return Array.from(new Set(keys));
 }
 
-function getUserMeta(user) {
+function getLegacyUserMeta(user) {
   const store = readUserMetaStore();
   for (const key of getUserMetaKeys(user)) {
     if (store[key] && typeof store[key] === "object") {
@@ -91,26 +92,6 @@ function getUserMeta(user) {
     }
   }
   return {};
-}
-
-function saveUserMeta(user, metaInput = {}) {
-  const store = readUserMetaStore();
-  const current = getUserMeta(user);
-  const next = {
-    coordenador: cleanText(metaInput.coordenador ?? current.coordenador),
-    equipe: cleanText(metaInput.equipe ?? current.equipe),
-    accessProfile: normalizeAccessProfile(
-      metaInput.accessProfile ?? metaInput.access_profile ?? current.accessProfile,
-      user?.role
-    ),
-  };
-
-  getUserMetaKeys(user).forEach((key) => {
-    store[key] = { ...next };
-  });
-
-  writeUserMetaStore(store);
-  return next;
 }
 
 function deleteUserMeta(user) {
@@ -121,8 +102,47 @@ function deleteUserMeta(user) {
   writeUserMetaStore(store);
 }
 
+function getNormalizedMetaInput(user, metaInput = {}) {
+  return {
+    coordenador: cleanText(metaInput.coordenador),
+    equipe: cleanText(metaInput.equipe),
+    accessProfile: normalizeAccessProfile(
+      metaInput.accessProfile ?? metaInput.access_profile,
+      user?.role
+    ),
+  };
+}
+
+function getPersistedUserMeta(user) {
+  const legacyMeta = getLegacyUserMeta(user);
+  const coordenador = cleanText(user?.coordenador ?? legacyMeta.coordenador);
+  const equipe = cleanText(user?.equipe ?? legacyMeta.equipe);
+  const accessProfile = normalizeAccessProfile(
+    user?.accessProfile ?? user?.access_profile ?? legacyMeta.accessProfile,
+    user?.role
+  );
+
+  return { coordenador, equipe, accessProfile };
+}
+
+async function persistUserMeta(user, metaInput = {}) {
+  const next = getNormalizedMetaInput(user, metaInput);
+
+  await db.user.update({
+    where: { id: Number(user.id) },
+    data: {
+      coordenador: next.coordenador || null,
+      equipe: next.equipe || null,
+      accessProfile: next.accessProfile,
+    },
+  });
+
+  deleteUserMeta(user);
+  return next;
+}
+
 function pickUserSafe(u) {
-  const meta = getUserMeta(u);
+  const meta = getPersistedUserMeta(u);
   return {
     id: u.id,
     name: u.name ?? "",
@@ -185,11 +205,42 @@ async function writeUserLog({ userId, action, message = null, meta = null, actor
   }
 }
 
+async function backfillLegacyUserMetadata() {
+  const store = readUserMetaStore();
+  const entries = Object.entries(store).filter(([, value]) => value && typeof value === "object");
+  if (!entries.length) return;
+
+  const processedIds = new Set();
+
+  for (const [key, value] of entries) {
+    const rawKey = cleanText(key);
+    if (!rawKey) continue;
+
+    const maybeId = Number(rawKey);
+    const user = Number.isFinite(maybeId)
+      ? await db.user.findUnique({ where: { id: maybeId } })
+      : await db.user.findUnique({ where: { email: normalizeEmail(rawKey) } });
+
+    if (!user || processedIds.has(user.id)) continue;
+    processedIds.add(user.id);
+
+    await db.user.update({
+      where: { id: user.id },
+      data: {
+        coordenador: cleanText(value.coordenador) || null,
+        equipe: cleanText(value.equipe) || null,
+        accessProfile: normalizeAccessProfile(value.accessProfile, user.role),
+      },
+    });
+  }
+}
+
 /* ================================
  * GET /api/admin/users
  * ================================ */
-router.get("/", async (req, res) => {
+router.get("/", requireContAdminAccess, async (req, res) => {
   try {
+    await backfillLegacyUserMetadata();
     const rows = await db.user.findMany({
       select: {
         id: true,
@@ -198,6 +249,9 @@ router.get("/", async (req, res) => {
         role: true,
         active: true,
         cargo: true,
+        coordenador: true,
+        equipe: true,
+        accessProfile: true,
         createdAt: true,
         updatedAt: true,
       },
@@ -214,7 +268,7 @@ router.get("/", async (req, res) => {
 /* ================================
  * ✅ GET /api/admin/users/:id/logs?limit=50
  * ================================ */
-router.get("/:id/logs", async (req, res) => {
+router.get("/:id/logs", requireContAdminAccess, async (req, res) => {
   try {
     const id = Number(req.params.id);
     const limit = Math.min(Number(req.query.limit || 50), 200);
@@ -251,7 +305,7 @@ router.get("/:id/logs", async (req, res) => {
 /* ================================
  * POST /api/admin/users
  * ================================ */
-router.post("/", async (req, res) => {
+router.post("/", requireContAdminManage, async (req, res) => {
   try {
     const name = String(req.body?.name || "").trim();
     const email = normalizeEmail(req.body?.email);
@@ -279,13 +333,22 @@ router.post("/", async (req, res) => {
     const hash = await bcrypt.hash(password, 10);
 
     const created = await db.user.create({
-      data: { name, email, password: hash, role, active, cargo },
+      data: {
+        name,
+        email,
+        password: hash,
+        role,
+        active,
+        cargo,
+        coordenador: cleanText(req.body?.coordenador) || null,
+        equipe: cleanText(req.body?.equipe) || null,
+        accessProfile: normalizeAccessProfile(
+          req.body?.accessProfile ?? req.body?.access_profile,
+          role
+        ),
+      },
     });
-    const meta = saveUserMeta(created, {
-      coordenador: req.body?.coordenador,
-      equipe: req.body?.equipe,
-      accessProfile: req.body?.accessProfile ?? req.body?.access_profile,
-    });
+    const meta = getPersistedUserMeta(created);
 
     // ✅ ALTERADO: log com meta enriquecido
     await writeUserLog({
@@ -314,7 +377,7 @@ router.post("/", async (req, res) => {
 /* ================================
  * PUT /api/admin/users/:id
  * ================================ */
-router.put("/:id", async (req, res) => {
+router.put("/:id", requireContAdminManage, async (req, res) => {
   try {
     const id = Number(req.params.id);
     if (!Number.isFinite(id)) return res.status(400).json({ error: "ID inválido." });
@@ -333,6 +396,14 @@ router.put("/:id", async (req, res) => {
     if (typeof req.body?.active === "boolean") data.active = req.body.active;
 
     if (req.body?.cargo != null) data.cargo = String(req.body.cargo).trim();
+    if (req.body?.coordenador != null) data.coordenador = cleanText(req.body.coordenador) || null;
+    if (req.body?.equipe != null) data.equipe = cleanText(req.body.equipe) || null;
+    if (req.body?.accessProfile != null || req.body?.access_profile != null) {
+      data.accessProfile = normalizeAccessProfile(
+        req.body?.accessProfile ?? req.body?.access_profile,
+        req.body?.role ?? current.role
+      );
+    }
 
     // Se vier vazio, não atualiza com string vazia sem querer
     if (data.name === "") delete data.name;
@@ -340,11 +411,8 @@ router.put("/:id", async (req, res) => {
     if (data.cargo === "") data.cargo = null;
 
     const updated = await db.user.update({ where: { id }, data });
-    const meta = saveUserMeta(updated, {
-      coordenador: req.body?.coordenador,
-      equipe: req.body?.equipe,
-      accessProfile: req.body?.accessProfile ?? req.body?.access_profile,
-    });
+    deleteUserMeta(updated);
+    const meta = getPersistedUserMeta(updated);
 
     // ✅ ALTERADO: log com meta enriquecido
     await writeUserLog({
@@ -371,7 +439,7 @@ router.put("/:id", async (req, res) => {
 /* ================================
  * PUT /api/admin/users/:id/password
  * ================================ */
-router.put("/:id/password", async (req, res) => {
+router.put("/:id/password", requireContAdminManage, async (req, res) => {
   try {
     const id = Number(req.params.id);
     const password = String(req.body?.password || "").trim();
@@ -409,7 +477,7 @@ router.put("/:id/password", async (req, res) => {
 /* ================================
  * PATCH /api/admin/users/:id/toggle
  * ================================ */
-router.patch("/:id/toggle", async (req, res) => {
+router.patch("/:id/toggle", requireContAdminManage, async (req, res) => {
   try {
     const id = Number(req.params.id);
     if (!Number.isFinite(id)) return res.status(400).json({ error: "ID inválido." });
@@ -444,7 +512,7 @@ router.patch("/:id/toggle", async (req, res) => {
 /* ================================
  * DELETE /api/admin/users/:id
  * ================================ */
-router.delete("/:id", async (req, res) => {
+router.delete("/:id", requireContAdminManage, async (req, res) => {
   try {
     const id = Number(req.params.id);
     if (!Number.isFinite(id)) return res.status(400).json({ error: "ID inválido." });

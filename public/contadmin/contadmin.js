@@ -27,21 +27,12 @@ document.addEventListener("DOMContentLoaded", () => {
   const API_BASE = "";
   const API_USERS = `${API_BASE}/api/admin/users`;
   const API_MODULES = `${API_BASE}/api/admin/modules`;
+  const API_TEAM_CONFIG = `${API_BASE}/api/admin/team-config`;
   const API_USER_LOGS = (id) => `${API_USERS}/${id}/logs?limit=50`;
 
   const COMPANY_DOMAIN = "@franco-rnc.com.br";
   const PASSWORD_POLICY =
     /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{8,}$/;
-  const TEAMS_KEY = "conthub_contadmin_equipes";
-  const USER_TEAMS_KEY = "conthub_contadmin_user_teams";
-  const ACCESS_PROFILE_KEY = "conthub_contadmin_access_profiles";
-  const TEAM_COORDINATORS = ["Marcos", "Leticia", "Cleide", "Matheus"];
-  const DEFAULT_TEAM_CONFIG = {
-    Marcos: ["Equipe Marcos 1", "Equipe Marcos 2"],
-    Leticia: ["Equipe Leticia 1", "Equipe Leticia 2"],
-    Cleide: ["Equipe Cleide 1", "Equipe Cleide 2"],
-    Matheus: ["Equipe Matheus 1", "Equipe Matheus 2"],
-  };
   const TEAM_EDITORS = ["leandro", "gabriella"];
   const ACCESS_PROFILES = [
     { value: "ti", label: "TI", description: "Controle total do sistema, usuários, módulos e configurações." },
@@ -128,71 +119,149 @@ document.addEventListener("DOMContentLoaded", () => {
       .toLowerCase();
   }
 
-  function cloneDefaultTeamConfig() {
-    return JSON.parse(JSON.stringify(DEFAULT_TEAM_CONFIG));
+  function matchConfiguredValue(options, value) {
+    const target = normalizeName(value);
+    if (!target) return "";
+    return options.find((option) => normalizeName(option) === target) || "";
+  }
+
+  function sortDisplayNames(values) {
+    return [...values].sort((a, b) =>
+      String(a || "").localeCompare(String(b || ""), "pt-BR", { sensitivity: "base" })
+    );
+  }
+
+  function getConfiguredCoordinatorList() {
+    return sortDisplayNames(
+      Object.keys(teamConfig || {})
+        .map((value) => cleanText(value))
+        .filter(Boolean)
+    );
+  }
+
+  function getAssignedCoordinatorList() {
+    return sortDisplayNames(
+      usuarios
+        .map((user) => cleanText(user?.coordenador))
+        .filter(Boolean)
+    );
+  }
+
+  function getCoordinatorList() {
+    return sortDisplayNames(
+      Array.from(new Set([...getConfiguredCoordinatorList(), ...getAssignedCoordinatorList()]))
+    );
+  }
+
+  function getTeamsForCoordinator(coordinator) {
+    const safeCoordinator = cleanText(coordinator);
+    if (!safeCoordinator) return [];
+
+    const configuredCoordinator = matchConfiguredValue(getConfiguredCoordinatorList(), safeCoordinator);
+    const resolvedCoordinator = configuredCoordinator || safeCoordinator;
+
+    const configuredTeams = Object.entries(teamConfig || {})
+      .filter(([name]) => normalizeName(name) === normalizeName(resolvedCoordinator))
+      .flatMap(([, teams]) => (Array.isArray(teams) ? teams : []))
+      .map((team) => cleanText(team))
+      .filter(Boolean);
+
+    const assignedTeams = usuarios
+      .filter((user) => normalizeName(user?.coordenador) === normalizeName(resolvedCoordinator))
+      .map((user) => cleanText(user?.equipe))
+      .filter(Boolean);
+
+    return sortDisplayNames(Array.from(new Set([...configuredTeams, ...assignedTeams])));
+  }
+
+  function getDefaultCoordinator(preferred = "") {
+    const coordinators = getCoordinatorList();
+    const resolvedPreferred = resolveCoordinatorName(preferred);
+    if (resolvedPreferred) return resolvedPreferred;
+    return coordinators[0] || "";
+  }
+
+  function resolveCoordinatorName(value) {
+    const cleaned = cleanText(value);
+    if (!cleaned) return "";
+    return matchConfiguredValue(getCoordinatorList(), cleaned) || cleaned;
+  }
+
+  function resolveTeamName(coordinator, value) {
+    const safeCoordinator = resolveCoordinatorName(coordinator);
+    const cleaned = cleanText(value);
+    if (!cleaned) return "";
+    if (!safeCoordinator) return "";
+    return matchConfiguredValue(getTeamsForCoordinator(safeCoordinator), cleaned) || cleaned;
+  }
+
+  function teamKey(value) {
+    return normalizeName(value);
+  }
+
+  function findCoordinatorByTeamName(value) {
+    const target = normalizeName(value);
+    if (!target) return "";
+
+    for (const coordinator of getCoordinatorList()) {
+      const match = getTeamsForCoordinator(coordinator).some(
+        (team) => normalizeName(team) === target
+      );
+      if (match) return coordinator;
+    }
+
+    return "";
+  }
+
+  function normalizeAssignment(assignment) {
+    const rawCoordinator = cleanText(assignment?.coordenador);
+    const rawTeam = cleanText(assignment?.equipe);
+    const coordinator =
+      resolveCoordinatorName(rawCoordinator) ||
+      findCoordinatorByTeamName(rawTeam) ||
+      rawCoordinator;
+    const equipe = rawTeam ? resolveTeamName(coordinator || rawCoordinator, rawTeam) : "";
+
+    return { coordenador: coordinator, equipe };
   }
 
   function normalizeTeamConfig(raw) {
-    const base = cloneDefaultTeamConfig();
     const source = raw && typeof raw === "object" ? raw : {};
+    const normalized = {};
 
-    TEAM_COORDINATORS.forEach((coordinator) => {
-      const next = Array.isArray(source[coordinator]) ? source[coordinator] : base[coordinator];
-      const cleaned = next.map((item) => String(item || "").trim()).filter(Boolean);
-      base[coordinator] = cleaned.length ? cleaned : [...DEFAULT_TEAM_CONFIG[coordinator]];
+    Object.entries(source).forEach(([coordinator, teams]) => {
+      const safeCoordinator = cleanText(coordinator);
+      if (!safeCoordinator) return;
+
+      const cleanedTeams = (Array.isArray(teams) ? teams : [])
+        .map((item) => cleanText(item))
+        .filter(Boolean);
+
+      normalized[safeCoordinator] = sortDisplayNames(Array.from(new Set(cleanedTeams)));
     });
 
-    return base;
+    return normalized;
   }
 
   function readTeamConfigStore() {
-    try {
-      return normalizeTeamConfig(JSON.parse(localStorage.getItem(TEAMS_KEY) || "{}"));
-    } catch {
-      return cloneDefaultTeamConfig();
-    }
+    return normalizeTeamConfig(teamConfig);
   }
 
   function writeTeamConfigStore() {
-    localStorage.setItem(TEAMS_KEY, JSON.stringify(teamConfig));
+    return saveTeamConfigToApi(teamConfig);
   }
 
   function readUserTeamStore() {
-    try {
-      const parsed = JSON.parse(localStorage.getItem(USER_TEAMS_KEY) || "{}");
-      if (!parsed || typeof parsed !== "object") return {};
-
-      return Object.fromEntries(
-        Object.entries(parsed).map(([key, value]) => [normalizeEntityId(key).toLowerCase(), value])
-      );
-    } catch {
-      return {};
-    }
+    return {};
   }
 
-  function writeUserTeamStore() {
-    localStorage.setItem(USER_TEAMS_KEY, JSON.stringify(userTeamMap));
-  }
+  function writeUserTeamStore() {}
 
   function readUserAccessStore() {
-    try {
-      const parsed = JSON.parse(localStorage.getItem(ACCESS_PROFILE_KEY) || "{}");
-      if (!parsed || typeof parsed !== "object") return {};
-
-      return Object.fromEntries(
-        Object.entries(parsed).map(([key, value]) => [
-          normalizeEntityId(key).toLowerCase(),
-          normalizeAccessProfile(value),
-        ])
-      );
-    } catch {
-      return {};
-    }
+    return {};
   }
 
-  function writeUserAccessStore() {
-    localStorage.setItem(ACCESS_PROFILE_KEY, JSON.stringify(userAccessMap));
-  }
+  function writeUserAccessStore() {}
 
   function canEditTeams(user) {
     if (!user) return false;
@@ -203,12 +272,13 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   function canManageUsers(user) {
-    return getAccessProfile(user) === "ti";
+    const profile = getAccessProfile(user);
+    return profile === "ti" || profile === "gerencial" || profile === "coordenacao";
   }
 
   function canViewAdmin(user) {
     const profile = getAccessProfile(user);
-    return profile === "ti" || profile === "gerencial";
+    return profile === "ti" || profile === "gerencial" || profile === "coordenacao";
   }
 
   function sameUserId(a, b) {
@@ -254,6 +324,34 @@ document.addEventListener("DOMContentLoaded", () => {
       .filter(Boolean);
 
     return Array.from(new Set(keys));
+  }
+
+  function getUserActionId(user) {
+    return resolveUserId(user) || cleanText(user?.email).toLowerCase();
+  }
+
+  function findUserByEntityId(entityId) {
+    const target = normalizeEntityId(entityId).toLowerCase();
+    if (!target) return null;
+
+    return (
+      usuarios.find((user) =>
+        getUserTeamKeys(user).some((key) => normalizeEntityId(key).toLowerCase() === target)
+      ) || null
+    );
+  }
+
+  function hasUserTeamAssignment(user) {
+    const assignment = normalizeAssignment(user || {});
+    return !!(assignment.coordenador && assignment.equipe);
+  }
+
+  function isUserInTeam(user, coordinator, equipe) {
+    const assignment = normalizeAssignment(user || {});
+    return (
+      normalizeName(assignment.coordenador) === normalizeName(coordinator) &&
+      normalizeName(assignment.equipe) === normalizeName(equipe)
+    );
   }
 
   function getStoredAssignment(user) {
@@ -302,10 +400,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function applyUserMetaToState(userRef, assignment, accessProfile) {
     const target = userRef || {};
-    const nextAssignment = {
-      coordenador: cleanText(assignment?.coordenador),
-      equipe: cleanText(assignment?.equipe),
-    };
+    const nextAssignment = normalizeAssignment(assignment);
     const nextAccessProfile = normalizeAccessProfile(accessProfile);
 
     setStoredAssignment(target, nextAssignment);
@@ -359,12 +454,11 @@ document.addEventListener("DOMContentLoaded", () => {
     const mode = String(options.mode || "team");
     const actionLabel = String(options.actionLabel || "");
     const actionAttr = String(options.actionAttr || "");
-    const subtitle =
-      mode === "directory"
-        ? cleanText(user.equipe)
-          ? `${cleanText(user.cargo) || "Usuário"} • ${cleanText(user.coordenador) || "Sem coord."} / ${cleanText(user.equipe)}`
-          : `${cleanText(user.cargo) || "Usuário"} • ${cleanText(user.email) || "Sem email"}`
-        : `${cleanText(user.cargo) || "Usuário"} • ${cleanText(user.email) || "Sem email"}`;
+    const actionId = getUserActionId(user);
+    const assignmentText = cleanText(user.equipe)
+      ? `${cleanText(user.coordenador) || "Sem coord."} / ${cleanText(user.equipe)}`
+      : "Sem equipe";
+    const subtitle = `${cleanText(user.cargo) || "Usuário"} • ${cleanText(user.email) || "Sem email"}`;
 
     const roleText = accessProfileLabel(user.accessProfile);
     const initials = avatarFromName(cleanText(user.nome) || cleanText(user.email));
@@ -378,17 +472,83 @@ document.addEventListener("DOMContentLoaded", () => {
             <span>${escapeHtml(roleText)}</span>
           </div>
           <div class="collab-card__meta">${escapeHtml(subtitle)}</div>
+          <div class="collab-card__assignment">${escapeHtml(assignmentText)}</div>
         </div>
         <div class="collab-card__actions">
           ${
-            actionLabel && actionAttr
-              ? `<button type="button" class="btn-acao ${mode === "directory" && cleanText(user.equipe) ? "btn-acao--ghost" : ""}" ${actionAttr}="${escapeHtml(user.id)}">${escapeHtml(actionLabel)}</button>`
+            actionLabel && actionAttr && actionId
+              ? `<button type="button" class="btn-acao ${mode === "directory" && cleanText(user.equipe) ? "btn-acao--ghost" : ""}" ${actionAttr}="${escapeHtml(actionId)}">${escapeHtml(actionLabel)}</button>`
               : ""
           }
-          <button type="button" class="btn-acao btn-acao--ghost" data-open-bi="${escapeHtml(user.id)}">BI</button>
+          <button type="button" class="btn-acao btn-acao--ghost" data-open-bi="${escapeHtml(actionId)}">BI</button>
         </div>
       </article>
     `;
+  }
+
+  function renderDirectoryGroup(title, description, count, content) {
+    return `
+      <section class="team-directory-group">
+        <div class="team-directory-group__head">
+          <div>
+            <h4>${escapeHtml(title)}</h4>
+            <p>${escapeHtml(description)}</p>
+          </div>
+          <span class="team-directory-group__metrics">${escapeHtml(String(count))}</span>
+        </div>
+        <div class="team-directory-group__body">
+          ${content}
+        </div>
+      </section>
+    `;
+  }
+
+  function renderAssignedTeamGroups(users) {
+    const groups = new Map();
+
+    users.forEach((user) => {
+      const key = `${cleanText(user.coordenador)}__${cleanText(user.equipe)}`;
+      if (!groups.has(key)) {
+        groups.set(key, {
+          coordinator: cleanText(user.coordenador) || "Sem coord.",
+          team: cleanText(user.equipe) || "Sem equipe",
+          users: [],
+        });
+      }
+      groups.get(key).users.push(user);
+    });
+
+    return Array.from(groups.values())
+      .sort((a, b) => {
+        const aLabel = `${a.coordinator} ${a.team}`;
+        const bLabel = `${b.coordinator} ${b.team}`;
+        return aLabel.localeCompare(bLabel, "pt-BR", { sensitivity: "base" });
+      })
+      .map(
+        (group) => `
+          <section class="team-assigned-group">
+            <div class="team-assigned-group__head">
+              <div>
+                <h5>${escapeHtml(`${group.coordinator} / ${group.team}`)}</h5>
+                <p>Pessoas atualmente vinculadas a esta equipe.</p>
+              </div>
+              <span class="team-assigned-group__count">${escapeHtml(String(group.users.length))}</span>
+            </div>
+            <div class="team-assigned-group__body">
+              ${group.users
+                .map((user) =>
+                  renderCollaboratorCard(user, {
+                    mode: "directory",
+                    actionLabel: "Mover",
+                    actionAttr: "data-move-member",
+                  })
+                )
+                .join("")}
+            </div>
+          </section>
+        `
+      )
+      .join("");
   }
 
   async function logout() {
@@ -502,13 +662,10 @@ document.addEventListener("DOMContentLoaded", () => {
         : true;
 
     const assignment = getStoredAssignment({ ...u, id, email }) || {};
-    const assignedCoordinator = cleanText(
-      u.coordenador ?? u.coordinator ?? assignment.coordenador
-    );
-    const coordinator = TEAM_COORDINATORS.includes(assignedCoordinator) ? assignedCoordinator : "";
-    const availableTeams = coordinator ? teamConfig[coordinator] || [] : [];
-    const assignedTeam = cleanText(u.equipe ?? u.team ?? assignment.equipe);
-    const equipe = coordinator && availableTeams.includes(assignedTeam) ? assignedTeam : "";
+    const normalizedAssignment = normalizeAssignment({
+      coordenador: cleanText(u.coordenador ?? u.coordinator ?? assignment.coordenador),
+      equipe: cleanText(u.equipe ?? u.team ?? assignment.equipe),
+    });
 
     return {
       id,
@@ -518,8 +675,8 @@ document.addEventListener("DOMContentLoaded", () => {
       role,
       accessProfile,
       ativo,
-      coordenador,
-      equipe,
+      coordenador: normalizedAssignment.coordenador,
+      equipe: normalizedAssignment.equipe,
       createdAt: u.createdAt ?? null,
       updatedAt: u.updatedAt ?? null,
     };
@@ -863,6 +1020,13 @@ document.addEventListener("DOMContentLoaded", () => {
   const btnNovoUsuario = document.getElementById("btnNovoUsuario");
   const btnCancelar = document.getElementById("cancelarModal");
   const btnFecharModalUsuario = document.getElementById("fecharModalUsuario");
+  const fieldNome = document.getElementById("nome");
+  const fieldEmail = document.getElementById("email");
+  const fieldCargo = document.getElementById("cargo");
+  const fieldSenha = document.getElementById("senha");
+  const fieldConfirmarSenha = document.getElementById("confirmarSenha");
+  const userFormFeedback = document.getElementById("userFormFeedback");
+  const userModalModeLabel = document.getElementById("userModalModeLabel");
   const passwordToggleButtons = Array.from(document.querySelectorAll(".password-toggle"));
   const btnGerenciarEquipes = document.getElementById("btnGerenciarEquipes");
   const equipesOverview = document.getElementById("equipesOverview");
@@ -878,18 +1042,18 @@ document.addEventListener("DOMContentLoaded", () => {
   const membrosEquipeLista = document.getElementById("membrosEquipeLista");
   const membrosEquipeBusca = document.getElementById("membrosEquipeBusca");
   const membrosEquipeDisponiveis = document.getElementById("membrosEquipeDisponiveis");
+  const membrosEquipeTransferiveis = document.getElementById("membrosEquipeTransferiveis");
   const fecharMembrosEquipe = document.getElementById("fecharMembrosEquipe");
   const fecharEquipeHeader = document.getElementById("fecharEquipeHeader");
   const inputCoordenador = document.getElementById("coordenador");
   const inputEquipe = document.getElementById("equipe");
-  const listaCoordenadores = document.getElementById("listaCoordenadores");
-  const listaEquipes = document.getElementById("listaEquipes");
 
   let usuarios = [];
   let modoEdicao = false;
   let idEmEdicao = null;
   let currentTeamModal = { coordinator: "", team: "" };
-  let currentTeamHubCoordinator = TEAM_COORDINATORS[0];
+  let currentTeamHubCoordinator = "";
+  let teamEditorFeedback = { type: "", text: "" };
 
   function syncBodyModalState() {
     const hasOpenModal =
@@ -898,6 +1062,10 @@ document.addEventListener("DOMContentLoaded", () => {
       modalEquipeMembros?.classList.contains("ativo");
 
     document.body.classList.toggle("modal-open", !!hasOpenModal);
+  }
+
+  function setTeamEditorFeedback(type = "", text = "") {
+    teamEditorFeedback = { type, text };
   }
 
   function openModal() {
@@ -912,12 +1080,13 @@ document.addEventListener("DOMContentLoaded", () => {
     syncBodyModalState();
 
     if (reset) form?.reset();
+    setUserFormFeedback("", "");
 
     modoEdicao = false;
     idEmEdicao = null;
 
-    if (form?.senha) form.senha.required = true;
-    if (form?.confirmarSenha) form.confirmarSenha.required = true;
+    if (fieldSenha) fieldSenha.required = true;
+    if (fieldConfirmarSenha) fieldConfirmarSenha.required = true;
 
     passwordToggleButtons.forEach((button) => {
       const targetId = String(button.getAttribute("data-target-input") || "").trim();
@@ -935,6 +1104,9 @@ document.addEventListener("DOMContentLoaded", () => {
     const subtitle = form.querySelector(".form-usuario__subtitle");
 
     if (title) title.textContent = mode === "edit" ? "Editar Usuário" : "Novo Usuário";
+    if (userModalModeLabel) {
+      userModalModeLabel.textContent = mode === "edit" ? "Edição em andamento" : "Novo cadastro";
+    }
     if (subtitle) {
       subtitle.textContent =
         mode === "edit"
@@ -943,10 +1115,31 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
+  function setUserFormFeedback(type = "", text = "") {
+    if (!userFormFeedback) return;
+    if (!text) {
+      userFormFeedback.hidden = true;
+      userFormFeedback.className = "form-usuario__feedback";
+      userFormFeedback.textContent = "";
+      return;
+    }
+
+    userFormFeedback.hidden = false;
+    userFormFeedback.className = `form-usuario__feedback form-usuario__feedback--${type || "info"}`;
+    userFormFeedback.textContent = text;
+  }
+
+  function setUserFormSaving(isSaving) {
+    if (!form) return;
+    const submitButton = form.querySelector('button[type="submit"]');
+    if (submitButton) {
+      submitButton.disabled = !!isSaving;
+      submitButton.textContent = isSaving ? "Salvando..." : "Salvar";
+    }
+  }
+
   function openTeamsModal() {
-    currentTeamHubCoordinator = TEAM_COORDINATORS.includes(currentTeamHubCoordinator)
-      ? currentTeamHubCoordinator
-      : TEAM_COORDINATORS[0];
+    currentTeamHubCoordinator = getDefaultCoordinator(currentTeamHubCoordinator);
     modalEquipes?.classList.add("ativo");
     modalEquipes?.setAttribute("aria-hidden", "false");
     syncBodyModalState();
@@ -991,11 +1184,8 @@ document.addEventListener("DOMContentLoaded", () => {
     st.id = "roleMiniStyle";
     st.textContent = `
       #roleBox{
-        margin-top:6px;
-        padding:10px;
-        border:1px solid rgba(255,255,255,0.12);
-        border-radius:10px;
-        background:rgba(255,255,255,0.04);
+        display:grid;
+        gap:10px;
       }
       .role-select{
         appearance:none;
@@ -1024,6 +1214,11 @@ document.addEventListener("DOMContentLoaded", () => {
         background-size:6px 6px, 6px 6px;
         background-repeat:no-repeat;
       }
+      #accessProfileHint{
+        color:rgba(234,238,243,.68);
+        font-size:12px;
+        line-height:1.5;
+      }
       .role-select:focus{
         border-color:rgba(93,188,255,0.45);
         box-shadow:0 0 0 3px rgba(93,188,255,0.16);
@@ -1049,11 +1244,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
     box = document.createElement("div");
     box.id = "roleBox";
-
-    const acoes = form.querySelector(".acoes-form");
-    if (acoes) form.insertBefore(box, acoes);
-    else form.appendChild(box);
-
     return box;
   }
 
@@ -1095,38 +1285,43 @@ document.addEventListener("DOMContentLoaded", () => {
   function updateTeamAssignmentUI() {
     const accessProfileSel = document.getElementById("accessProfileSelect");
     const selectedAccessProfile = normalizeAccessProfile(accessProfileSel?.value || "operacional");
-    const cargo = String(form?.cargo?.value || "").trim();
+    const cargo = String(fieldCargo?.value || "").trim();
     const needsAssignment = requiresTeamAssignment(cargo, selectedAccessProfile);
 
     if (inputCoordenador) {
       inputCoordenador.required = needsAssignment;
-      inputCoordenador.placeholder = needsAssignment ? "Selecione o coordenador" : "Nao se aplica para gerente";
       inputCoordenador.classList.toggle("is-disabled", !needsAssignment);
+      inputCoordenador.disabled = !needsAssignment;
     }
 
     if (inputEquipe) {
       inputEquipe.required = needsAssignment;
-      inputEquipe.placeholder = needsAssignment ? "Selecione a equipe" : "Nao se aplica para gerente";
       inputEquipe.classList.toggle("is-disabled", !needsAssignment);
+      inputEquipe.disabled = !needsAssignment;
     }
 
     if (!needsAssignment) {
       if (inputCoordenador) inputCoordenador.value = "";
       if (inputEquipe) inputEquipe.value = "";
-      if (listaCoordenadores) listaCoordenadores.style.display = "none";
-      if (listaEquipes) listaEquipes.style.display = "none";
     } else if (!cleanText(inputCoordenador?.value) || !cleanText(inputEquipe?.value)) {
-      syncTeamSelectors(TEAM_COORDINATORS[0]);
+      syncTeamSelectors(getDefaultCoordinator());
     }
   }
 
   function renderEquipesOverview() {
     if (!equipesOverview) return;
+    const coordinators = getCoordinatorList();
 
-    equipesOverview.innerHTML = TEAM_COORDINATORS.map((coordinator) => {
-      const teams = teamConfig[coordinator] || [];
+    if (!coordinators.length) {
+      equipesOverview.innerHTML =
+        '<div class="equipe-summary-row equipe-summary-row--empty">Nenhum coordenador ou equipe encontrado ainda.</div>';
+      return;
+    }
+
+    equipesOverview.innerHTML = coordinators.map((coordinator) => {
+      const teams = getTeamsForCoordinator(coordinator);
       const totalMembers = teams.reduce((sum, team) => {
-        const members = usuarios.filter((user) => user.coordenador === coordinator && user.equipe === team);
+        const members = usuarios.filter((user) => isUserInTeam(user, coordinator, team));
         return sum + members.length;
       }, 0);
 
@@ -1144,7 +1339,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 ? teams
                     .map((team) => {
                       const members = usuarios.filter(
-                        (user) => user.coordenador === coordinator && user.equipe === team
+                        (user) => isUserInTeam(user, coordinator, team)
                       );
                       return `
                         <button
@@ -1169,12 +1364,15 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   async function persistUserTeamAssignment(userId, coordinator, equipe) {
-    const targetUser = usuarios.find((user) => sameUserId(user.id, userId));
-    const nextAssignment = { coordenador: cleanText(coordinator), equipe: cleanText(equipe) };
+    const targetUser = findUserByEntityId(userId);
+    const nextAssignment = normalizeAssignment({ coordenador: coordinator, equipe });
 
     if (!targetUser) return;
 
-    const updated = await apiUpdateUser(userId, {
+    const targetId = resolveUserId(targetUser);
+    if (!targetId) throw new Error("Usuario sem identificador valido.");
+
+    const updated = await apiUpdateUser(targetId, {
       id: targetUser.id,
       nome: targetUser.nome,
       email: targetUser.email,
@@ -1193,7 +1391,7 @@ document.addEventListener("DOMContentLoaded", () => {
     );
 
     usuarios = usuarios.map((user) =>
-      sameUserId(user.id, userId)
+      getUserTeamKeys(user).some((key) => normalizeEntityId(key).toLowerCase() === normalizeEntityId(userId).toLowerCase())
         ? {
             ...user,
             ...normalizeUser(updated || user),
@@ -1210,10 +1408,13 @@ document.addEventListener("DOMContentLoaded", () => {
       equipe: "",
     };
 
-    const targetUser = usuarios.find((user) => sameUserId(user.id, userId));
+    const targetUser = findUserByEntityId(userId);
     if (!targetUser) return;
 
-    const updated = await apiUpdateUser(userId, {
+    const targetId = resolveUserId(targetUser);
+    if (!targetId) throw new Error("Usuario sem identificador valido.");
+
+    const updated = await apiUpdateUser(targetId, {
       id: targetUser.id,
       nome: targetUser.nome,
       email: targetUser.email,
@@ -1232,7 +1433,7 @@ document.addEventListener("DOMContentLoaded", () => {
     );
 
     usuarios = usuarios.map((user) =>
-      sameUserId(user.id, userId)
+      getUserTeamKeys(user).some((key) => normalizeEntityId(key).toLowerCase() === normalizeEntityId(userId).toLowerCase())
         ? {
             ...user,
             ...normalizeUser(updated || user),
@@ -1248,24 +1449,28 @@ document.addEventListener("DOMContentLoaded", () => {
       !membrosEquipeTitulo ||
       !membrosEquipeSubtitulo ||
       !membrosEquipeLista ||
-      !membrosEquipeDisponiveis
+      !membrosEquipeDisponiveis ||
+      !membrosEquipeTransferiveis
     ) {
       return;
     }
 
     const { coordinator, team } = currentTeamModal;
-    const members = usuarios.filter((user) => user.coordenador === coordinator && user.equipe === team);
+    const members = usuarios.filter((user) => isUserInTeam(user, coordinator, team));
     const available = usuarios.filter(
-      (user) => user.ativo && !user.equipe
+      (user) => user.ativo && !hasUserTeamAssignment(user)
     );
     const transferCandidates = usuarios.filter(
-      (user) => user.ativo && user.equipe && !(user.coordenador === coordinator && user.equipe === team)
+      (user) => user.ativo && hasUserTeamAssignment(user) && !isUserInTeam(user, coordinator, team)
     );
     const countEl = document.getElementById("membrosEquipeCount");
     const countCardEl = document.getElementById("membrosEquipeCountCard");
+    const countHeadEl = document.getElementById("membrosEquipeCountHead");
     const availableCountEl = document.getElementById("membrosEquipeAvailableCount");
+    const poolCountEl = document.getElementById("membrosEquipePoolCount");
     const transferCountCardEl = document.getElementById("membrosEquipeTransferCount");
     const transferCountEl = document.getElementById("membrosEquipeTransferLabel");
+    const transferHeadCountEl = document.getElementById("membrosEquipeTransferHeadCount");
     const availableLabelEl = document.getElementById("membrosEquipeAvailableLabel");
     const searchTerm = String(membrosEquipeBusca?.value || "").trim().toLowerCase();
     const filteredMembers = !searchTerm
@@ -1289,24 +1494,19 @@ document.addEventListener("DOMContentLoaded", () => {
             .map((value) => String(value || "").toLowerCase())
             .some((value) => value.includes(searchTerm))
         );
-    const directory = [...filteredAvailable, ...filteredTransfers].sort((a, b) =>
-      String(cleanText(a.nome) || cleanText(a.email)).localeCompare(
-        String(cleanText(b.nome) || cleanText(b.email)),
-        "pt-BR",
-        { sensitivity: "base" }
-      )
-    );
-
     membrosEquipeTitulo.textContent = team || "Equipe";
     membrosEquipeSubtitulo.textContent = coordinator
       ? `${coordinator} • gerencie as pessoas desta equipe`
       : "Gerencie as pessoas desta equipe.";
     if (countEl) countEl.textContent = `${members.length} na equipe`;
     if (countCardEl) countCardEl.textContent = String(members.length);
-    if (availableCountEl) availableCountEl.textContent = `${available.length + transferCandidates.length} no diretorio`;
+    if (countHeadEl) countHeadEl.textContent = `${members.length} registro(s)`;
+    if (poolCountEl) poolCountEl.textContent = `${available.length + transferCandidates.length} no diretório`;
+    if (availableCountEl) availableCountEl.textContent = `${available.length} sem equipe`;
     if (transferCountCardEl) transferCountCardEl.textContent = String(transferCandidates.length);
-    if (availableLabelEl) availableLabelEl.textContent = `${available.length} sem equipe`;
+    if (availableLabelEl) availableLabelEl.textContent = String(available.length);
     if (transferCountEl) transferCountEl.textContent = `${transferCandidates.length} em outras equipes`;
+    if (transferHeadCountEl) transferHeadCountEl.textContent = `${transferCandidates.length} em outras equipes`;
 
     membrosEquipeLista.innerHTML = filteredMembers.length
       ? filteredMembers
@@ -1321,33 +1521,56 @@ document.addEventListener("DOMContentLoaded", () => {
       : `<div class="membros-equipe-vazio">${
           members.length
             ? "Nenhuma pessoa encontrada com esse filtro."
-            : "Nenhuma pessoa vinculada a esta equipe."
+            : "Nenhuma pessoa vinculada a esta equipe ainda."
         }</div>`;
 
-    membrosEquipeDisponiveis.innerHTML = directory.length
-      ? directory
+    const availableContent = filteredAvailable.length
+      ? filteredAvailable
           .map((user) =>
             renderCollaboratorCard(user, {
               mode: "directory",
-              actionLabel: user.equipe ? "Mover" : "Adicionar",
-              actionAttr: user.equipe ? "data-move-member" : "data-add-member",
+              actionLabel: "Adicionar",
+              actionAttr: "data-add-member",
             })
           )
           .join("")
       : `<div class="membros-equipe-vazio">${
-          [...available, ...transferCandidates].length
-            ? "Nenhuma pessoa encontrada com esse filtro."
-            : "Nenhuma pessoa disponível no diretório."
+          available.length ? "Nenhuma pessoa sem equipe encontrada com esse filtro." : "Nenhuma pessoa sem equipe disponível."
+        }</div>`;
+
+    const transferContent = filteredTransfers.length
+      ? renderAssignedTeamGroups(filteredTransfers)
+      : `<div class="membros-equipe-vazio">${
+          transferCandidates.length ? "Nenhuma pessoa de outras equipes encontrada com esse filtro." : "Nenhuma pessoa em outras equipes disponível."
+        }</div>`;
+
+    membrosEquipeDisponiveis.innerHTML = filteredAvailable.length
+      ? availableContent
+      : `<div class="membros-equipe-vazio">${
+          available.length ? "Nenhuma pessoa sem equipe encontrada com esse filtro." : "Nenhuma pessoa sem equipe disponível."
+        }</div>`;
+
+    membrosEquipeTransferiveis.innerHTML = filteredTransfers.length
+      ? transferContent
+      : `<div class="membros-equipe-vazio">${
+          transferCandidates.length ? "Nenhuma pessoa de outras equipes encontrada com esse filtro." : "Nenhuma pessoa em outras equipes disponível."
         }</div>`;
   }
 
   function renderEquipeMembers() {
     if (!equipesMembers) return;
+    const coordinators = getCoordinatorList();
 
-    equipesMembers.innerHTML = TEAM_COORDINATORS.map((coordinator) => {
-      const teams = teamConfig[coordinator] || [];
+    if (!coordinators.length) {
+      equipesMembers.innerHTML =
+        '<div class="team-master__empty">Nenhum coordenador ou equipe disponivel para gerenciar.</div>';
+      return;
+    }
+
+    equipesMembers.innerHTML = coordinators.map((coordinator) => {
+      const teams = getTeamsForCoordinator(coordinator);
       const totalMembers = teams.reduce((sum, team) => {
-        const members = usuarios.filter((user) => user.coordenador === coordinator && user.equipe === team);
+        const members = usuarios.filter((user) => isUserInTeam(user, coordinator, team));
         return sum + members.length;
       }, 0);
 
@@ -1365,7 +1588,7 @@ document.addEventListener("DOMContentLoaded", () => {
             ${teams
               .map((team) => {
                 const members = usuarios.filter(
-                  (user) => user.coordenador === coordinator && user.equipe === team
+                  (user) => isUserInTeam(user, coordinator, team)
                 );
 
                 return `
@@ -1412,14 +1635,130 @@ document.addEventListener("DOMContentLoaded", () => {
     }).join("");
   }
 
+  async function syncTeamConfigUsers(usersToSync, assignmentResolver) {
+    const targets = Array.isArray(usersToSync) ? usersToSync.filter(Boolean) : [];
+    if (!targets.length) return;
+
+    await Promise.all(
+      targets.map(async (user) => {
+        const nextAssignment = normalizeAssignment(assignmentResolver(user) || {});
+        const updated = await apiUpdateUser(user.id, {
+          id: user.id,
+          nome: user.nome,
+          email: user.email,
+          cargo: user.cargo,
+          role: user.role,
+          accessProfile: user.accessProfile,
+          coordenador: nextAssignment.coordenador,
+          equipe: nextAssignment.equipe,
+          ativo: user.ativo,
+        });
+
+        applyUserMetaToState(
+          updated || user,
+          nextAssignment,
+          getAccessProfile(updated || user)
+        );
+      })
+    );
+  }
+
+  async function addTeamToCoordinator(coordinator, teamName) {
+    const safeCoordinator = resolveCoordinatorName(coordinator);
+    const nextName = cleanText(teamName);
+    if (!safeCoordinator) throw new Error("Coordenador invalido.");
+    if (!nextName) throw new Error("Informe o nome da equipe.");
+
+    const existingTeams = teamConfig[safeCoordinator] || [];
+    if (resolveTeamName(safeCoordinator, nextName)) {
+      throw new Error("Ja existe uma equipe com esse nome nessa coordenacao.");
+    }
+
+    teamConfig = {
+      ...teamConfig,
+      [safeCoordinator]: [...existingTeams, nextName],
+    };
+    await writeTeamConfigStore();
+    setTeamEditorFeedback("success", `Equipe "${nextName}" salva em ${safeCoordinator}.`);
+  }
+
+  async function renameTeamForCoordinator(coordinator, oldTeamName, newTeamName) {
+    const safeCoordinator = resolveCoordinatorName(coordinator);
+    const currentName = resolveTeamName(safeCoordinator, oldTeamName);
+    const nextName = cleanText(newTeamName);
+    if (!safeCoordinator || !currentName) throw new Error("Equipe invalida.");
+    if (!nextName) throw new Error("Informe o novo nome da equipe.");
+
+    const duplicate = resolveTeamName(safeCoordinator, nextName);
+    if (duplicate && normalizeName(duplicate) !== normalizeName(currentName)) {
+      throw new Error("Ja existe uma equipe com esse nome nessa coordenacao.");
+    }
+
+    teamConfig = {
+      ...teamConfig,
+      [safeCoordinator]: (teamConfig[safeCoordinator] || []).map((team) =>
+        normalizeName(team) === normalizeName(currentName) ? nextName : team
+      ),
+    };
+    await writeTeamConfigStore();
+    setTeamEditorFeedback("success", `Equipe "${currentName}" renomeada para "${nextName}".`);
+
+    const affectedUsers = usuarios.filter(
+      (user) =>
+        normalizeName(user.coordenador) === normalizeName(safeCoordinator) &&
+        normalizeName(user.equipe) === normalizeName(currentName)
+    );
+
+    await syncTeamConfigUsers(affectedUsers, () => ({
+      coordenador: safeCoordinator,
+      equipe: nextName,
+    }));
+  }
+
+  async function deleteTeamForCoordinator(coordinator, teamName) {
+    const safeCoordinator = resolveCoordinatorName(coordinator);
+    const currentName = resolveTeamName(safeCoordinator, teamName);
+    if (!safeCoordinator || !currentName) throw new Error("Equipe invalida.");
+
+    teamConfig = {
+      ...teamConfig,
+      [safeCoordinator]: (teamConfig[safeCoordinator] || []).filter(
+        (team) => normalizeName(team) !== normalizeName(currentName)
+      ),
+    };
+    await writeTeamConfigStore();
+    setTeamEditorFeedback("success", `Equipe "${currentName}" removida de ${safeCoordinator}.`);
+
+    const affectedUsers = usuarios.filter(
+      (user) =>
+        normalizeName(user.coordenador) === normalizeName(safeCoordinator) &&
+        normalizeName(user.equipe) === normalizeName(currentName)
+    );
+
+    await syncTeamConfigUsers(affectedUsers, () => ({
+      coordenador: "",
+      equipe: "",
+    }));
+  }
+
   function renderTeamEditor() {
     if (!equipesGrid) return;
-    const safeCoordinator = TEAM_COORDINATORS.includes(currentTeamHubCoordinator)
-      ? currentTeamHubCoordinator
-      : TEAM_COORDINATORS[0];
-    const teams = teamConfig[safeCoordinator] || [];
+    const coordinators = getCoordinatorList();
+    const safeCoordinator = getDefaultCoordinator(currentTeamHubCoordinator);
+    const teams = getTeamsForCoordinator(safeCoordinator);
+
+    if (!coordinators.length) {
+      equipesGrid.innerHTML = `
+        <div class="team-master__empty">
+          Nenhum coordenador foi encontrado. Vincule um usuario a um coordenador/equipe para a estrutura aparecer aqui.
+        </div>
+      `;
+      return;
+    }
+
+    currentTeamHubCoordinator = safeCoordinator;
     const totalMembers = teams.reduce((sum, team) => {
-      const members = usuarios.filter((user) => user.coordenador === safeCoordinator && user.equipe === team);
+      const members = usuarios.filter((user) => isUserInTeam(user, safeCoordinator, team));
       return sum + members.length;
     }, 0);
 
@@ -1428,13 +1767,13 @@ document.addEventListener("DOMContentLoaded", () => {
         <aside class="team-master__sidebar">
           <div class="team-master__sidebar-head">
             <strong>Coordenadores</strong>
-            <span>${TEAM_COORDINATORS.length} lideranças</span>
+            <span>${coordinators.length} lideranças</span>
           </div>
           <div class="team-master__nav">
-            ${TEAM_COORDINATORS.map((coordinator) => {
-              const coordinatorTeams = teamConfig[coordinator] || [];
+            ${coordinators.map((coordinator) => {
+              const coordinatorTeams = getTeamsForCoordinator(coordinator);
               const coordinatorMembers = coordinatorTeams.reduce((sum, team) => {
-                const members = usuarios.filter((user) => user.coordenador === coordinator && user.equipe === team);
+                const members = usuarios.filter((user) => isUserInTeam(user, coordinator, team));
                 return sum + members.length;
               }, 0);
 
@@ -1461,12 +1800,73 @@ document.addEventListener("DOMContentLoaded", () => {
             <span class="team-master__content-badge">${totalMembers} pessoas</span>
           </div>
 
+          <section class="equipe-editor">
+            <h4>Estrutura da coordenação</h4>
+            <p>Adicione novas equipes, renomeie as atuais ou remova as que não serão mais usadas.</p>
+            ${
+              teamEditorFeedback.text
+                ? `<div class="equipe-editor__feedback equipe-editor__feedback--${escapeHtml(teamEditorFeedback.type || "info")}">${escapeHtml(teamEditorFeedback.text)}</div>`
+                : ""
+            }
+            <div class="equipe-editor__create">
+              <input
+                type="text"
+                id="novaEquipeNome"
+                placeholder="Nome da nova equipe"
+                maxlength="60"
+              />
+              <button
+                type="button"
+                class="btn-acao"
+                data-add-team="${safeCoordinator}"
+              >
+                Salvar equipe
+              </button>
+            </div>
+            <div class="equipe-editor__list">
+              ${
+                teams.length
+                  ? teams
+                      .map(
+                        (team, index) => `
+                          <div class="equipe-editor__item" data-team-index="${index}">
+                            <input
+                              type="text"
+                              value="${escapeHtml(team)}"
+                              data-team-name-input="${index}"
+                              maxlength="60"
+                            />
+                            <button
+                              type="button"
+                              class="btn-acao btn-acao--ghost"
+                              data-rename-team="${index}"
+                              data-coordinator="${safeCoordinator}"
+                            >
+                              Renomear
+                            </button>
+                            <button
+                              type="button"
+                              class="btn-acao btn-acao--ghost"
+                              data-delete-team="${index}"
+                              data-coordinator="${safeCoordinator}"
+                            >
+                              Excluir
+                            </button>
+                          </div>
+                        `
+                      )
+                      .join("")
+                  : '<div class="team-master__empty">Nenhuma equipe cadastrada para esta coordenação.</div>'
+              }
+            </div>
+          </section>
+
           <div class="team-master__rows">
             ${
               teams.length
                 ? teams.map((team) => {
                     const members = usuarios.filter(
-                      (user) => user.coordenador === safeCoordinator && user.equipe === team
+                      (user) => isUserInTeam(user, safeCoordinator, team)
                     );
                     return `
                       <button
@@ -1496,97 +1896,42 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   function populateCoordinatorList(selected = "") {
-    if (!listaCoordenadores) return;
-    listaCoordenadores.innerHTML = TEAM_COORDINATORS.map(
-      (coordinator) => `<li data-value="${coordinator}">${coordinator}</li>`
-    ).join("");
-    if (inputCoordenador) inputCoordenador.value = selected || TEAM_COORDINATORS[0];
+    if (inputCoordenador) {
+      const coordinators = getCoordinatorList();
+      const resolvedSelected = resolveCoordinatorName(selected);
+      const defaultCoordinator = getDefaultCoordinator(selected);
+      inputCoordenador.innerHTML = [
+        '<option value="">Selecione o coordenador</option>',
+        ...coordinators.map(
+          (coordinator) => `<option value="${escapeHtml(coordinator)}">${escapeHtml(coordinator)}</option>`
+        ),
+      ].join("");
+      inputCoordenador.value = resolvedSelected || defaultCoordinator || "";
+    }
   }
 
   function populateTeamList(coordinator, selected = "") {
-    if (!listaEquipes) return;
-    const teams = teamConfig[coordinator] || [];
-    listaEquipes.innerHTML = teams
-      .map((team) => `<li data-value="${team}">${team}</li>`)
-      .join("");
-    if (inputEquipe) inputEquipe.value = selected && teams.includes(selected) ? selected : teams[0] || "";
+    const safeCoordinator = resolveCoordinatorName(coordinator) || getDefaultCoordinator(coordinator);
+    const teams = getTeamsForCoordinator(safeCoordinator);
+    if (inputEquipe) {
+      inputEquipe.innerHTML = [
+        '<option value="">Selecione a equipe</option>',
+        ...teams.map((team) => `<option value="${escapeHtml(team)}">${escapeHtml(team)}</option>`),
+      ].join("");
+      inputEquipe.value = resolveTeamName(safeCoordinator, selected) || teams[0] || "";
+    }
   }
 
   function syncTeamSelectors(coordinator, team = "") {
-    const safeCoordinator = TEAM_COORDINATORS.includes(coordinator) ? coordinator : TEAM_COORDINATORS[0];
+    const safeCoordinator = resolveCoordinatorName(coordinator) || getDefaultCoordinator(coordinator);
     populateCoordinatorList(safeCoordinator);
     populateTeamList(safeCoordinator, team);
   }
 
-  // =======================================
-  // SELECT CARGO (UI)
-  // =======================================
   const inputCargo = document.getElementById("cargo");
-  const cargoSelectWrap = inputCargo?.closest(".select-cargo") || null;
-  const listaCargos = cargoSelectWrap?.querySelector(".lista-cargos") || null;
-
-  function setCargoOpen(open) {
-    if (!listaCargos || !inputCargo) return;
-
-    listaCargos.style.display = open ? "block" : "none";
-    inputCargo.setAttribute("aria-expanded", open ? "true" : "false");
-  }
-
-  if (inputCargo) {
-    inputCargo.setAttribute("role", "combobox");
-    inputCargo.setAttribute("aria-expanded", "false");
-    inputCargo.setAttribute("aria-haspopup", "listbox");
-  }
-
-  inputCargo?.addEventListener("click", () => {
-    if (!listaCargos) return;
-    const isOpen = listaCargos.style.display === "block";
-    setCargoOpen(!isOpen);
-  });
-
-  listaCargos?.querySelectorAll("li").forEach((item) => {
-    item.addEventListener("click", () => {
-      if (!inputCargo) return;
-      inputCargo.value = item.textContent.trim();
-      setCargoOpen(false);
-      updateTeamAssignmentUI();
-    });
-  });
-
-  document.addEventListener("click", (e) => {
-    if (!e.target.closest(".select-cargo")) {
-      setCargoOpen(false);
-      if (listaCoordenadores) listaCoordenadores.style.display = "none";
-      if (listaEquipes) listaEquipes.style.display = "none";
-    }
-  });
-
-  inputCoordenador?.addEventListener("click", () => {
-    if (!listaCoordenadores) return;
-    const open = listaCoordenadores.style.display === "block";
-    listaCoordenadores.style.display = open ? "none" : "block";
-  });
-
-  inputEquipe?.addEventListener("click", () => {
-    if (!listaEquipes) return;
-    const open = listaEquipes.style.display === "block";
-    listaEquipes.style.display = open ? "none" : "block";
-  });
-
-  listaCoordenadores?.addEventListener("click", (e) => {
-    const item = e.target.closest("li[data-value]");
-    if (!item) return;
-    const coordinator = String(item.getAttribute("data-value") || "").trim();
-    syncTeamSelectors(coordinator);
-    listaCoordenadores.style.display = "none";
-    if (listaEquipes) listaEquipes.style.display = "block";
-  });
-
-  listaEquipes?.addEventListener("click", (e) => {
-    const item = e.target.closest("li[data-value]");
-    if (!item || !inputEquipe) return;
-    inputEquipe.value = String(item.getAttribute("data-value") || "").trim();
-    listaEquipes.style.display = "none";
+  inputCargo?.addEventListener("change", () => updateTeamAssignmentUI());
+  inputCoordenador?.addEventListener("change", () => {
+    syncTeamSelectors(inputCoordenador.value, "");
   });
 
   // =======================================
@@ -1702,6 +2047,20 @@ document.addEventListener("DOMContentLoaded", () => {
   async function apiListUsers() {
     const payload = await fetchJson(API_USERS, { method: "GET" });
     return normalizeUsersResponse(payload).map(normalizeUser).filter(Boolean);
+  }
+
+  async function loadTeamConfigFromApi() {
+    const payload = await fetchJson(API_TEAM_CONFIG, { method: "GET" });
+    return normalizeTeamConfig(payload?.config || payload);
+  }
+
+  async function saveTeamConfigToApi(config) {
+    const payload = await fetchJson(API_TEAM_CONFIG, {
+      method: "PUT",
+      body: { config: normalizeTeamConfig(config) },
+    });
+    teamConfig = normalizeTeamConfig(payload?.config || config);
+    return teamConfig;
   }
 
   async function apiCreateUser(body) {
@@ -1938,23 +2297,32 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
+  function applyUsersToUi(nextUsers) {
+    usuarios = Array.isArray(nextUsers) ? nextUsers.filter(Boolean) : [];
+    renderizarUsuarios();
+    renderEquipesOverview();
+    renderEquipeMembers();
+    renderTeamEditor();
+    renderTeamMembersModal();
+  }
+
   // =======================================
   // LOAD USERS (API)
   // =======================================
   async function carregarUsuariosDaAPI() {
     try {
-      usuarios = (await apiListUsers()).map((user) => normalizeUser(user));
-      renderizarUsuarios();
-      renderEquipesOverview();
-      renderEquipeMembers();
+      applyUsersToUi((await apiListUsers()).map((user) => normalizeUser(user)));
     } catch (err) {
       console.error("❌ Falha ao listar usuários (API):", err);
       alert("Erro ao listar usuários. Veja o console (F12) para o detalhe.");
-      usuarios = [];
-      renderizarUsuarios();
-      renderEquipesOverview();
-      renderEquipeMembers();
+      applyUsersToUi([]);
     }
+  }
+
+  async function syncUsersAfterMutation() {
+    const freshUsers = (await apiListUsers()).map((user) => normalizeUser(user));
+    applyUsersToUi(freshUsers);
+    return freshUsers;
   }
 
   // =======================================
@@ -1970,8 +2338,8 @@ document.addEventListener("DOMContentLoaded", () => {
     idEmEdicao = null;
     form?.reset();
 
-    if (form?.senha) form.senha.required = true;
-    if (form?.confirmarSenha) form.confirmarSenha.required = true;
+    if (fieldSenha) fieldSenha.required = true;
+    if (fieldConfirmarSenha) fieldConfirmarSenha.required = true;
 
     const current = getSessionUser();
     renderRoleSelect((current?.role || "user").toLowerCase(), {
@@ -1980,7 +2348,8 @@ document.addEventListener("DOMContentLoaded", () => {
     });
 
     setUserModalCopy("create");
-    syncTeamSelectors(TEAM_COORDINATORS[0]);
+    setUserFormFeedback("", "");
+    syncTeamSelectors(getDefaultCoordinator());
     updateTeamAssignmentUI();
     openModal();
   });
@@ -2006,6 +2375,7 @@ document.addEventListener("DOMContentLoaded", () => {
       alert("Somente você e a Gabriella podem editar as equipes.");
       return;
     }
+    setTeamEditorFeedback("", "");
     renderTeamEditor();
     openTeamsModal();
   });
@@ -2019,7 +2389,80 @@ document.addEventListener("DOMContentLoaded", () => {
       const coordinator = String(coordinatorBtn.getAttribute("data-select-coordinator") || "").trim();
       if (!coordinator) return;
       currentTeamHubCoordinator = coordinator;
+      setTeamEditorFeedback("", "");
       renderTeamEditor();
+      return;
+    }
+
+    const addBtn = e.target.closest("button[data-add-team]");
+    if (addBtn) {
+      const coordinator = String(addBtn.getAttribute("data-add-team") || "").trim();
+      const input = document.getElementById("novaEquipeNome");
+      const nextName = String(input?.value || "").trim();
+      if (!coordinator) return;
+
+      addTeamToCoordinator(coordinator, nextName)
+        .then(() => {
+          if (input) input.value = "";
+          applyUsersToUi(usuarios);
+        })
+        .catch((err) => {
+          setTeamEditorFeedback("error", err?.message || "Erro ao salvar equipe.");
+          renderTeamEditor();
+          console.error("❌ Falha ao adicionar equipe:", err);
+          alert(`Erro ao salvar equipe: ${err?.message || err}`);
+        });
+      return;
+    }
+
+    const renameBtn = e.target.closest("button[data-rename-team]");
+    if (renameBtn) {
+      const coordinator = String(renameBtn.getAttribute("data-coordinator") || "").trim();
+      const teamIndex = Number(renameBtn.getAttribute("data-rename-team"));
+      const row = renameBtn.closest(".equipe-editor__item");
+      const input = row?.querySelector("input[data-team-name-input]");
+      const currentName = Number.isInteger(teamIndex) ? (teamConfig[coordinator] || [])[teamIndex] || "" : "";
+      const nextName = String(input?.value || "").trim();
+      if (!coordinator || !currentName) return;
+
+      renameTeamForCoordinator(coordinator, currentName, nextName)
+        .then(() => syncUsersAfterMutation())
+        .catch((err) => {
+          setTeamEditorFeedback("error", err?.message || "Erro ao renomear equipe.");
+          renderTeamEditor();
+          console.error("❌ Falha ao renomear equipe:", err);
+          alert(`Erro ao renomear equipe: ${err?.message || err}`);
+        });
+      return;
+    }
+
+    const deleteBtn = e.target.closest("button[data-delete-team]");
+    if (deleteBtn) {
+      const coordinator = String(deleteBtn.getAttribute("data-coordinator") || "").trim();
+      const teamIndex = Number(deleteBtn.getAttribute("data-delete-team"));
+      const currentName = Number.isInteger(teamIndex) ? (teamConfig[coordinator] || [])[teamIndex] || "" : "";
+      if (!coordinator || !currentName) return;
+
+      const membersCount = usuarios.filter(
+        (user) =>
+          normalizeName(user.coordenador) === normalizeName(coordinator) &&
+          normalizeName(user.equipe) === normalizeName(currentName)
+      ).length;
+      const ok = confirm(
+        membersCount
+          ? `Excluir a equipe "${currentName}"? ${membersCount} usuario(s) ficarao sem equipe.`
+          : `Excluir a equipe "${currentName}"?`
+      );
+      if (!ok) return;
+
+      deleteTeamForCoordinator(coordinator, currentName)
+        .then(() => syncUsersAfterMutation())
+        .catch((err) => {
+          setTeamEditorFeedback("error", err?.message || "Erro ao excluir equipe.");
+          renderTeamEditor();
+          console.error("❌ Falha ao excluir equipe:", err);
+          alert(`Erro ao excluir equipe: ${err?.message || err}`);
+        });
       return;
     }
 
@@ -2056,18 +2499,11 @@ document.addEventListener("DOMContentLoaded", () => {
     openTeamMembersModal(coordinator, team);
   });
 
-  const rerenderAfterTeamChange = () => {
-    renderEquipesOverview();
-    renderEquipeMembers();
-    renderizarUsuarios();
-    renderTeamMembersModal();
-  };
-
   membrosEquipeDisponiveis?.addEventListener("click", async (e) => {
     const biBtn = e.target.closest("button[data-open-bi]");
     if (biBtn) {
       const userId = normalizeEntityId(biBtn.getAttribute("data-open-bi") || "");
-      const usuario = usuarios.find((u) => sameUserId(u.id, userId));
+      const usuario = findUserByEntityId(userId);
       if (usuario) openLogsForUser(usuario);
       return;
     }
@@ -2083,7 +2519,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     try {
       await persistUserTeamAssignment(userId, coordinator, team);
-      rerenderAfterTeamChange();
+      await syncUsersAfterMutation();
     } catch (err) {
       console.error("❌ Falha ao salvar equipe do usuário:", err);
       alert(`Erro ao salvar equipe: ${err?.message || err}`);
@@ -2094,7 +2530,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const biBtn = e.target.closest("button[data-open-bi]");
     if (biBtn) {
       const userId = normalizeEntityId(biBtn.getAttribute("data-open-bi") || "");
-      const usuario = usuarios.find((u) => sameUserId(u.id, userId));
+      const usuario = findUserByEntityId(userId);
       if (usuario) openLogsForUser(usuario);
       return;
     }
@@ -2107,7 +2543,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     try {
       await removeUserFromTeam(userId);
-      rerenderAfterTeamChange();
+      await syncUsersAfterMutation();
     } catch (err) {
       console.error("❌ Falha ao remover usuário da equipe:", err);
       alert(`Erro ao remover da equipe: ${err?.message || err}`);
@@ -2138,22 +2574,23 @@ document.addEventListener("DOMContentLoaded", () => {
     modoEdicao = true;
     idEmEdicao = id;
 
-    form.nome.value = usuario.nome || "";
-    form.email.value = usuario.email || "";
-    form.cargo.value = usuario.cargo || "";
+    if (fieldNome) fieldNome.value = usuario.nome || "";
+    if (fieldEmail) fieldEmail.value = usuario.email || "";
+    if (fieldCargo) fieldCargo.value = usuario.cargo || "";
     syncTeamSelectors(usuario.coordenador, usuario.equipe);
 
-    if (form?.senha) {
-      form.senha.value = "";
-      form.senha.required = false;
+    if (fieldSenha) {
+      fieldSenha.value = "";
+      fieldSenha.required = false;
     }
 
-    if (form?.confirmarSenha) {
-      form.confirmarSenha.value = "";
-      form.confirmarSenha.required = false;
+    if (fieldConfirmarSenha) {
+      fieldConfirmarSenha.value = "";
+      fieldConfirmarSenha.required = false;
     }
 
     setUserModalCopy("edit");
+    setUserFormFeedback("", "");
     renderRoleSelect((current?.role || "user").toLowerCase(), usuario);
     updateTeamAssignmentUI();
     openModal();
@@ -2239,15 +2676,13 @@ document.addEventListener("DOMContentLoaded", () => {
       return;
     }
 
-    const nome = String(form.nome?.value || "").trim();
-    const emailRaw = String(form.email?.value || "").trim();
-    const cargo = String(form.cargo?.value || "").trim();
-    const coordenador = String(form.coordenador?.value || "").trim();
-    const equipe = String(form.equipe?.value || "").trim();
-    const senha = String(form.senha?.value || "");
-    const confirmarSenha = form.confirmarSenha
-      ? String(form.confirmarSenha.value || "")
-      : "";
+    const nome = String(fieldNome?.value || "").trim();
+    const emailRaw = String(fieldEmail?.value || "").trim();
+    const cargo = String(fieldCargo?.value || "").trim();
+    const rawCoordenador = String(inputCoordenador?.value || "").trim();
+    const rawEquipe = String(inputEquipe?.value || "").trim();
+    const senha = String(fieldSenha?.value || "");
+    const confirmarSenha = String(fieldConfirmarSenha?.value || "");
 
     const emailCheck = ensureCompanyEmail(emailRaw);
     if (!emailCheck.ok) return alert(emailCheck.error);
@@ -2258,13 +2693,22 @@ document.addEventListener("DOMContentLoaded", () => {
     const selectedRole = accessProfileToLegacyRole(selectedAccessProfile);
     const needsAssignment = requiresTeamAssignment(cargo, selectedAccessProfile);
 
-    if (!nome || !emailRaw || !cargo || (needsAssignment && (!coordenador || !equipe))) {
+    if (!nome || !emailRaw || !cargo || (needsAssignment && (!rawCoordenador || !rawEquipe))) {
       alert("Preencha todos os campos obrigatórios");
       return;
     }
 
-    const finalCoordenador = needsAssignment ? coordenador : "";
-    const finalEquipe = needsAssignment ? equipe : "";
+    const normalizedAssignment = needsAssignment
+      ? normalizeAssignment({ coordenador: rawCoordenador, equipe: rawEquipe })
+      : { coordenador: "", equipe: "" };
+
+    const finalCoordenador = normalizedAssignment.coordenador;
+    const finalEquipe = normalizedAssignment.equipe;
+
+    if (needsAssignment && (!finalCoordenador || !finalEquipe)) {
+      alert("Selecione um coordenador e uma equipe validos da lista.");
+      return;
+    }
 
     const current = getSessionUser();
     const creatorAccessProfile = getAccessProfile(current);
@@ -2285,6 +2729,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     try {
+      setUserFormSaving(true);
       if (modoEdicao) {
         const id = idEmEdicao;
         if (!id) return;
@@ -2372,13 +2817,15 @@ document.addEventListener("DOMContentLoaded", () => {
         }
       }
 
-      renderizarUsuarios();
-      renderEquipesOverview();
-      renderEquipeMembers();
+      setUserFormFeedback("success", modoEdicao ? "Usuario atualizado com sucesso." : "Usuario criado com sucesso.");
+      await syncUsersAfterMutation();
       closeModal({ reset: true });
     } catch (err) {
       console.error("❌ Falha ao salvar usuário:", err);
+      setUserFormFeedback("error", err.message || "Erro ao salvar usuario.");
       alert(`Erro ao salvar usuário: ${err.message || "ver console (F12)"}`);
+    } finally {
+      setUserFormSaving(false);
     }
   });
 
@@ -2403,7 +2850,6 @@ document.addEventListener("DOMContentLoaded", () => {
   // =======================================
   async function init() {
     try {
-      teamConfig = readTeamConfigStore();
       userTeamMap = readUserTeamStore();
       userAccessMap = readUserAccessStore();
       await loadSessionUser();
@@ -2420,6 +2866,12 @@ document.addEventListener("DOMContentLoaded", () => {
       }
 
       await loadModulesFromApi();
+      try {
+        teamConfig = await loadTeamConfigFromApi();
+      } catch (teamConfigError) {
+        console.warn("Falha ao carregar equipes da API:", teamConfigError);
+        teamConfig = {};
+      }
 
       syncSidebarFromStore();
       renderAdminPanel();
@@ -2428,8 +2880,8 @@ document.addEventListener("DOMContentLoaded", () => {
       renderUserCard();
       renderEquipesOverview();
       renderEquipeMembers();
-      populateCoordinatorList(TEAM_COORDINATORS[0]);
-      populateTeamList(TEAM_COORDINATORS[0], (teamConfig[TEAM_COORDINATORS[0]] || [])[0] || "");
+      populateCoordinatorList(getDefaultCoordinator());
+      populateTeamList(getDefaultCoordinator(), getTeamsForCoordinator(getDefaultCoordinator())[0] || "");
 
       if (btnNovoUsuario) {
         btnNovoUsuario.style.display = canManageUsers(currentUser) ? "" : "none";

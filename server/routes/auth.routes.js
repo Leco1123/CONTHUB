@@ -11,14 +11,51 @@ function normalizeEmail(email) {
   return String(email || "").trim().toLowerCase();
 }
 
+function cleanText(value) {
+  return String(value ?? "").trim();
+}
+
+function mapRoleOut(role) {
+  const r = String(role || "").trim().toUpperCase();
+  if (r === "ADMIN") return "admin";
+  if (r === "TI") return "ti";
+  if (r === "USER") return "user";
+  return "customer";
+}
+
+function normalizeAccessProfile(value, fallbackRole = "customer") {
+  const normalized = cleanText(value).toLowerCase();
+  if (["ti", "gerencial", "coordenacao", "operacional", "consulta"].includes(normalized)) {
+    return normalized;
+  }
+
+  const role = mapRoleOut(fallbackRole);
+  if (role === "ti") return "ti";
+  if (role === "admin") return "gerencial";
+  return "operacional";
+}
+
 function toSafeUser(user) {
   // Compatível com front (login.js normalizeUser entende "nome/ativo/role")
   return {
     id: user.id,
     nome: user.name ?? user.nome ?? "Usuário",
     email: user.email,
-    role: user.role ?? "user",
+    role: mapRoleOut(user.role ?? "USER"),
     ativo: typeof user.active === "boolean" ? user.active : true,
+  };
+}
+
+function toSafeProfile(user) {
+  const safe = toSafeUser(user);
+  return {
+    ...safe,
+    cargo: cleanText(user.cargo) || null,
+    coordenador: cleanText(user.coordenador) || null,
+    equipe: cleanText(user.equipe) || null,
+    accessProfile: normalizeAccessProfile(user.accessProfile, user.role),
+    createdAt: user.createdAt ?? null,
+    updatedAt: user.updatedAt ?? null,
   };
 }
 
@@ -244,10 +281,55 @@ router.post("/reset", async (req, res) => {
    GET SESSION USER
    GET /api/auth/me
 ================================ */
-router.get("/me", (req, res) => {
-  const u = req.session?.user;
-  if (!u) return res.status(401).json({ error: "Não autenticado." });
-  return res.json({ user: u });
+router.get("/me", async (req, res) => {
+  try {
+    const sessionUser = req.session?.user;
+    if (!sessionUser) return res.status(401).json({ error: "Não autenticado." });
+
+    const sessionId = Number(sessionUser.id);
+    const sessionEmail = normalizeEmail(sessionUser.email);
+
+    const user = Number.isFinite(sessionId) && sessionId > 0
+      ? await db.user.findUnique({
+          where: { id: sessionId },
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            role: true,
+            active: true,
+            cargo: true,
+            coordenador: true,
+            equipe: true,
+            accessProfile: true,
+            createdAt: true,
+            updatedAt: true,
+          },
+        })
+      : await db.user.findUnique({
+          where: { email: sessionEmail },
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            role: true,
+            active: true,
+            cargo: true,
+            coordenador: true,
+            equipe: true,
+            accessProfile: true,
+            createdAt: true,
+            updatedAt: true,
+          },
+        });
+
+    if (!user) return res.status(404).json({ error: "Usuário não encontrado." });
+
+    return res.json({ user: toSafeProfile(user) });
+  } catch (err) {
+    console.error("Erro ao buscar sessão/perfil autenticado:", err);
+    return res.status(500).json({ error: "Erro ao buscar sessão." });
+  }
 });
 
 /* ===============================

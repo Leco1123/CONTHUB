@@ -183,6 +183,11 @@ body{
   background: rgba(0,0,0,0.12);
 }
 
+.module--blocked{
+  opacity: 0.78;
+  border-color: rgba(255,120,120,0.14);
+}
+
 .module__left{
   display:flex;
   align-items:center;
