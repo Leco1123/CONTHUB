@@ -40,7 +40,6 @@
     { id: "contflow", name: "ContFlow", desc: "Controle de rotinas e fluxo contábil.", icon: "⚡" },
     { id: "contanalytics", name: "ContAnalytics", desc: "KPIs, indicadores e painéis.", icon: "📊" },
     { id: "contdocs", name: "ContDocs", desc: "Centralização e gestão de documentos.", icon: "📁" },
-    { id: "contmit", name: "ContMIT", desc: "MIT, apurações e cálculos periódicos.", icon: "🧾" },
     { id: "contrelatorios", name: "ContRelatórios", desc: "Geração de relatórios e exportações.", icon: "📈" },
     { id: "contconfig", name: "ContConfig", desc: "Parâmetros e configurações gerais.", icon: "⚙️" },
     { id: "contadmin", name: "ContAdmin Hub", desc: "Área administrativa e controle total.", icon: "🛡️" },

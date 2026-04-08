@@ -811,7 +811,7 @@
       "contflow",
       "contanalytics",
       "contdocs",
-      "contrels",
+      "contrelatorios",
       "contconfig",
       "contadmin",
     ];

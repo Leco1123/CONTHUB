@@ -1,8 +1,8 @@
-console.log("🚀 Reconciliação JS carregando...");
+console.log("🚀 Reconciliação de Fornecedores JS carregando...");
 
 document.addEventListener("DOMContentLoaded", () => {
-  const LOGIN_PAGE_URL = "../login/login.html";
-  const USER_PAGE_URL = "../perfil/perfil.html";
+  const LOGIN_PAGE_URL = "../../login/login.html";
+  const USER_PAGE_URL = "../../perfil/perfil.html";
   const API_BASE = "";
   const API_MODULES = `${API_BASE}/api/admin/modules`;
 
@@ -19,10 +19,10 @@ document.addEventListener("DOMContentLoaded", () => {
 
   const app = document.getElementById("app");
   const currentModuleId = app?.dataset.currentModule || "contdocs";
-  const currentModuleTitle = app?.dataset.moduleTitle || "Reconciliação de Clientes";
+  const currentModuleTitle = app?.dataset.moduleTitle || "Reconciliação de Fornecedores";
   const currentModuleSubtitle =
     app?.dataset.moduleSubtitle ||
-    "Cruze a base contábil com a posição do cliente e gere um relatório Excel formatado.";
+    "Cruze a base contábil com a posição do fornecedor e gere um relatório Excel formatado.";
 
   function goto(url) {
     const target = String(url || "").trim();
@@ -83,8 +83,9 @@ document.addEventListener("DOMContentLoaded", () => {
     if (!res.ok) {
       if (res.status === 401) {
         currentUser = null;
-        goto(LOGIN_PAGE_URL);
-        return null;
+        const err = new Error("Sessão não disponível.");
+        err.status = 401;
+        throw err;
       }
 
       const msg =
@@ -122,7 +123,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function normalizeModuleStatus(status, active) {
     const s = String(status || "").trim().toLowerCase();
-
     if (active === false) return "offline";
     if (s === "offline" || s === "off") return "offline";
     if (s === "dev") return "dev";
@@ -171,7 +171,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const isAdmin = moduleId === "contadmin";
     const finalStatus = isAdmin ? "admin" : status;
-
     const pill = ensureStatusSpan(btn);
     if (!pill) return;
 
@@ -184,7 +183,6 @@ document.addEventListener("DOMContentLoaded", () => {
     getSidebarCards().forEach((btn) => {
       const moduleId = btn.dataset.moduleId;
       if (!moduleId) return;
-
       const def = moduleId === "contadmin" ? "admin" : "online";
       applyStatusToSidebar(moduleId, moduleStatusMap[moduleId] || def);
     });
@@ -197,7 +195,6 @@ document.addEventListener("DOMContentLoaded", () => {
     getSidebarCards().forEach((card) => {
       const moduleId = card.dataset.moduleId;
       if (!moduleId) return;
-
       const blocked = role === "user" && moduleId === "contadmin";
       card.setAttribute("data-noaccess", blocked ? "true" : "false");
     });
@@ -248,7 +245,6 @@ document.addEventListener("DOMContentLoaded", () => {
       (userCard && userCard.querySelector(".usercard__avatar"));
 
     const u = getSessionUser();
-
     if (!u) {
       if (elUserName) elUserName.textContent = "Usuário";
       if (elUserRole) elUserRole.textContent = "Deslogado";
@@ -258,7 +254,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const nome = u.nome || u.name || "Usuário";
     const role = (u.role || "user").toLowerCase();
-
     if (elUserName) elUserName.textContent = nome;
     if (elUserRole) elUserRole.textContent = roleLabel(role);
     if (elUserAvatar) elUserAvatar.textContent = avatarFromName(nome);
@@ -329,7 +324,6 @@ document.addEventListener("DOMContentLoaded", () => {
     if (!overlay) return;
 
     const open = document.body.classList.contains("sidebar-open");
-
     overlay.style.pointerEvents = open ? "auto" : "none";
     overlay.style.opacity = open ? "1" : "0";
     overlay.setAttribute("aria-hidden", open ? "false" : "true");
@@ -355,7 +349,6 @@ document.addEventListener("DOMContentLoaded", () => {
   function fillPageTexts() {
     const pageTitle = document.getElementById("pageTitle");
     const pageSubtitle = document.getElementById("pageSubtitle");
-
     if (pageTitle) pageTitle.textContent = currentModuleTitle;
     if (pageSubtitle) pageSubtitle.textContent = currentModuleSubtitle;
   }
@@ -364,18 +357,58 @@ document.addEventListener("DOMContentLoaded", () => {
     const fill = document.getElementById("progressFill");
     const percent = document.getElementById("progressPercent");
     const status = document.getElementById("progressStatus");
-
     const safeValue = Math.max(0, Math.min(100, Number(value) || 0));
-
     if (fill) fill.style.width = `${safeValue}%`;
     if (percent) percent.textContent = `${safeValue}%`;
     if (status && statusText) status.textContent = statusText;
   }
 
+  function setRunState(state, label, summary) {
+    const badge = document.getElementById("runBadge");
+    const resumo = document.getElementById("statusExecucaoResumo");
+
+    if (badge) {
+      badge.setAttribute("data-state", state || "idle");
+      badge.textContent = label || "Pronto para executar";
+    }
+
+    if (resumo && summary) {
+      resumo.textContent = summary;
+    }
+  }
+
+  function refreshExecutionOverview() {
+    const arquivoContabil = document.getElementById("arquivoContabil")?.files?.[0];
+    const arquivoFornecedor = document.getElementById("arquivoFornecedor")?.files?.[0];
+    const saida = document.getElementById("arquivoSaidaNome")?.value?.trim();
+
+    const statusContabil = document.getElementById("statusArquivoContabil");
+    const statusBase = document.getElementById("statusArquivoBase");
+    const statusSaida = document.getElementById("statusArquivoSaida");
+
+    if (statusContabil) {
+      statusContabil.textContent = arquivoContabil ? arquivoContabil.name : "Aguardando arquivo";
+    }
+
+    if (statusBase) {
+      statusBase.textContent = arquivoFornecedor ? arquivoFornecedor.name : "Aguardando arquivo";
+    }
+
+    if (statusSaida) {
+      statusSaida.textContent = saida || "Será gerado automaticamente";
+    }
+
+    if (arquivoContabil && arquivoFornecedor) {
+      setRunState("ready", "Pronto para executar", "Arquivos validados e automação pronta");
+      return;
+    }
+
+    setRunState("idle", "Aguardando arquivos", "Validação pendente");
+  }
+
   function addLog(message) {
     const logBox = document.getElementById("logBox");
     if (!logBox) return;
-
     const line = document.createElement("div");
     line.className = "log-line";
     line.textContent = message;
@@ -383,14 +416,28 @@ document.addEventListener("DOMContentLoaded", () => {
     logBox.scrollTop = logBox.scrollHeight;
   }
 
+  function handleInitError(err) {
+    console.error("❌ Falha ao inicializar Reconciliação de Fornecedores:", err);
+    setProgress(0, "Erro ao carregar a automação.");
+    addLog(`Erro ao carregar a tela: ${err?.message || err}`);
+    fillPageTexts();
+    bindMenu();
+    bindSidebarNavigation();
+    syncSidebarFromStore();
+    markCurrentModuleActive();
+    bindFileInputs();
+    bindActions();
+    renderUserCard();
+    refreshExecutionOverview();
+  }
+
   function formatarNomeSaida() {
     const nomeEmpresa = document.getElementById("nomeEmpresa")?.value?.trim() || "Empresa";
     const normalizado = nomeEmpresa.replace(/[^\w\-]+/g, "_");
     const agora = new Date();
-
     const pad = (n) => String(n).padStart(2, "0");
 
-    const nome = `Relatorio_Reconciliacao_${normalizado}_${agora.getFullYear()}${pad(
+    const nome = `Relatorio_Reconciliacao_Fornecedores_${normalizado}_${agora.getFullYear()}${pad(
       agora.getMonth() + 1
     )}${pad(agora.getDate())}_${pad(agora.getHours())}${pad(
       agora.getMinutes()
@@ -398,7 +445,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const campo = document.getElementById("arquivoSaidaNome");
     if (campo) campo.value = nome;
-
+    refreshExecutionOverview();
     return nome;
   }
 
@@ -412,24 +459,22 @@ document.addEventListener("DOMContentLoaded", () => {
     });
 
     const arquivoContabil = document.getElementById("arquivoContabil");
-    const arquivoCliente = document.getElementById("arquivoCliente");
+    const arquivoFornecedor = document.getElementById("arquivoFornecedor");
     const arquivoContabilNome = document.getElementById("arquivoContabilNome");
-    const arquivoClienteNome = document.getElementById("arquivoClienteNome");
+    const arquivoFornecedorNome = document.getElementById("arquivoFornecedorNome");
 
     arquivoContabil?.addEventListener("change", () => {
       const file = arquivoContabil.files?.[0];
-      if (arquivoContabilNome) {
-        arquivoContabilNome.value = file ? file.name : "";
-      }
+      if (arquivoContabilNome) arquivoContabilNome.value = file ? file.name : "";
       addLog(file ? `Arquivo contábil selecionado: ${file.name}` : "Arquivo contábil limpo.");
+      refreshExecutionOverview();
     });
 
-    arquivoCliente?.addEventListener("change", () => {
-      const file = arquivoCliente.files?.[0];
-      if (arquivoClienteNome) {
-        arquivoClienteNome.value = file ? file.name : "";
-      }
-      addLog(file ? `Arquivo cliente selecionado: ${file.name}` : "Arquivo cliente limpo.");
+    arquivoFornecedor?.addEventListener("change", () => {
+      const file = arquivoFornecedor.files?.[0];
+      if (arquivoFornecedorNome) arquivoFornecedorNome.value = file ? file.name : "";
+      addLog(file ? `Arquivo fornecedor selecionado: ${file.name}` : "Arquivo fornecedor limpo.");
+      refreshExecutionOverview();
     });
 
     document.getElementById("btnGerarNomeSaida")?.addEventListener("click", () => {
@@ -455,13 +500,13 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function bindActions() {
     document.getElementById("btnVoltarContdocs")?.addEventListener("click", () => {
-      goto("./contdocs.html");
+      goto("../contdocs.html");
     });
 
     document.getElementById("btnLimparRecon")?.addEventListener("click", () => {
       const ids = [
         "arquivoContabilNome",
-        "arquivoClienteNome",
+        "arquivoFornecedorNome",
         "arquivoSaidaNome",
         "nomeEmpresa",
         "nomeResponsavel",
@@ -472,8 +517,7 @@ document.addEventListener("DOMContentLoaded", () => {
         if (el) el.value = "";
       });
 
-      const fileIds = ["arquivoContabil", "arquivoCliente"];
-      fileIds.forEach((id) => {
+      ["arquivoContabil", "arquivoFornecedor"].forEach((id) => {
         const el = document.getElementById(id);
         if (el) el.value = "";
       });
@@ -485,6 +529,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
       setProgress(0, "Aguardando execução...");
       addLog("Campos limpos.");
+      refreshExecutionOverview();
     });
 
     document.getElementById("btnAbrirUltimo")?.addEventListener("click", () => {
@@ -492,15 +537,17 @@ document.addEventListener("DOMContentLoaded", () => {
         addLog("Nenhum relatório foi gerado nesta sessão.");
         return;
       }
-
       window.open(ultimoArquivoGerado, "_blank");
     });
 
     document.getElementById("btnExecutarRecon")?.addEventListener("click", async () => {
       const btn = document.getElementById("btnExecutarRecon");
       const arquivoContabil = document.getElementById("arquivoContabil")?.files?.[0];
-      const arquivoCliente = document.getElementById("arquivoCliente")?.files?.[0];
+      const arquivoFornecedor = document.getElementById("arquivoFornecedor")?.files?.[0];
       const nomeEmpresa = document.getElementById("nomeEmpresa")?.value?.trim() || "API";
+      const usarFuzzy = document.getElementById("usarFuzzy")?.checked;
+      const limiarFuzzy = document.getElementById("limiarFuzzy")?.value?.trim() || "0.88";
+      const tolerancia = document.getElementById("tolerancia")?.value?.trim() || "0.01";
       const abrirAoFinal = document.getElementById("abrirAoFinal")?.checked;
 
       if (!arquivoContabil) {
@@ -509,24 +556,28 @@ document.addEventListener("DOMContentLoaded", () => {
         return;
       }
 
-      if (!arquivoCliente) {
-        addLog("Selecione o arquivo do cliente.");
-        setProgress(0, "Selecione o arquivo do cliente.");
+      if (!arquivoFornecedor) {
+        addLog("Selecione o arquivo do fornecedor.");
+        setProgress(0, "Selecione o arquivo do fornecedor.");
         return;
       }
 
       try {
         btn.disabled = true;
         formatarNomeSaida();
-        addLog("Iniciando reconciliação...");
+        addLog("Iniciando reconciliação de fornecedores...");
         setProgress(15, "Enviando arquivos para processamento...");
+        setRunState("processing", "Processando", "Arquivos enviados para o servidor");
 
         const form = new FormData();
         form.append("arquivo_contabil", arquivoContabil);
-        form.append("arquivo_cliente", arquivoCliente);
+        form.append("arquivo_fornecedor", arquivoFornecedor);
         form.append("nome_empresa", nomeEmpresa);
+        form.append("usar_fuzzy", String(usarFuzzy));
+        form.append("limiar_fuzzy", limiarFuzzy);
+        form.append("tolerancia", tolerancia);
 
-        const response = await fetch("/api/reconciliacao/processar", {
+        const response = await fetch("/api/reconciliacao/fornecedores/processar", {
           method: "POST",
           body: form,
           credentials: "include",
@@ -535,43 +586,40 @@ document.addEventListener("DOMContentLoaded", () => {
         setProgress(65, "Processamento concluído no servidor. Preparando download...");
 
         if (!response.ok) {
-          let erroTexto = "Falha ao processar reconciliação.";
-
+          let erroTexto = "Falha ao processar reconciliação de fornecedores.";
           try {
             const erroJson = await response.json();
             erroTexto = erroJson?.error || erroTexto;
             if (erroJson?.stderr) addLog(`stderr: ${erroJson.stderr}`);
             if (erroJson?.stdout) addLog(`stdout: ${erroJson.stdout}`);
           } catch (_) {}
-
           throw new Error(erroTexto);
         }
 
         const disposition = response.headers.get("content-disposition") || "";
-        let nomeArquivo = document.getElementById("arquivoSaidaNome")?.value || "reconciliacao.xlsx";
+        let nomeArquivo =
+          document.getElementById("arquivoSaidaNome")?.value || "reconciliacao_fornecedores.xlsx";
 
         const match = disposition.match(/filename="?([^"]+)"?/i);
-        if (match && match[1]) {
-          nomeArquivo = match[1];
-        }
+        if (match && match[1]) nomeArquivo = match[1];
 
         const blob = await response.blob();
         baixarBlobComoArquivo(blob, nomeArquivo);
-
         ultimoArquivoGerado = `/generated/reconciliacoes/${nomeArquivo}`;
 
-        setProgress(100, "Reconciliação concluída com sucesso.");
-        addLog(`Reconciliação concluída. Download iniciado: ${nomeArquivo}`);
+        setProgress(100, "Reconciliação de fornecedores concluída com sucesso.");
+        addLog(`Reconciliação de fornecedores concluída. Download iniciado: ${nomeArquivo}`);
+        setRunState("success", "Concluído com sucesso", "Relatório gerado e download iniciado");
 
-        if (abrirAoFinal) {
-          addLog("Opção 'Abrir relatório ao finalizar' marcada.");
-        }
+        if (abrirAoFinal) addLog("Opção 'Abrir relatório ao finalizar' marcada.");
       } catch (err) {
-        console.error("Erro na reconciliação:", err);
+        console.error("Erro na reconciliação de fornecedores:", err);
         setProgress(0, `Erro: ${err.message}`);
         addLog(`Erro: ${err.message}`);
+        setRunState("error", "Falha na execução", err.message || "Erro no processamento");
       } finally {
         btn.disabled = false;
+        refreshExecutionOverview();
       }
     });
   }
@@ -581,12 +629,10 @@ document.addEventListener("DOMContentLoaded", () => {
       await loadSessionUser();
 
       if (!currentUser) {
-        goto(LOGIN_PAGE_URL);
-        return;
+        throw new Error("Sessão do usuário não encontrada.");
       }
 
       await loadModulesFromApi();
-
       fillPageTexts();
       bindMenu();
       bindSidebarNavigation();
@@ -605,10 +651,10 @@ document.addEventListener("DOMContentLoaded", () => {
 
       formatarNomeSaida();
       setProgress(0, "Aguardando execução...");
-      addLog("Reconciliação inicializada!");
+      addLog("Reconciliação de fornecedores inicializada!");
+      refreshExecutionOverview();
     } catch (err) {
-      console.error("❌ Falha ao inicializar Reconciliação:", err);
-      goto(LOGIN_PAGE_URL);
+      handleInitError(err);
     }
   }
 

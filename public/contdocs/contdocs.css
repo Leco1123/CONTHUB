@@ -9,7 +9,7 @@
 
 html,
 body {
-  height: 100%;
+  min-height: 100%;
 }
 
 body {
@@ -23,6 +23,7 @@ body {
     ),
     var(--bg);
   overflow-x: hidden;
+  overflow-y: auto;
 }
 
 /* =========================================================
@@ -330,6 +331,9 @@ button.btn {
 ========================================================= */
 .main {
   padding: 18px;
+  min-height: auto;
+  display: flex;
+  flex-direction: column;
 }
 
 .topbar {
@@ -357,18 +361,18 @@ button.btn {
 ========================================================= */
 .dev-shell {
   margin-top: 22px;
-  min-height: calc(100vh - 130px);
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  display: block;
+  min-height: auto;
+  padding-bottom: 56px;
 }
 
 .dev-card {
   width: min(920px, 100%);
+  margin: 0 auto;
   position: relative;
   overflow: hidden;
   border-radius: 24px;
-  padding: 38px 28px;
+  padding: 26px 24px;
   border: 1px solid var(--stroke);
   background: linear-gradient(
     180deg,
@@ -395,7 +399,7 @@ button.btn {
   align-items: center;
   justify-content: center;
   padding: 8px 14px;
-  margin-bottom: 20px;
+  margin-bottom: 12px;
   border-radius: 999px;
   background: rgba(255, 193, 7, 0.18);
   border: 1px solid rgba(255, 193, 7, 0.38);
@@ -407,7 +411,7 @@ button.btn {
 }
 
 .dev-module-name {
-  margin: 0 0 8px;
+  margin: 0 0 6px;
   font-size: 15px;
   font-weight: 800;
   color: #8ec5ff;
@@ -416,28 +420,28 @@ button.btn {
 
 .dev-title {
   margin: 0;
-  font-size: clamp(30px, 4vw, 48px);
-  line-height: 1.1;
+  font-size: clamp(26px, 3.4vw, 40px);
+  line-height: 1.04;
   font-weight: 900;
 }
 
 .dev-subtitle {
   max-width: 680px;
-  margin: 16px auto 0;
-  font-size: 16px;
-  line-height: 1.7;
+  margin: 12px auto 0;
+  font-size: 15px;
+  line-height: 1.55;
   color: var(--muted);
 }
 
 .dev-highlight {
-  margin-top: 18px;
-  font-size: 16px;
+  margin-top: 12px;
+  font-size: 15px;
   font-weight: 800;
   color: var(--text);
 }
 
 .dev-meta {
-  margin-top: 24px;
+  margin-top: 16px;
   display: inline-flex;
   align-items: center;
   gap: 10px;
@@ -459,9 +463,46 @@ button.btn {
 }
 
 .dev-footer-note {
-  margin-top: 14px;
+  margin-top: 10px;
   font-size: 13px;
   color: var(--muted);
+}
+
+.docs-overview {
+  margin-top: 18px;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  text-align: left;
+}
+
+.docs-overview__label {
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  color: #8ec5ff;
+}
+
+.docs-overview__item {
+  display: grid;
+  gap: 6px;
+  padding: 16px;
+  border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.docs-overview__value {
+  font-size: 24px;
+  font-weight: 900;
+  color: #ffffff;
+}
+
+.docs-overview__hint {
+  font-size: 13px;
+  color: var(--muted);
+  line-height: 1.5;
 }
 
 /* =========================================================
@@ -470,19 +511,19 @@ button.btn {
 .robot-wrap {
   display: flex;
   justify-content: center;
-  margin: 4px 0 18px;
+  margin: 0 0 10px;
 }
 
 .robot {
   position: relative;
-  width: 130px;
+  width: 106px;
   animation: floatBot 3.2s ease-in-out infinite;
   transform-origin: center;
 }
 
 .robot-antenna {
   width: 6px;
-  height: 18px;
+  height: 14px;
   background: linear-gradient(180deg, #6fb2ff, #2f80ff);
   border-radius: 999px;
   margin: 0 auto;
@@ -495,17 +536,17 @@ button.btn {
   top: -8px;
   left: 50%;
   transform: translateX(-50%);
-  width: 14px;
-  height: 14px;
+  width: 12px;
+  height: 12px;
   border-radius: 50%;
   background: #7fc1ff;
   box-shadow: 0 0 18px rgba(127, 193, 255, 0.7);
 }
 
 .robot-head {
-  width: 98px;
-  height: 74px;
-  margin: 6px auto 0;
+  width: 80px;
+  height: 60px;
+  margin: 5px auto 0;
   border-radius: 18px;
   background: linear-gradient(180deg, #1c2b43 0%, #111c2f 100%);
   border: 1px solid rgba(125, 178, 255, 0.18);
@@ -515,37 +556,37 @@ button.btn {
 
 .eye {
   position: absolute;
-  top: 25px;
-  width: 12px;
-  height: 12px;
+  top: 20px;
+  width: 10px;
+  height: 10px;
   border-radius: 50%;
   background: #72b7ff;
   box-shadow: 0 0 12px rgba(114, 183, 255, 0.9);
 }
 
 .eye-left {
-  left: 24px;
+  left: 19px;
 }
 
 .eye-right {
-  right: 24px;
+  right: 19px;
 }
 
 .mouth {
   position: absolute;
   left: 50%;
-  bottom: 16px;
+  bottom: 13px;
   transform: translateX(-50%);
-  width: 26px;
+  width: 24px;
   height: 4px;
   border-radius: 999px;
   background: rgba(210, 230, 255, 0.9);
 }
 
 .robot-body {
-  width: 76px;
-  height: 60px;
-  margin: 10px auto 0;
+  width: 62px;
+  height: 48px;
+  margin: 8px auto 0;
   border-radius: 16px;
   background: linear-gradient(180deg, #1a2740 0%, #10192b 100%);
   border: 1px solid rgba(125, 178, 255, 0.14);
@@ -554,24 +595,24 @@ button.btn {
 
 .bot-dot {
   position: absolute;
-  top: 22px;
-  width: 8px;
-  height: 8px;
+  top: 18px;
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
   background: rgba(114, 183, 255, 0.85);
   box-shadow: 0 0 10px rgba(114, 183, 255, 0.45);
 }
 
 .dot-1 {
-  left: 18px;
+  left: 14px;
 }
 
 .dot-2 {
-  left: 34px;
+  left: 28px;
 }
 
 .dot-3 {
-  left: 50px;
+  left: 42px;
 }
 
 .robot.blink .eye {
@@ -590,9 +631,9 @@ button.btn {
    ATALHOS / NOVA TELA
 ========================================================= */
 .atalhos-wrap {
-  margin-top: 28px;
+  margin-top: 18px;
   display: grid;
-  gap: 12px;
+  gap: 10px;
   width: 100%;
 }
 
@@ -603,8 +644,8 @@ button.btn {
   gap: 16px;
   align-items: center;
 
-  padding: 18px;
-  border-radius: 20px;
+  padding: 16px;
+  border-radius: 18px;
   border: 1px solid rgba(255, 255, 255, 0.1);
   background: linear-gradient(
     180deg,
@@ -618,6 +659,22 @@ button.btn {
   text-align: left;
   appearance: none;
   -webkit-appearance: none;
+}
+
+.atalho-card--clientes {
+  background: linear-gradient(
+    180deg,
+    rgba(0, 140, 255, 0.2),
+    rgba(255, 255, 255, 0.04)
+  );
+}
+
+.atalho-card--fornecedores {
+  background: linear-gradient(
+    180deg,
+    rgba(28, 125, 201, 0.22),
+    rgba(255, 255, 255, 0.04)
+  );
 }
 
 .atalho-card:hover {
@@ -636,12 +693,12 @@ button.btn {
 }
 
 .atalho-card__icon {
-  width: 64px;
-  height: 64px;
-  border-radius: 18px;
+  width: 52px;
+  height: 52px;
+  border-radius: 16px;
   display: grid;
   place-items: center;
-  font-size: 28px;
+  font-size: 24px;
   background: rgba(255, 255, 255, 0.08);
   border: 1px solid rgba(255, 255, 255, 0.12);
 }
@@ -653,13 +710,13 @@ button.btn {
 }
 
 .atalho-card__title {
-  font-size: 18px;
+  font-size: 16px;
   font-weight: 900;
   color: #ffffff;
 }
 
 .atalho-card__desc {
-  font-size: 13px;
+  font-size: 12px;
   color: var(--muted);
 }
 
@@ -693,6 +750,12 @@ button.btn {
     rgba(46, 229, 157, 0.75)
   );
   border: 1px solid rgba(78, 204, 163, 0.45);
+}
+
+.atalho-card__actionWrap {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
 }
 
 /* =========================================================
@@ -747,12 +810,26 @@ button.btn {
     border-radius: 20px;
   }
 
+  .dev-shell {
+    min-height: auto;
+    padding-bottom: 18px;
+  }
+
   .dev-subtitle {
     font-size: 15px;
   }
 
+  .docs-overview,
   .atalho-card {
     grid-template-columns: 1fr;
+  }
+
+  .atalho-card__actionWrap {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .atalho-card {
     text-align: center;
   }
 

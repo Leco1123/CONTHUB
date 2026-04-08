@@ -32,7 +32,7 @@
             type="button"
             data-module-id="dashboard"
             data-title="Dashboard"
-            data-src="../dashboard/dashboard.html"
+            data-src="../../dashboard/dashboard.html"
             data-subtitle="Visão geral do ContHub."
           >
             <span class="icone-modulo">🏠</span>
@@ -48,7 +48,7 @@
             type="button"
             data-module-id="contflow"
             data-title="ContFlow"
-            data-src="../contflow/contflow.html"
+            data-src="../../contflow/contflow.html"
             data-subtitle="Controle de rotinas e fluxo contábil."
           >
             <span class="icone-modulo">⚡</span>
@@ -64,7 +64,7 @@
             type="button"
             data-module-id="contanalytics"
             data-title="ContAnalytics"
-            data-src="../contanalytics/contanalytics.html"
+            data-src="../../contanalytics/contanalytics.html"
             data-subtitle="KPIs, indicadores e painéis de análise."
           >
             <span class="icone-modulo">📊</span>
@@ -80,7 +80,7 @@
             type="button"
             data-module-id="contdocs"
             data-title="ContDocs"
-            data-src="./contdocs.html"
+            data-src="../contdocs.html"
             data-subtitle="Centralização e gestão de documentos."
           >
             <span class="icone-modulo">📁</span>
@@ -94,9 +94,9 @@
           <button
             class="cards-modulos"
             type="button"
-            data-module-id="contrels"
+            data-module-id="contrelatorios"
             data-title="ContRelatórios"
-            data-src="../contrelatorios/contrelatorios.html"
+            data-src="../../contrelatorios/contrelatorios.html"
             data-subtitle="Geração de relatórios e exportações."
           >
             <span class="icone-modulo">📈</span>
@@ -112,7 +112,7 @@
             type="button"
             data-module-id="contconfig"
             data-title="ContConfig"
-            data-src="../contconfig/contconfig.html"
+            data-src="../../contconfig/contconfig.html"
             data-subtitle="Parâmetros e configurações gerais."
           >
             <span class="icone-modulo">⚙️</span>
@@ -128,7 +128,7 @@
             type="button"
             data-module-id="contadmin"
             data-title="ContAdmin Hub"
-            data-src="../contadmin/contadmin.html"
+            data-src="../../contadmin/contadmin.html"
             data-subtitle="Área administrativa e de controle total."
           >
             <span class="icone-modulo">🛡️</span>
@@ -195,6 +195,39 @@
               </div>
             </div>
           </div>
+
+          <section class="panel-card recon-state-card">
+            <div class="recon-state-card__header">
+              <div>
+                <h3 class="panel-title">Visão da execução</h3>
+                <p class="muted">Acompanhe arquivos, saída e estado atual da automação.</p>
+              </div>
+
+              <div class="run-badge" id="runBadge" data-state="idle">Pronto para executar</div>
+            </div>
+
+            <div class="run-state-grid">
+              <div class="run-state-item">
+                <span class="run-state-item__label">Base contábil</span>
+                <strong class="run-state-item__value" id="statusArquivoContabil">Aguardando arquivo</strong>
+              </div>
+
+              <div class="run-state-item">
+                <span class="run-state-item__label">Base do cliente</span>
+                <strong class="run-state-item__value" id="statusArquivoBase">Aguardando arquivo</strong>
+              </div>
+
+              <div class="run-state-item">
+                <span class="run-state-item__label">Arquivo de saída</span>
+                <strong class="run-state-item__value" id="statusArquivoSaida">Será gerado automaticamente</strong>
+              </div>
+
+              <div class="run-state-item">
+                <span class="run-state-item__label">Status operacional</span>
+                <strong class="run-state-item__value" id="statusExecucaoResumo">Validação pendente</strong>
+              </div>
+            </div>
+          </section>
 
           <div class="recon-grid">
             <section class="panel-card panel-card--arquivos">

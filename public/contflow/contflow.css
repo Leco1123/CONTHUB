@@ -1064,6 +1064,12 @@ button.btn-acao {
   box-shadow: 0 30px 60px rgba(0, 0, 0, 0.45);
 }
 
+#cf-modal {
+  width: min(760px, calc(100vw - 32px));
+  max-height: min(88vh, 920px);
+  overflow-y: auto;
+}
+
 #cf-modal.is-open,
 #pt-modal.is-open {
   display: block;
@@ -1081,6 +1087,121 @@ button.btn-acao {
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
+}
+
+.cf-modal-actions > .cf-modal-extra-actions {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  width: 100%;
+}
+
+.cf-backups-panel {
+  margin-top: 16px;
+  padding: 16px;
+  border-radius: 16px;
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  background:
+    linear-gradient(180deg, rgba(10, 20, 34, 0.94) 0%, rgba(6, 16, 28, 0.98) 100%);
+}
+
+.cf-backups-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.cf-backups-head p {
+  margin: 6px 0 0;
+}
+
+.cf-backups-head-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.cf-backups-status {
+  margin-bottom: 12px;
+}
+
+.cf-backups-status.text-danger {
+  color: #fca5a5;
+}
+
+.cf-backups-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 340px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.cf-backup-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 14px;
+  align-items: center;
+  padding: 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(148, 163, 184, 0.12);
+  background: rgba(15, 23, 42, 0.72);
+}
+
+.cf-backup-card-main {
+  min-width: 0;
+}
+
+.cf-backup-card-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 6px;
+}
+
+.cf-backup-card-title strong {
+  font-size: 14px;
+}
+
+.cf-backup-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  border: 1px solid rgba(56, 189, 248, 0.28);
+  color: #93c5fd;
+  background: rgba(30, 64, 175, 0.2);
+}
+
+.cf-backup-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  font-size: 12px;
+  color: rgba(226, 232, 240, 0.76);
+}
+
+.cf-backup-card-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.cf-backup-empty {
+  padding: 18px;
+  border-radius: 14px;
+  border: 1px dashed rgba(148, 163, 184, 0.18);
+  color: rgba(226, 232, 240, 0.7);
+  text-align: center;
 }
 
 .pt-quota-panel {
@@ -1649,6 +1770,11 @@ body.sidebar-open .overlay {
 }
 
 @media (max-width: 720px) {
+  #cf-modal {
+    width: min(96vw, 760px);
+    padding: 14px;
+  }
+
   .cf-header {
     flex-direction: column;
     align-items: stretch;
@@ -1667,5 +1793,19 @@ body.sidebar-open .overlay {
     overflow: auto;
     flex-wrap: nowrap;
     padding-bottom: 4px;
+  }
+
+  .cf-modal-actions > .cf-modal-extra-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .cf-backups-head,
+  .cf-backup-card {
+    grid-template-columns: 1fr;
+  }
+
+  .cf-backup-card-actions {
+    flex-direction: row;
+    flex-wrap: wrap;
   }
 }

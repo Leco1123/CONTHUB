@@ -81,8 +81,9 @@ document.addEventListener("DOMContentLoaded", () => {
     if (!res.ok) {
       if (res.status === 401) {
         currentUser = null;
-        goto(LOGIN_PAGE_URL);
-        return null;
+        const err = new Error("Sessão não disponível.");
+        err.status = 401;
+        throw err;
       }
 
       const msg =
@@ -360,12 +361,54 @@ document.addEventListener("DOMContentLoaded", () => {
     if (pageTitle) pageTitle.textContent = currentModuleTitle;
     if (pageSubtitle) pageSubtitle.textContent = currentModuleSubtitle;
     if (devModuleName) devModuleName.textContent = currentModuleTitle;
-    if (devTitle) devTitle.textContent = `${currentModuleTitle} em desenvolvimento`;
+    if (devTitle) devTitle.textContent = "Operações documentais do ContHub";
 
     if (devSubtitle) {
       devSubtitle.textContent =
-        `Estamos preparando o módulo ${currentModuleTitle} para receber novas funcionalidades, melhorias visuais e recursos adicionais dentro do ContHub.`;
+        `Gerencie automações de conciliação, acompanhe o fluxo de execução e centralize entregas documentais em um único módulo.`;
     }
+  }
+
+  function handleInitError(err) {
+    console.error("❌ Falha ao inicializar ContDocs:", err);
+
+    fillPageTexts();
+    bindMenu();
+    bindSidebarNavigation();
+    syncSidebarFromStore();
+    markCurrentModuleActive();
+    initRobot();
+
+    const pageSubtitle = document.getElementById("pageSubtitle");
+    const devSubtitle = document.getElementById("devSubtitle");
+    const devHighlight = document.querySelector(".dev-highlight");
+    const devMeta = document.querySelector(".dev-meta");
+    const devFooterNote = document.querySelector(".dev-footer-note");
+
+    if (pageSubtitle) {
+      pageSubtitle.textContent =
+        "Houve uma falha ao carregar alguns dados do módulo, mas a página continua disponível.";
+    }
+
+    if (devSubtitle) {
+      devSubtitle.textContent =
+        "A tela foi carregada em modo seguro porque uma parte da inicialização falhou. As automações continuam disponíveis abaixo.";
+    }
+
+    if (devHighlight) {
+      devHighlight.textContent = "Falha parcial na inicialização do módulo.";
+    }
+
+    if (devMeta) {
+      devMeta.innerHTML = '<span class="dev-dot"></span> Verifique a conexão com a API';
+    }
+
+    if (devFooterNote) {
+      devFooterNote.textContent =
+        "Se o problema continuar, confira o console do navegador ou valide se o backend está respondendo.";
+    }
+
+    renderUserCard();
   }
 
   function initRobot() {
@@ -407,8 +450,7 @@ document.addEventListener("DOMContentLoaded", () => {
       await loadSessionUser();
 
       if (!currentUser) {
-        goto(LOGIN_PAGE_URL);
-        return;
+        throw new Error("Sessão do usuário não encontrada.");
       }
 
       await loadModulesFromApi();
@@ -425,8 +467,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
       console.log("🎉 ContDocs inicializado!");
     } catch (err) {
-      console.error("❌ Falha ao inicializar ContDocs:", err);
-      goto(LOGIN_PAGE_URL);
+      handleInitError(err);
     }
   }
 

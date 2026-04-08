@@ -1,6 +1,6 @@
 const express = require("express");
 const db = require("../db");
-const { requireContAdminAccess, requireContAdminManage } = require("../middleware/auth");
+const { requireContAdminAccess, requireTeamConfigManage } = require("../middleware/auth");
 
 const router = express.Router();
 
@@ -55,7 +55,7 @@ router.get("/", requireContAdminAccess, async (req, res) => {
   }
 });
 
-router.put("/", requireContAdminManage, async (req, res) => {
+router.put("/", requireTeamConfigManage, async (req, res) => {
   try {
     const config = normalizeTeamConfigInput(req.body?.config ?? req.body);
 

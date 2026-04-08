@@ -93,9 +93,9 @@
           <button
             class="cards-modulos"
             type="button"
-            data-module-id="contrels"
+            data-module-id="contrelatorios"
             data-title="ContRelatórios"
-            data-src="../contrels/contrels.html"
+            data-src="../contrelatorios/contrelatorios.html"
             data-subtitle="Geração de relatórios e exportações."
           >
             <span class="icone-modulo">📈</span>
@@ -373,6 +373,30 @@
           🗑 Excluir seleção
         </button>
       </div>
+
+      <section id="cf-backups-panel" class="cf-backups-panel" hidden>
+        <div class="cf-backups-head">
+          <div>
+            <strong>Histórico de backups</strong>
+            <p class="muted">Cada salvamento do ContFlow gera uma versão anterior automática.</p>
+          </div>
+
+          <div class="cf-backups-head-actions">
+            <button id="cf-backups-refresh" class="cf-btn cf-btn--ghost" type="button">
+              Atualizar
+            </button>
+            <button id="cf-backups-close" class="cf-btn cf-btn--ghost" type="button">
+              Fechar
+            </button>
+          </div>
+        </div>
+
+        <div id="cf-backups-status" class="cf-backups-status muted">
+          Carregando backups...
+        </div>
+
+        <div id="cf-backups-list" class="cf-backups-list"></div>
+      </section>
     </div>
 
     <!-- MODAL PAINEL TRIBUTÁRIO -->

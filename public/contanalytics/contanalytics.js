@@ -81,8 +81,9 @@ document.addEventListener("DOMContentLoaded", () => {
     if (!res.ok) {
       if (res.status === 401) {
         currentUser = null;
-        goto(LOGIN_PAGE_URL);
-        return null;
+        const err = new Error("Sessão não disponível.");
+        err.status = 401;
+        throw err;
       }
 
       const msg =
@@ -368,6 +369,47 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
+  function handleInitError(err) {
+    console.error("❌ Falha ao inicializar ContAnalytics:", err);
+
+    fillPageTexts();
+    bindMenu();
+    bindSidebarNavigation();
+    syncSidebarFromStore();
+    markCurrentModuleActive();
+    initRobot();
+    renderUserCard();
+
+    const pageSubtitle = document.getElementById("pageSubtitle");
+    const devSubtitle = document.getElementById("devSubtitle");
+    const devHighlight = document.querySelector(".dev-highlight");
+    const devMeta = document.querySelector(".dev-meta");
+    const devFooterNote = document.querySelector(".dev-footer-note");
+
+    if (pageSubtitle) {
+      pageSubtitle.textContent =
+        "Houve uma falha ao carregar alguns dados do módulo, mas a tela continua disponível.";
+    }
+
+    if (devSubtitle) {
+      devSubtitle.textContent =
+        "O ContAnalytics foi carregado em modo seguro. Assim que a API estiver estável, os dados completos voltam a aparecer.";
+    }
+
+    if (devHighlight) {
+      devHighlight.textContent = "Falha parcial na inicialização do módulo.";
+    }
+
+    if (devMeta) {
+      devMeta.innerHTML = '<span class="dev-dot"></span> Verifique a conexão com a API';
+    }
+
+    if (devFooterNote) {
+      devFooterNote.textContent =
+        "Se isso continuar, confira o console do navegador ou valide o backend.";
+    }
+  }
+
   function initRobot() {
     const robot = document.getElementById("robot");
     if (!robot) return;
@@ -407,8 +449,7 @@ document.addEventListener("DOMContentLoaded", () => {
       await loadSessionUser();
 
       if (!currentUser) {
-        goto(LOGIN_PAGE_URL);
-        return;
+        throw new Error("Sessão do usuário não encontrada.");
       }
 
       await loadModulesFromApi();
@@ -425,8 +466,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
       console.log("🎉 ContAnalytics inicializado!");
     } catch (err) {
-      console.error("❌ Falha ao inicializar ContAnalytics:", err);
-      goto(LOGIN_PAGE_URL);
+      handleInitError(err);
     }
   }
 

@@ -9,7 +9,7 @@
 
 html,
 body {
-  height: 100%;
+  min-height: 100%;
 }
 
 body {
@@ -23,6 +23,7 @@ body {
     ),
     var(--bg);
   overflow-x: hidden;
+  overflow-y: auto;
 }
 
 /* =========================================================
@@ -329,6 +330,9 @@ button.btn {
    MAIN / TOPBAR
 ========================================================= */
 .main {
+  min-height: auto;
+  display: flex;
+  flex-direction: column;
   padding: 18px;
 }
 
@@ -357,10 +361,9 @@ button.btn {
 ========================================================= */
 .dev-shell {
   margin-top: 22px;
-  min-height: calc(100vh - 130px);
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  display: block;
+  min-height: auto;
+  padding-bottom: 56px;
 }
 
 .dev-card {

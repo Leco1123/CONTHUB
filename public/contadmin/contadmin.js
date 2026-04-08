@@ -273,12 +273,12 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function canManageUsers(user) {
     const profile = getAccessProfile(user);
-    return profile === "ti" || profile === "gerencial" || profile === "coordenacao";
+    return profile === "ti";
   }
 
   function canViewAdmin(user) {
     const profile = getAccessProfile(user);
-    return profile === "ti" || profile === "gerencial" || profile === "coordenacao";
+    return profile === "ti" || profile === "gerencial";
   }
 
   function sameUserId(a, b) {

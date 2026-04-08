@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ContHub • Reconciliação de Fornecedores</title>
+    <link rel="stylesheet" href="./reconciliacao.css" />
+  </head>
+
+  <body>
+    <div
+      class="app"
+      id="app"
+      data-current-module="contdocs"
+      data-module-title="Reconciliação de Fornecedores"
+      data-module-subtitle="Cruze a base contábil com a posição do fornecedor e gere um relatório Excel formatado."
+    >
+      <div class="overlay" id="overlay" aria-hidden="true"></div>
+
+      <aside class="sidebar" id="sidebar" aria-label="Menu lateral de módulos">
+        <div class="sidebar__brand">
+          <div class="brand__text">
+            <div class="brand__name">ContHub</div>
+          </div>
+        </div>
+
+        <div class="titulo-sidebar">MÓDULOS DO CONTHUB</div>
+
+        <nav class="modulos-sidebar">
+          <button class="cards-modulos" type="button" data-module-id="dashboard" data-title="Dashboard" data-src="../../dashboard/dashboard.html" data-subtitle="Visão geral do ContHub.">
+            <span class="icone-modulo">🏠</span>
+            <span class="plaquinha-de-nome">
+              <span class="placeholder-titulo">Dashboard</span>
+              <span class="placeholder">Visão geral</span>
+            </span>
+            <span class="status" data-status="online">ONLINE</span>
+          </button>
+
+          <button class="cards-modulos" type="button" data-module-id="contflow" data-title="ContFlow" data-src="../../contflow/contflow.html" data-subtitle="Controle de rotinas e fluxo contábil.">
+            <span class="icone-modulo">⚡</span>
+            <span class="plaquinha-de-nome">
+              <span class="placeholder-titulo">ContFlow</span>
+              <span class="placeholder">Rotinas e fluxo</span>
+            </span>
+            <span class="status" data-status="online">ONLINE</span>
+          </button>
+
+          <button class="cards-modulos" type="button" data-module-id="contanalytics" data-title="ContAnalytics" data-src="../../contanalytics/contanalytics.html" data-subtitle="KPIs, indicadores e painéis de análise.">
+            <span class="icone-modulo">📊</span>
+            <span class="plaquinha-de-nome">
+              <span class="placeholder-titulo">ContAnalytics</span>
+              <span class="placeholder">KPIs e painel</span>
+            </span>
+            <span class="status" data-status="online">ONLINE</span>
+          </button>
+
+          <button class="cards-modulos is-active" type="button" data-module-id="contdocs" data-title="ContDocs" data-src="../contdocs.html" data-subtitle="Centralização e gestão de documentos.">
+            <span class="icone-modulo">📁</span>
+            <span class="plaquinha-de-nome">
+              <span class="placeholder-titulo">ContDocs</span>
+              <span class="placeholder">Documentos</span>
+            </span>
+            <span class="status" data-status="online">ONLINE</span>
+          </button>
+
+          <button class="cards-modulos" type="button" data-module-id="contrelatorios" data-title="ContRelatórios" data-src="../../contrelatorios/contrelatorios.html" data-subtitle="Geração de relatórios e exportações.">
+            <span class="icone-modulo">📈</span>
+            <span class="plaquinha-de-nome">
+              <span class="placeholder-titulo">ContRelatórios</span>
+              <span class="placeholder">Exportações</span>
+            </span>
+            <span class="status" data-status="online">ONLINE</span>
+          </button>
+
+          <button class="cards-modulos" type="button" data-module-id="contconfig" data-title="ContConfig" data-src="../../contconfig/contconfig.html" data-subtitle="Parâmetros e configurações gerais.">
+            <span class="icone-modulo">⚙️</span>
+            <span class="plaquinha-de-nome">
+              <span class="placeholder-titulo">ContConfig</span>
+              <span class="placeholder">Parâmetros</span>
+            </span>
+            <span class="status" data-status="online">ONLINE</span>
+          </button>
+
+          <button class="cards-modulos" type="button" data-module-id="contadmin" data-title="ContAdmin Hub" data-src="../../contadmin/contadmin.html" data-subtitle="Área administrativa e de controle total.">
+            <span class="icone-modulo">🛡️</span>
+            <span class="plaquinha-de-nome">
+              <span class="placeholder-titulo">ContAdmin Hub</span>
+              <span class="placeholder">Acesso total</span>
+            </span>
+            <span class="status" data-status="admin">ADMIN</span>
+          </button>
+        </nav>
+
+        <div class="sidebar__footer">
+          <div class="usercard-wrap">
+            <button class="cards-modulos usercard" type="button" data-usercard aria-label="Abrir perfil do usuário">
+              <span class="icone-modulo usercard__avatar" data-user-avatar>U</span>
+              <span class="plaquinha-de-nome usercard__info">
+                <span class="placeholder-titulo usercard__name" data-user-name>Usuário</span>
+                <span class="placeholder usercard__role muted" data-user-role>USER</span>
+              </span>
+            </button>
+
+            <button class="btn btn--sair" type="button" data-logout aria-label="Sair do ContHub">Sair</button>
+          </div>
+        </div>
+      </aside>
+
+      <main class="main">
+        <header class="topbar">
+          <button id="menuBtn" class="iconbtn" type="button" aria-label="Abrir menu">☰</button>
+          <div class="topbar__title">
+            <h1 id="pageTitle">Reconciliação de Fornecedores</h1>
+            <p id="pageSubtitle" class="muted">
+              Cruze a base contábil com a posição do fornecedor e gere um relatório Excel formatado.
+            </p>
+          </div>
+        </header>
+
+        <section class="recon-shell">
+          <div class="hero-card">
+            <div class="hero-card__left">
+              <h2 class="hero-title">Reconciliação de Fornecedores</h2>
+              <p class="hero-subtitle">
+                Cruze a base contábil com a posição do fornecedor e gere um relatório Excel formatado.
+              </p>
+            </div>
+
+            <div class="hero-card__right">
+              <div class="brand-mark">
+                <div class="brand-mark__main">franco</div>
+                <div class="brand-mark__sub">contabilidade</div>
+              </div>
+            </div>
+          </div>
+
+          <section class="panel-card recon-state-card">
+            <div class="recon-state-card__header">
+              <div>
+                <h3 class="panel-title">Visão da execução</h3>
+                <p class="muted">Acompanhe arquivos, saída e estado atual da automação.</p>
+              </div>
+
+              <div class="run-badge" id="runBadge" data-state="idle">Pronto para executar</div>
+            </div>
+
+            <div class="run-state-grid">
+              <div class="run-state-item">
+                <span class="run-state-item__label">Base contábil</span>
+                <strong class="run-state-item__value" id="statusArquivoContabil">Aguardando arquivo</strong>
+              </div>
+
+              <div class="run-state-item">
+                <span class="run-state-item__label">Base do fornecedor</span>
+                <strong class="run-state-item__value" id="statusArquivoBase">Aguardando arquivo</strong>
+              </div>
+
+              <div class="run-state-item">
+                <span class="run-state-item__label">Arquivo de saída</span>
+                <strong class="run-state-item__value" id="statusArquivoSaida">Será gerado automaticamente</strong>
+              </div>
+
+              <div class="run-state-item">
+                <span class="run-state-item__label">Status operacional</span>
+                <strong class="run-state-item__value" id="statusExecucaoResumo">Validação pendente</strong>
+              </div>
+            </div>
+          </section>
+
+          <div class="recon-grid">
+            <section class="panel-card panel-card--arquivos">
+              <h3 class="panel-title">Arquivos</h3>
+
+              <div class="field-group">
+                <label for="arquivoContabil">Balancete / Base Contábil</label>
+                <div class="file-row">
+                  <input type="text" id="arquivoContabilNome" class="text-input" readonly placeholder="Nenhum arquivo selecionado" />
+                  <input type="file" id="arquivoContabil" accept=".xlsx,.xls" hidden />
+                  <button type="button" class="btn-secondary file-trigger" data-target="arquivoContabil">Selecionar</button>
+                </div>
+              </div>
+
+              <div class="field-group">
+                <label for="arquivoFornecedor">Base do Fornecedor / Posição</label>
+                <div class="file-row">
+                  <input type="text" id="arquivoFornecedorNome" class="text-input" readonly placeholder="Nenhum arquivo selecionado" />
+                  <input type="file" id="arquivoFornecedor" accept=".xlsx,.xls" hidden />
+                  <button type="button" class="btn-secondary file-trigger" data-target="arquivoFornecedor">Selecionar</button>
+                </div>
+              </div>
+
+              <div class="field-group">
+                <label for="arquivoSaidaNome">Arquivo de Saída</label>
+                <div class="file-row">
+                  <input type="text" id="arquivoSaidaNome" class="text-input" readonly placeholder="O arquivo será baixado automaticamente ao concluir" />
+                  <button type="button" class="btn-secondary" id="btnGerarNomeSaida">Gerar Nome</button>
+                </div>
+              </div>
+            </section>
+
+            <section class="panel-card panel-card--parametros">
+              <h3 class="panel-title">Parâmetros</h3>
+
+              <div class="field-group">
+                <label for="nomeEmpresa">Empresa</label>
+                <input type="text" id="nomeEmpresa" class="text-input" />
+              </div>
+
+              <div class="field-group">
+                <label for="nomeResponsavel">Responsável</label>
+                <input type="text" id="nomeResponsavel" class="text-input" />
+              </div>
+
+              <div class="field-group">
+                <label>Usuário do Windows</label>
+                <div class="info-text" id="usuarioWindows">carregando...</div>
+              </div>
+
+              <div class="double-grid">
+                <div class="field-group">
+                  <label for="tolerancia">Tolerância</label>
+                  <input type="text" id="tolerancia" class="text-input" value="0.01" />
+                </div>
+
+                <div class="field-group">
+                  <label for="limiarFuzzy">Limiar Fuzzy</label>
+                  <input type="text" id="limiarFuzzy" class="text-input" value="0.88" />
+                </div>
+              </div>
+
+              <label class="check-row">
+                <input type="checkbox" id="usarFuzzy" checked />
+                <span>Ativar fuzzy match</span>
+              </label>
+
+              <label class="check-row">
+                <input type="checkbox" id="abrirAoFinal" checked />
+                <span>Abrir relatório ao finalizar</span>
+              </label>
+            </section>
+          </div>
+
+          <section class="panel-card actions-card">
+            <div class="actions-row">
+              <button type="button" class="btn-primary" id="btnExecutarRecon">Executar Reconciliação</button>
+              <button type="button" class="btn-secondary" id="btnLimparRecon">Limpar</button>
+              <button type="button" class="btn-secondary" id="btnAbrirUltimo">Abrir Relatório</button>
+              <button type="button" class="btn-secondary" id="btnVoltarContdocs">Voltar</button>
+            </div>
+          </section>
+
+          <section class="panel-card progress-card">
+            <h3 class="panel-title">Progresso</h3>
+
+            <div class="progressbar-wrap">
+              <div class="progressbar-track">
+                <div class="progressbar-fill" id="progressFill"></div>
+              </div>
+            </div>
+
+            <div class="progress-meta">
+              <div class="progress-status" id="progressStatus">Aguardando execução...</div>
+              <div class="progress-percent" id="progressPercent">0%</div>
+            </div>
+          </section>
+
+          <section class="panel-card log-card">
+            <h3 class="panel-title">Log de Processamento</h3>
+            <div class="log-box" id="logBox">
+              <div class="log-line">Sistema pronto para nova reconciliação de fornecedores.</div>
+            </div>
+          </section>
+        </section>
+      </main>
+    </div>
+
+    <script src="./reconciliacao-fornecedores.js"></script>
+  </body>
+</html>

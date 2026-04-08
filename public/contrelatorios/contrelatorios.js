@@ -17,7 +17,7 @@ document.addEventListener("DOMContentLoaded", () => {
   let moduleStatusMap = {};
 
   const app = document.getElementById("app");
-  const currentModuleId = app?.dataset.currentModule || "contrels";
+  const currentModuleId = app?.dataset.currentModule || "contrelatorios";
   const currentModuleTitle = app?.dataset.moduleTitle || "ContRelatórios";
   const currentModuleSubtitle =
     app?.dataset.moduleSubtitle || "Geração de relatórios e exportações.";

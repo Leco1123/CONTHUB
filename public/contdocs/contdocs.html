@@ -94,7 +94,7 @@
           <button
             class="cards-modulos"
             type="button"
-            data-module-id="contrels"
+            data-module-id="contrelatorios"
             data-title="ContRelatórios"
             data-src="../contrelatorios/contrelatorios.html"
             data-subtitle="Geração de relatórios e exportações."
@@ -179,7 +179,7 @@
 
         <section class="dev-shell">
           <div class="dev-card">
-            <div class="dev-badge">Em desenvolvimento</div>
+            <div class="dev-badge">Central de automações</div>
 
             <div class="robot-wrap">
               <div class="robot" id="robot">
@@ -201,47 +201,79 @@
 
             <div class="dev-module-name" id="devModuleName">ContDocs</div>
 
-            <h2 class="dev-title" id="devTitle">
-              ContDocs em desenvolvimento
-            </h2>
+            <h2 class="dev-title" id="devTitle">Operações documentais do ContHub</h2>
 
             <p class="dev-subtitle" id="devSubtitle">
-              Estamos preparando este módulo para receber novas funcionalidades,
-              melhorias visuais e recursos adicionais.
+              Gerencie automações de conciliação, acompanhe o fluxo de execução
+              e centralize entregas documentais em um único módulo.
             </p>
 
-            <div class="dev-highlight">Mudanças e novidades em breve.</div>
+            <div class="docs-overview">
+              <div class="docs-overview__item">
+                <span class="docs-overview__label">Automações</span>
+                <strong class="docs-overview__value">02</strong>
+                <span class="docs-overview__hint">Clientes e fornecedores</span>
+              </div>
 
-            <div class="dev-meta">
-              <span class="dev-dot"></span>
-              Atualizações em andamento
+              <div class="docs-overview__item">
+                <span class="docs-overview__label">Entrega</span>
+                <strong class="docs-overview__value">Excel</strong>
+                <span class="docs-overview__hint">Download ao concluir</span>
+              </div>
+
+              <div class="docs-overview__item">
+                <span class="docs-overview__label">Status</span>
+                <strong class="docs-overview__value">Pronto</strong>
+                <span class="docs-overview__hint">Fluxo operacional disponível</span>
+              </div>
             </div>
 
-            <p class="dev-footer-note">
-              Esta área do painel ainda não está disponível para uso completo.
-            </p>
-
             <div class="atalhos-wrap">
-              <button
-                class="atalho-card"
-                type="button"
-                onclick="window.location.href='./reconciliacao.html'"
-                aria-label="Abrir Reconciliação de Clientes"
-              >
-                <div class="atalho-card__icon">🧩</div>
+                <button
+                  class="atalho-card atalho-card--clientes"
+                  type="button"
+                  onclick="window.location.href='./reconciliacao-clientes/index.html'"
+                  aria-label="Abrir Reconciliação de Clientes"
+                >
+                  <div class="atalho-card__icon">🧩</div>
 
-                <div class="atalho-card__content">
-                  <div class="atalho-card__title">Reconciliação de Clientes</div>
-                  <div class="atalho-card__desc">
-                    Acessar tela de upload das bases e geração do relatório.
+                  <div class="atalho-card__content">
+                    <div class="atalho-card__title">Reconciliação de Clientes</div>
+                    <div class="atalho-card__desc">
+                      Faça upload das bases, processe a análise e baixe o relatório final
+                      com o fluxo completo de clientes.
+                    </div>
+                    <div class="atalho-card__path">ContDocs / Reconciliação / Clientes</div>
                   </div>
-                  <div class="atalho-card__path">
-                    ContDocs / Reconciliação
-                  </div>
-                </div>
 
-                <div class="atalho-card__action">Abrir</div>
-              </button>
+                  <div class="atalho-card__actionWrap">
+                    <div class="atalho-card__action">Abrir</div>
+                  </div>
+                </button>
+
+                <button
+                  class="atalho-card atalho-card--fornecedores"
+                  type="button"
+                  onclick="window.location.href='./reconciliacao-fornecedores/index.html'"
+                  aria-label="Abrir Reconciliação de Fornecedores"
+                >
+                  <div class="atalho-card__icon">🏷️</div>
+
+                  <div class="atalho-card__content">
+                    <div class="atalho-card__title">Reconciliação de Fornecedores</div>
+                    <div class="atalho-card__desc">
+                      Execute o cruzamento contábil com a posição de fornecedores e gere o
+                      relatório consolidado da automação.
+                    </div>
+                    <div class="atalho-card__path">
+                      ContDocs / Reconciliação / Fornecedores
+                    </div>
+                  </div>
+
+                  <div class="atalho-card__actionWrap">
+                    <div class="atalho-card__action">Abrir</div>
+                  </div>
+                </button>
             </div>
           </div>
         </section>

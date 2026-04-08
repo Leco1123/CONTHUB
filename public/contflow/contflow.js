@@ -17,10 +17,29 @@ const CF_BC_NAME = "conthub:contflow:bc";
 const CF_API_SHEET_KEY = "contflow";
 const CF_API_SHEET_URL = `/api/sheets/${CF_API_SHEET_KEY}`;
 const CF_API_IMPORT_URL = `/api/sheets/${CF_API_SHEET_KEY}/import-local`;
+const CF_API_BACKUPS_URL = `${CF_API_SHEET_URL}/backups`;
 const API_MODULES = "/api/admin/modules";
+const API_PREFERRED_PORT = "3000";
+const CF_LOCAL_DRAFT_KEY = "conthub:contflow:local-draft";
+const CF_LOCAL_BACKUPS_KEY = "conthub:contflow:local-backups";
+
+function resolveApiUrl(url) {
+  const target = String(url || "").trim();
+  if (!target) return target;
+  if (/^https?:\/\//i.test(target)) return target;
+
+  try {
+    const { protocol, hostname, port } = window.location;
+    if (target.startsWith("/api/") && port && port !== API_PREFERRED_PORT) {
+      return `${protocol}//${hostname}:${API_PREFERRED_PORT}${target}`;
+    }
+  } catch (_) {}
+
+  return target;
+}
 
 async function apiFetch(url, options = {}) {
-  return fetch(url, {
+  return fetch(resolveApiUrl(url), {
     credentials: "include",
     headers: {
       Accept: "application/json",
@@ -122,6 +141,7 @@ let currentUser = null;
 /* controle de pendências */
 let dirtyCells = new Set();
 let hasStructuralChanges = false;
+let cfServerBackups = [];
 
 /* módulos */
 let MODULES_MAP = {};
@@ -650,6 +670,320 @@ async function persistBaseToApi(payload) {
   return data;
 }
 
+async function loadServerBackups() {
+  const resp = await apiFetch(CF_API_BACKUPS_URL, { method: "GET" });
+  const data = await resp.json().catch(() => null);
+
+  if (!resp.ok) {
+    throw new Error(data?.error || "Erro ao carregar backups do ContFlow.");
+  }
+
+  return Array.isArray(data?.backups) ? data.backups : [];
+}
+
+async function restoreServerBackupById(backupId) {
+  const resp = await apiFetch(`${CF_API_BACKUPS_URL}/${encodeURIComponent(String(backupId || "").trim())}/restore`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({}),
+  });
+
+  const data = await resp.json().catch(() => null);
+
+  if (!resp.ok) {
+    throw new Error(data?.error || "Erro ao restaurar backup do ContFlow.");
+  }
+
+  return data;
+}
+
+function formatBackupDate(value) {
+  if (!value) return "Data indisponível";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value);
+  return date.toLocaleString("pt-BR");
+}
+
+function getLocalBackupActorLabel() {
+  const user = getSessionUser();
+  return String(user?.email || user?.name || "Navegador local");
+}
+
+function loadLocalDraft() {
+  try {
+    const raw = window.localStorage.getItem(CF_LOCAL_DRAFT_KEY);
+    if (!raw) return null;
+    const payload = JSON.parse(raw);
+    return payload && typeof payload === "object" ? payload : null;
+  } catch (err) {
+    console.warn("Erro ao ler rascunho local do ContFlow:", err);
+    return null;
+  }
+}
+
+function saveLocalDraft(payload) {
+  try {
+    window.localStorage.setItem(CF_LOCAL_DRAFT_KEY, JSON.stringify(payload));
+  } catch (err) {
+    console.warn("Erro ao salvar rascunho local do ContFlow:", err);
+  }
+}
+
+function loadLocalBackups() {
+  try {
+    const raw = window.localStorage.getItem(CF_LOCAL_BACKUPS_KEY);
+    if (!raw) return [];
+    const backups = JSON.parse(raw);
+    return Array.isArray(backups) ? backups : [];
+  } catch (err) {
+    console.warn("Erro ao ler backups locais do ContFlow:", err);
+    return [];
+  }
+}
+
+function saveLocalBackups(backups) {
+  try {
+    window.localStorage.setItem(
+      CF_LOCAL_BACKUPS_KEY,
+      JSON.stringify(Array.isArray(backups) ? backups.slice(0, 100) : [])
+    );
+  } catch (err) {
+    console.warn("Erro ao salvar backups locais do ContFlow:", err);
+  }
+}
+
+function createLocalBackupSnapshot(reason = "before_local_save", payload = null) {
+  const basePayload = payload && typeof payload === "object" ? payload : buildServerPayload();
+  const createdAt = new Date().toISOString();
+  const backupId = `local-${createdAt.replace(/[:.]/g, "-")}`;
+  const backups = loadLocalBackups();
+
+  backups.unshift({
+    backupId,
+    createdAt,
+    updatedAt: createdAt,
+    snapshotVersion: Number(lastSavedPayload?.version || 0),
+    reason,
+    source: "local",
+    actor: {
+      email: getLocalBackupActorLabel(),
+    },
+    snapshot: deepClone(basePayload),
+  });
+
+  saveLocalBackups(backups);
+  return backups[0];
+}
+
+function getBackupReasonLabel(reason) {
+  const key = String(reason || "").trim().toLowerCase();
+  if (key === "before_update") return "Antes de salvar";
+  if (key === "before_restore") return "Antes de restaurar";
+  if (key === "before_local_save") return "Backup local";
+  if (key === "local_restore_point") return "Antes de restaurar local";
+  return key || "Backup";
+}
+
+function resetLocalHistoryAfterRestore() {
+  undoStack = [];
+  redoStack = [];
+  selectionAnchor = null;
+  lastSelectionBounds = null;
+}
+
+function getBackupsPanelElements() {
+  return {
+    panel: document.getElementById("cf-backups-panel"),
+    list: document.getElementById("cf-backups-list"),
+    status: document.getElementById("cf-backups-status"),
+  };
+}
+
+function setBackupsPanelStatus(message = "", tone = "neutral") {
+  const { status } = getBackupsPanelElements();
+  if (!status) return;
+  status.textContent = String(message || "");
+  status.classList.toggle("text-danger", tone === "error");
+}
+
+function renderBackupsPanel() {
+  const { panel, list } = getBackupsPanelElements();
+  if (!panel || !list) return;
+
+  list.innerHTML = "";
+
+  if (!cfServerBackups.length) {
+    const empty = document.createElement("div");
+    empty.className = "cf-backup-empty";
+    empty.textContent = "Ainda não existe backup salvo para o ContFlow.";
+    list.appendChild(empty);
+    return;
+  }
+
+  cfServerBackups.forEach((backup) => {
+    const card = document.createElement("article");
+    card.className = "cf-backup-card";
+
+    const main = document.createElement("div");
+    main.className = "cf-backup-card-main";
+
+    const title = document.createElement("div");
+    title.className = "cf-backup-card-title";
+
+    const name = document.createElement("strong");
+    name.textContent = formatBackupDate(backup.createdAt || backup.updatedAt);
+
+    const reason = document.createElement("span");
+    reason.className = "cf-backup-pill";
+    reason.textContent = getBackupReasonLabel(backup.reason);
+
+    title.appendChild(name);
+    title.appendChild(reason);
+
+    const meta = document.createElement("div");
+    meta.className = "cf-backup-card-meta";
+
+    const version = document.createElement("span");
+    version.textContent = `Versão ${Number(backup.snapshotVersion || 0)}`;
+
+    const actor = document.createElement("span");
+    actor.textContent = backup?.actor?.email
+      ? `Por ${backup.actor.email}`
+      : "Autor não identificado";
+
+    const file = document.createElement("span");
+    file.textContent = String(backup.backupId || "");
+
+    meta.appendChild(version);
+    meta.appendChild(actor);
+    meta.appendChild(file);
+
+    main.appendChild(title);
+    main.appendChild(meta);
+
+    const actions = document.createElement("div");
+    actions.className = "cf-backup-card-actions";
+
+    const restoreBtn = document.createElement("button");
+    restoreBtn.type = "button";
+    restoreBtn.className = "cf-btn";
+    restoreBtn.textContent = "Restaurar";
+    restoreBtn.addEventListener("click", () => {
+      handleServerBackupRestore(backup);
+    });
+
+    if (String(backup?.source || "").toLowerCase() === "local") {
+      const localPill = document.createElement("span");
+      localPill.className = "cf-backup-pill";
+      localPill.textContent = "Local";
+      title.appendChild(localPill);
+    }
+
+    actions.appendChild(restoreBtn);
+    card.appendChild(main);
+    card.appendChild(actions);
+    list.appendChild(card);
+  });
+}
+
+async function refreshBackupsPanel(options = {}) {
+  const { panel } = getBackupsPanelElements();
+  if (!panel) return;
+
+  if (!options.silent) {
+    setBackupsPanelStatus("Carregando backups...");
+  }
+
+  try {
+    const remoteBackups = await loadServerBackups();
+    const localBackups = loadLocalBackups();
+    cfServerBackups = [...remoteBackups, ...localBackups].sort((a, b) =>
+      String(b.createdAt || b.updatedAt || "").localeCompare(String(a.createdAt || a.updatedAt || ""))
+    );
+    renderBackupsPanel();
+    setBackupsPanelStatus(
+      cfServerBackups.length
+        ? `${cfServerBackups.length} backup(s) disponível(is).`
+        : "Nenhum backup disponível ainda."
+    );
+  } catch (err) {
+    console.error("Erro ao carregar backups do ContFlow:", err);
+    cfServerBackups = loadLocalBackups();
+    renderBackupsPanel();
+    if (cfServerBackups.length) {
+      setBackupsPanelStatus("API indisponível. Exibindo backups locais do navegador.");
+    } else {
+      setBackupsPanelStatus(err?.message || "Erro ao carregar backups.", "error");
+    }
+  }
+}
+
+async function openBackupsPanel() {
+  const { panel } = getBackupsPanelElements();
+  if (!panel) return;
+  openModal();
+  panel.hidden = false;
+  await refreshBackupsPanel();
+}
+
+function closeBackupsPanel() {
+  const { panel } = getBackupsPanelElements();
+  if (!panel) return;
+  panel.hidden = true;
+}
+
+async function handleServerBackupRestore(backup) {
+  const backupId = String(backup?.backupId || "").trim();
+  if (!backupId) return;
+
+  const ok = confirm(
+    `Restaurar o ContFlow para o backup de ${formatBackupDate(backup.createdAt || backup.updatedAt)}?\n\nA versão atual será salva automaticamente antes da restauração.`
+  );
+  if (!ok) return;
+
+  if (String(backup?.source || "").toLowerCase() === "local") {
+    try {
+      createLocalBackupSnapshot("local_restore_point");
+      restoreSnapshot(backup.snapshot || {});
+      lastSavedPayload = buildServerPayload();
+      saveLocalDraft(lastSavedPayload);
+      resetLocalHistoryAfterRestore();
+      rebuildViewMap();
+      renderTable();
+      refreshDirtyVisuals();
+      syncPainelTributarioFromContFlow(true);
+      await refreshBackupsPanel({ silent: true });
+      setBackupsPanelStatus("Backup local restaurado com sucesso.");
+      alert("Backup local restaurado ✅");
+    } catch (err) {
+      console.error("Erro ao restaurar backup local:", err);
+      setBackupsPanelStatus(err?.message || "Erro ao restaurar backup local.", "error");
+      alert(err?.message || "Erro ao restaurar backup local.");
+    }
+    return;
+  }
+
+  try {
+    setBackupsPanelStatus("Restaurando backup...");
+    const payload = await restoreServerBackupById(backupId);
+    hydrateContFlowFromApiPayload(payload);
+    resetLocalHistoryAfterRestore();
+    rebuildViewMap();
+    renderTable();
+    refreshDirtyVisuals();
+    syncPainelTributarioFromContFlow(true);
+    await refreshBackupsPanel({ silent: true });
+    setBackupsPanelStatus("Backup restaurado com sucesso.");
+    alert("Backup restaurado ✅");
+  } catch (err) {
+    console.error("Erro ao restaurar backup:", err);
+    setBackupsPanelStatus(err?.message || "Erro ao restaurar backup.", "error");
+    alert(err?.message || "Erro ao restaurar backup.");
+  }
+}
+
 /* ===========================
    Num Quotas
 =========================== */
@@ -940,38 +1274,15 @@ function saveVersions(arr) {
 }
 
 function saveVersion() {
-  const versions = loadVersions();
-  versions.unshift({
-    ts: new Date().toISOString(),
-    name: `Versão ${new Date().toLocaleString("pt-BR")}`,
-    payload: snapshotState(),
+  saveBase(false, { mode: "manual_backup_save" }).catch((err) => {
+    console.error("Erro ao salvar base pelo atalho de versão:", err);
   });
-  saveVersions(versions);
-  alert("Versão salva ✅");
 }
 
 function restoreVersion() {
-  const versions = loadVersions();
-  if (!versions.length) return alert("Sem versões salvas nesta sessão.");
-
-  const list = versions
-    .slice(0, MAX_VERSIONS)
-    .map((v, i) => `${i + 1}) ${v.name}`)
-    .join("\n");
-
-  const pick = prompt(`Escolha a versão para restaurar:\n\n${list}\n\nDigite o número:`, "1");
-  if (!pick) return;
-
-  const idx = Number(pick) - 1;
-  if (!Number.isFinite(idx) || idx < 0 || idx >= versions.length) return;
-
-  const before = snapshotState();
-  restoreSnapshot(versions[idx].payload);
-  const after = snapshotState();
-  pushUndo({ type: "snapshot", before, after });
-
-  rebuildViewMap();
-  renderTable();
+  openBackupsPanel().catch((err) => {
+    console.error("Erro ao abrir histórico de backups:", err);
+  });
 }
 
 /* ===========================
@@ -3181,10 +3492,18 @@ async function saveBase(silent = false, options = {}) {
 
     const payload = buildServerPayload();
     const prev = lastSavedPayload ? deepClone(lastSavedPayload) : null;
+    createLocalBackupSnapshot("before_local_save", payload);
 
-    await persistBaseToApi(payload);
+    const responsePayload = await persistBaseToApi(payload);
 
-    lastSavedPayload = deepClone(payload);
+    if (responsePayload && typeof responsePayload === "object") {
+      hydrateContFlowFromApiPayload(responsePayload);
+      saveLocalDraft(buildServerPayload());
+    } else {
+      lastSavedPayload = deepClone(payload);
+      saveLocalDraft(payload);
+      clearDirtyState();
+    }
 
     const delta = computeDelta(prev, payload);
 
@@ -3203,9 +3522,6 @@ async function saveBase(silent = false, options = {}) {
         removed: delta.removed.slice(0, 60),
       },
     });
-
-    clearDirtyState();
-
     if (!silent) {
       const mode = String(options?.mode || "base");
       if (mode === "cells") {
@@ -3216,12 +3532,20 @@ async function saveBase(silent = false, options = {}) {
     }
   } catch (err) {
     console.error("Erro ao salvar base na API:", err);
+    const payload = buildServerPayload();
+    lastSavedPayload = deepClone(payload);
+    saveLocalDraft(payload);
+    clearDirtyState();
+
     if (!silent) {
       const mode = String(options?.mode || "base");
-      if (mode === "cells") alert("Erro ao salvar células na API.");
-      else alert("Erro ao salvar a base na API.");
+      if (mode === "cells") {
+        alert("API indisponível. Células salvas localmente neste navegador 💾");
+      } else {
+        alert("API indisponível. Base salva localmente neste navegador 💾");
+      }
     }
-    throw err;
+    return;
   } finally {
     saveInFlight = false;
 
@@ -3241,6 +3565,7 @@ function openModal() {
   if (!backdrop || !modal) return;
   backdrop.classList.add("is-open");
   modal.classList.add("is-open");
+  closeBackupsPanel();
 }
 
 function closeModal() {
@@ -3249,6 +3574,7 @@ function closeModal() {
   if (!backdrop || !modal) return;
   backdrop.classList.remove("is-open");
   modal.classList.remove("is-open");
+  closeBackupsPanel();
 }
 
 /* ===========================
@@ -3514,8 +3840,8 @@ function openContextMenu(e, ctx) {
       applySelection(0, 0, viewMap.length - 1, CF_COLUMNS.length - 1);
     });
     addMenuItem(menu, "Limpar filtros", () => clearAllFilters());
-    addMenuItem(menu, "Salvar versão", () => saveVersion());
-    addMenuItem(menu, "Restaurar versão", () => restoreVersion());
+    addMenuItem(menu, "Salvar base agora", () => saveVersion());
+    addMenuItem(menu, "Histórico de backups", () => restoreVersion());
   }
 }
 
@@ -3842,27 +4168,27 @@ document.addEventListener("DOMContentLoaded", async () => {
   const baseBtn = document.getElementById("cf-base-btn");
   const modalClose = document.getElementById("cf-modal-close");
   const modalBackdrop = document.getElementById("cf-modal-backdrop");
+  const backupsRefreshBtn = document.getElementById("cf-backups-refresh");
+  const backupsCloseBtn = document.getElementById("cf-backups-close");
 
   const modalActions = document.querySelector(".cf-modal-actions");
   if (modalActions && !modalActions.dataset.enhanced) {
     modalActions.dataset.enhanced = "1";
 
     const extra = document.createElement("div");
-    extra.style.display = "grid";
-    extra.style.gridTemplateColumns = "1fr 1fr";
-    extra.style.gap = "8px";
+    extra.className = "cf-modal-extra-actions";
     extra.style.marginTop = "10px";
 
     const b1 = document.createElement("button");
     b1.className = "cf-btn";
     b1.type = "button";
-    b1.textContent = "Salvar versão";
+    b1.textContent = "Salvar base agora";
     b1.onclick = () => saveVersion();
 
     const b2 = document.createElement("button");
     b2.className = "cf-btn";
     b2.type = "button";
-    b2.textContent = "Restaurar versão";
+    b2.textContent = "Histórico de backups";
     b2.onclick = () => restoreVersion();
 
     const b3 = document.createElement("button");
@@ -3934,6 +4260,10 @@ document.addEventListener("DOMContentLoaded", async () => {
   baseBtn?.addEventListener("click", openModal);
   modalClose?.addEventListener("click", closeModal);
   modalBackdrop?.addEventListener("click", closeModal);
+  backupsRefreshBtn?.addEventListener("click", () => {
+    refreshBackupsPanel().catch((err) => console.error("Erro ao atualizar backups:", err));
+  });
+  backupsCloseBtn?.addEventListener("click", closeBackupsPanel);
 
   document.addEventListener("keydown", (ev) => {
     if (ev.key === "Escape") {
@@ -3969,29 +4299,40 @@ document.addEventListener("DOMContentLoaded", async () => {
   } catch (err) {
     console.error("❌ Falha ao carregar ContFlow da API:", err);
 
-    forceDefaultColumns([
-      { key: "cod", label: "Cód." },
-      { key: "razao_social", label: "Razão Social" },
-      { key: "cnpj_cpf", label: "CNPJ/CPF" },
-      { key: "trib", label: "Trib." },
-      { key: "grupo", label: "Grupo" },
-      { key: "resp1", label: "Resp.1" },
-      { key: "resp2", label: "Resp.2" },
-      { key: "tipo", label: "Tipo" },
-      { key: "num_quotas", label: "Num Quotas" },
-      { key: "quota1", label: "1º quota" },
-      { key: "quota2", label: "2º quota" },
-      { key: "quota3", label: "3º quota" },
-      { key: "obs", label: "Obs" },
-      { key: "mit", label: "MIT" },
-      { key: "controle_mit", label: "Controle de MIT" },
-    ]);
+    const localDraft = loadLocalDraft();
+    if (localDraft) {
+      try {
+        hydrateContFlowFromApiPayload(localDraft);
+        console.log("🟡 ContFlow carregado do rascunho local.");
+      } catch (localErr) {
+        console.error("❌ Falha ao carregar rascunho local do ContFlow:", localErr);
+      }
+    }
 
-    cfData = Array.from({ length: 15 }, () => createEmptyRow());
-    CF_COLUMNS.forEach((c) => setDefaultWidthForCol(c.key));
-    markStructureDirty();
+    if (!localDraft) {
+      forceDefaultColumns([
+        { key: "cod", label: "Cód." },
+        { key: "razao_social", label: "Razão Social" },
+        { key: "cnpj_cpf", label: "CNPJ/CPF" },
+        { key: "trib", label: "Trib." },
+        { key: "grupo", label: "Grupo" },
+        { key: "resp1", label: "Resp.1" },
+        { key: "resp2", label: "Resp.2" },
+        { key: "tipo", label: "Tipo" },
+        { key: "num_quotas", label: "Num Quotas" },
+        { key: "quota1", label: "1º quota" },
+        { key: "quota2", label: "2º quota" },
+        { key: "quota3", label: "3º quota" },
+        { key: "obs", label: "Obs" },
+        { key: "mit", label: "MIT" },
+        { key: "controle_mit", label: "Controle de MIT" },
+      ]);
 
-    console.log("⚠️ ContFlow iniciado com estrutura vazia, sem fallback local.");
+      cfData = Array.from({ length: 15 }, () => createEmptyRow());
+      CF_COLUMNS.forEach((c) => setDefaultWidthForCol(c.key));
+      markStructureDirty();
+      console.log("⚠️ ContFlow iniciado com estrutura vazia, sem fallback local.");
+    }
   }
 
   rebuildViewMap();

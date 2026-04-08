@@ -15,6 +15,12 @@ const PYTHON_SCRIPT = path.join(
   "reconciliador",
   "reconciliador_api.py"
 );
+const PYTHON_FORNECEDORES_SCRIPT = path.join(
+  ROOT_DIR,
+  "scripts",
+  "reconciliador",
+  "reconciliador_fornecedores_api.py"
+);
 
 fs.mkdirSync(UPLOADS_DIR, { recursive: true });
 fs.mkdirSync(RECON_DIR, { recursive: true });
@@ -40,6 +46,18 @@ router.get("/health", (req, res) => {
     ok: true,
     pythonScript: PYTHON_SCRIPT,
     pythonExists: fs.existsSync(PYTHON_SCRIPT),
+    pythonFornecedoresScript: PYTHON_FORNECEDORES_SCRIPT,
+    pythonFornecedoresExists: fs.existsSync(PYTHON_FORNECEDORES_SCRIPT),
+    uploadsDir: UPLOADS_DIR,
+    reconDir: RECON_DIR,
+  });
+});
+
+router.get("/fornecedores/health", (req, res) => {
+  res.json({
+    ok: true,
+    pythonScript: PYTHON_FORNECEDORES_SCRIPT,
+    pythonExists: fs.existsSync(PYTHON_FORNECEDORES_SCRIPT),
     uploadsDir: UPLOADS_DIR,
     reconDir: RECON_DIR,
   });
@@ -116,6 +134,102 @@ router.post(
       if (code !== 0) {
         return res.status(500).json({
           error: "Falha ao processar reconciliação.",
+          code,
+          stdout,
+          stderr,
+        });
+      }
+
+      if (!fs.existsSync(outputPath)) {
+        return res.status(500).json({
+          error: "O arquivo final não foi gerado.",
+          stdout,
+          stderr,
+        });
+      }
+
+      return res.download(outputPath, outputName);
+    });
+  }
+);
+
+router.post(
+  "/fornecedores/processar",
+  upload.fields([
+    { name: "arquivo_contabil", maxCount: 1 },
+    { name: "arquivo_fornecedor", maxCount: 1 },
+  ]),
+  (req, res) => {
+    const arquivoContabil = req.files?.arquivo_contabil?.[0];
+    const arquivoFornecedor = req.files?.arquivo_fornecedor?.[0];
+    const nomeEmpresa = String(req.body?.nome_empresa || "API").trim();
+    const usarFuzzy = String(req.body?.usar_fuzzy || "true").trim().toLowerCase() !== "false";
+    const limiarFuzzy = String(req.body?.limiar_fuzzy || "0.88").trim();
+    const tolerancia = String(req.body?.tolerancia || "0.01").trim();
+
+    if (!arquivoContabil) {
+      return res.status(400).json({ error: "Arquivo contábil não enviado." });
+    }
+
+    if (!arquivoFornecedor) {
+      return res.status(400).json({ error: "Arquivo do fornecedor não enviado." });
+    }
+
+    const outputName = `reconciliacao_fornecedores_${Date.now()}.xlsx`;
+    const outputPath = path.join(RECON_DIR, outputName);
+
+    let stdout = "";
+    let stderr = "";
+
+    const py = spawn(
+      "python",
+      [
+        PYTHON_FORNECEDORES_SCRIPT,
+        arquivoContabil.path,
+        arquivoFornecedor.path,
+        outputPath,
+        nomeEmpresa,
+        String(usarFuzzy),
+        limiarFuzzy,
+        tolerancia,
+      ],
+      {
+        cwd: ROOT_DIR,
+        shell: false,
+      }
+    );
+
+    py.stdout.on("data", (data) => {
+      stdout += data.toString();
+    });
+
+    py.stderr.on("data", (data) => {
+      stderr += data.toString();
+    });
+
+    py.on("error", (err) => {
+      return res.status(500).json({
+        error: "Erro ao iniciar Python",
+        detail: err.message,
+      });
+    });
+
+    py.on("close", (code) => {
+      try {
+        if (arquivoContabil?.path && fs.existsSync(arquivoContabil.path)) {
+          fs.unlinkSync(arquivoContabil.path);
+        }
+      } catch {}
+
+      try {
+        if (arquivoFornecedor?.path && fs.existsSync(arquivoFornecedor.path)) {
+          fs.unlinkSync(arquivoFornecedor.path);
+        }
+      } catch {}
+
+      if (code !== 0) {
+        return res.status(500).json({
+          error: "Falha ao processar reconciliação de fornecedores.",
           code,
           stdout,
           stderr,
