@@ -52,6 +52,17 @@ function normalizeColumnInput(col, index) {
   };
 }
 
+function normalizeCellPatchInput(change) {
+  return {
+    rowId: String(change?.rowId || change?.clientRowId || "").trim(),
+    colKey: String(change?.colKey || "").trim(),
+    value: change?.value == null ? "" : String(change.value),
+    expectedUpdatedAt: change?.expectedUpdatedAt
+      ? String(change.expectedUpdatedAt).trim()
+      : "",
+  };
+}
+
 function ensureBackupRoot() {
   fs.mkdirSync(SHEET_BACKUP_ROOT, { recursive: true });
 }
@@ -352,6 +363,193 @@ async function replaceSheetData(tx, sheet, columns, rawData, nextVersion) {
   };
 }
 
+async function patchSheetCells(tx, sheet, incomingChanges, actor) {
+  const normalizedChanges = (Array.isArray(incomingChanges) ? incomingChanges : [])
+    .map((change) => normalizeCellPatchInput(change))
+    .filter((change) => change.rowId && change.colKey);
+
+  if (!normalizedChanges.length) {
+    throw new Error("Nenhuma célula válida foi enviada.");
+  }
+
+  const dedupedChanges = Array.from(
+    new Map(
+      normalizedChanges.map((change) => [
+        `${change.rowId}::${change.colKey}`,
+        change,
+      ])
+    ).values()
+  );
+
+  const [rows, columns] = await Promise.all([
+    tx.sheetRow.findMany({
+      where: {
+        sheetId: sheet.id,
+        deletedAt: null,
+        active: true,
+        clientRowId: {
+          in: dedupedChanges.map((change) => change.rowId),
+        },
+      },
+    }),
+    tx.sheetColumn.findMany({
+      where: {
+        sheetId: sheet.id,
+        deletedAt: null,
+        active: true,
+      },
+      select: {
+        key: true,
+      },
+    }),
+  ]);
+
+  const rowMap = new Map(rows.map((row) => [String(row.clientRowId), row]));
+  const validColumnKeys = new Set(columns.map((column) => String(column.key || "").trim()));
+  const targetRowIds = rows.map((row) => row.id);
+
+  const existingCells = await tx.sheetCell.findMany({
+    where: {
+      sheetId: sheet.id,
+      deletedAt: null,
+      rowId: {
+        in: targetRowIds.length ? targetRowIds : [-1],
+      },
+      colKey: {
+        in: dedupedChanges.map((change) => change.colKey),
+      },
+    },
+  });
+
+  const existingCellMap = new Map(
+    existingCells.map((cell) => [`${cell.rowId}::${cell.colKey}`, cell])
+  );
+
+  const actorId = Number(actor?.id);
+  const conflicts = [];
+  const invalid = [];
+  const operations = [];
+
+  dedupedChanges.forEach((change) => {
+    const row = rowMap.get(change.rowId);
+
+    if (!row) {
+      invalid.push({
+        rowId: change.rowId,
+        colKey: change.colKey,
+        reason: "row_not_found",
+      });
+      return;
+    }
+
+    if (!validColumnKeys.has(change.colKey)) {
+      invalid.push({
+        rowId: change.rowId,
+        colKey: change.colKey,
+        reason: "column_not_found",
+      });
+      return;
+    }
+
+    const existingCell = existingCellMap.get(`${row.id}::${change.colKey}`) || null;
+    const currentValue = existingCell?.value == null ? "" : String(existingCell.value);
+    const nextValue = change.value == null ? "" : String(change.value);
+    const currentUpdatedAt = existingCell?.updatedAt
+      ? existingCell.updatedAt.toISOString()
+      : "";
+
+    if (
+      change.expectedUpdatedAt &&
+      currentUpdatedAt &&
+      change.expectedUpdatedAt !== currentUpdatedAt &&
+      currentValue !== nextValue
+    ) {
+      conflicts.push({
+        rowId: change.rowId,
+        colKey: change.colKey,
+        expectedUpdatedAt: change.expectedUpdatedAt,
+        currentUpdatedAt,
+        currentValue,
+      });
+      return;
+    }
+
+    operations.push({
+      row,
+      existingCell,
+      colKey: change.colKey,
+      value: nextValue,
+    });
+  });
+
+  if (conflicts.length) {
+    const err = new Error("Conflito de atualização em uma ou mais células.");
+    err.code = "CELL_CONFLICT";
+    err.conflicts = conflicts;
+    err.invalid = invalid;
+    throw err;
+  }
+
+  for (const operation of operations) {
+    if (operation.existingCell) {
+      await tx.sheetCell.update({
+        where: {
+          id: operation.existingCell.id,
+        },
+        data: {
+          value: operation.value,
+          type: "text",
+          updatedById: Number.isFinite(actorId) ? actorId : null,
+          deletedAt: null,
+        },
+      });
+      continue;
+    }
+
+    await tx.sheetCell.create({
+      data: {
+        sheetId: sheet.id,
+        rowId: operation.row.id,
+        colKey: operation.colKey,
+        value: operation.value,
+        type: "text",
+        updatedById: Number.isFinite(actorId) ? actorId : null,
+      },
+    });
+  }
+
+  const updatedSheet = await tx.sheet.update({
+    where: { id: sheet.id },
+    data: {
+      version: {
+        increment: 1,
+      },
+    },
+  });
+
+  const [columnsFinal, rowsFinal, cellsFinal] = await Promise.all([
+    tx.sheetColumn.findMany({
+      where: { sheetId: sheet.id, deletedAt: null, active: true },
+      orderBy: { order: "asc" },
+    }),
+    tx.sheetRow.findMany({
+      where: { sheetId: sheet.id, deletedAt: null, active: true },
+      orderBy: { order: "asc" },
+    }),
+    tx.sheetCell.findMany({
+      where: { sheetId: sheet.id, deletedAt: null },
+    }),
+  ]);
+
+  return {
+    updatedSheet,
+    columnsFinal,
+    rowsFinal,
+    cellsFinal,
+    invalid,
+  };
+}
+
 ///////////////////////////////////////////////
 //// CREATE SHEET
 ///////////////////////////////////////////////
@@ -531,6 +729,73 @@ router.get("/:key", async (req, res) => {
   } catch (err) {
     console.error("Erro ao buscar sheet:", err);
     return res.status(500).json({ error: "Erro interno." });
+  }
+});
+
+router.patch("/:key/cells", async (req, res) => {
+  try {
+    const key = String(req.params.key || "").trim();
+    const incomingChanges = Array.isArray(req.body?.changes) ? req.body.changes : [];
+
+    if (!incomingChanges.length) {
+      return res.status(400).json({ error: "Nenhuma célula enviada para atualização." });
+    }
+
+    const sheet = await db.sheet.findFirst({
+      where: { key, deletedAt: null },
+    });
+
+    if (!sheet) {
+      return res.status(404).json({ error: "Sheet não encontrada." });
+    }
+
+    const result = await db.$transaction(async (tx) =>
+      patchSheetCells(tx, sheet, incomingChanges, req.currentUser)
+    );
+
+    return res.json({
+      ok: true,
+      invalid: result.invalid,
+      ...normalizeSheetPayload(
+        result.updatedSheet,
+        result.columnsFinal,
+        result.rowsFinal,
+        result.cellsFinal
+      ),
+    });
+  } catch (err) {
+    if (err?.code === "CELL_CONFLICT") {
+      try {
+        const key = String(req.params.key || "").trim();
+        const currentSheet = await db.sheet.findFirst({
+          where: { key, deletedAt: null },
+        });
+
+        const currentPayload = currentSheet
+          ? await loadFullSheetPayload(currentSheet)
+          : null;
+
+        return res.status(409).json({
+          error: err.message || "Conflito ao salvar células.",
+          conflicts: Array.isArray(err.conflicts) ? err.conflicts : [],
+          invalid: Array.isArray(err.invalid) ? err.invalid : [],
+          current: currentPayload,
+        });
+      } catch (loadErr) {
+        console.error("Erro ao carregar payload após conflito de células:", loadErr);
+        return res.status(409).json({
+          error: err.message || "Conflito ao salvar células.",
+          conflicts: Array.isArray(err.conflicts) ? err.conflicts : [],
+          invalid: Array.isArray(err.invalid) ? err.invalid : [],
+        });
+      }
+    }
+
+    console.error("Erro ao atualizar células da sheet:", err);
+    return res.status(500).json({
+      error: "Erro ao atualizar células da sheet.",
+      details: err?.message || String(err),
+    });
   }
 });
 

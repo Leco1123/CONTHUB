@@ -16,6 +16,7 @@ const CF_BC_NAME = "conthub:contflow:bc";
 =========================== */
 const CF_API_SHEET_KEY = "contflow";
 const CF_API_SHEET_URL = `/api/sheets/${CF_API_SHEET_KEY}`;
+const CF_API_SHEET_CELLS_URL = `${CF_API_SHEET_URL}/cells`;
 const CF_API_IMPORT_URL = `/api/sheets/${CF_API_SHEET_KEY}/import-local`;
 const CF_API_BACKUPS_URL = `${CF_API_SHEET_URL}/backups`;
 const API_MODULES = "/api/admin/modules";
@@ -104,6 +105,7 @@ let CF_COLUMNS = [
 
 let cfData = [];
 let viewMap = [];
+let cfCellMeta = new Map();
 
 let sortState = null;
 let filters = {};
@@ -277,6 +279,22 @@ function getRowIdFromDataIndex(dataIndex) {
 
 function getDirtyCellKey(rowId, colKey) {
   return `${String(rowId || "").trim()}::${String(colKey || "").trim()}`;
+}
+
+function getCellMeta(rowId, colKey) {
+  return cfCellMeta.get(getDirtyCellKey(rowId, colKey)) || null;
+}
+
+function setCellMeta(rowId, colKey, meta = null) {
+  const key = getDirtyCellKey(rowId, colKey);
+  if (!meta) {
+    cfCellMeta.delete(key);
+    return;
+  }
+
+  cfCellMeta.set(key, {
+    updatedAt: meta.updatedAt ? String(meta.updatedAt).trim() : "",
+  });
 }
 
 function isCellMarkedDirty(row, colKey) {
@@ -534,6 +552,7 @@ function hydrateContFlowFromApiPayload(payload) {
     const cols = Array.isArray(payload?.columns) ? payload.columns : [];
     const rows = Array.isArray(payload?.rows) ? payload.rows : [];
     const cells = Array.isArray(payload?.cells) ? payload.cells : [];
+    cfCellMeta = new Map();
 
     CF_COLUMNS = ensureUniqueKeys(
       cols.map((c) => ({
@@ -561,6 +580,7 @@ function hydrateContFlowFromApiPayload(payload) {
     ]);
 
     const rowMap = new Map();
+    const rowIdToClientRowId = new Map();
 
     rows.forEach((r) => {
       const rowObj = {};
@@ -569,6 +589,7 @@ function hydrateContFlowFromApiPayload(payload) {
       });
       rowObj.__id = String(r.clientRowId || genId());
       rowMap.set(Number(r.id), rowObj);
+      rowIdToClientRowId.set(Number(r.id), rowObj.__id);
     });
 
     cells.forEach((cell) => {
@@ -576,6 +597,12 @@ function hydrateContFlowFromApiPayload(payload) {
       if (!rowObj) return;
       if (!(cell.colKey in rowObj)) return;
       rowObj[cell.colKey] = String(cell.value ?? "");
+      const clientRowId = String(rowIdToClientRowId.get(Number(cell.rowId)) || "").trim();
+      if (clientRowId && cell.colKey) {
+        setCellMeta(clientRowId, cell.colKey, {
+          updatedAt: cell.updatedAt || "",
+        });
+      }
     });
 
     cfData = Array.from(rowMap.values());
@@ -596,6 +623,7 @@ function hydrateContFlowFromApiPayload(payload) {
   }
 
   if (isApiDocumentPayload(payload)) {
+    cfCellMeta = new Map();
     CF_COLUMNS = ensureUniqueKeys(
       payload.columns.map((c) => ({
         key: String(c.key || slugKeyFromLabel(c.label || "col")).trim(),
@@ -694,6 +722,49 @@ async function restoreServerBackupById(backupId) {
 
   if (!resp.ok) {
     throw new Error(data?.error || "Erro ao restaurar backup do ContFlow.");
+  }
+
+  return data;
+}
+
+function buildDirtyCellPayload() {
+  const changes = [];
+
+  dirtyCells.forEach((dirtyKey) => {
+    const [rowId, colKey] = String(dirtyKey || "").split("::");
+    if (!rowId || !colKey) return;
+
+    const row = cfData.find((item) => String(item?.__id || "").trim() === rowId);
+    if (!row) return;
+
+    const meta = getCellMeta(rowId, colKey);
+    changes.push({
+      rowId,
+      colKey,
+      value: row[colKey] == null ? "" : String(row[colKey]),
+      expectedUpdatedAt: meta?.updatedAt || "",
+    });
+  });
+
+  return changes;
+}
+
+async function persistDirtyCellsToApi(changes) {
+  const resp = await apiFetch(CF_API_SHEET_CELLS_URL, {
+    method: "PATCH",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ changes }),
+  });
+
+  const data = await resp.json().catch(() => null);
+
+  if (!resp.ok) {
+    const err = new Error(data?.error || "Erro ao salvar células do ContFlow na API.");
+    err.status = Number(resp.status || 500);
+    err.payload = data;
+    throw err;
   }
 
   return data;
@@ -1095,22 +1166,76 @@ async function saveDirtyCells(silent = false) {
   try {
     if (editing) commitEdit();
 
-    if (!hasPendingDirtyChanges()) {
+    if (!dirtyCells.size && !hasStructuralChanges) {
       if (!silent) alert("Não há células pendentes para salvar.");
       return;
     }
 
-    await saveBase(true, { mode: "cells" });
+    if (hasStructuralChanges) {
+      if (!silent) {
+        alert("Há alterações estruturais pendentes. Use o botão de salvar base para evitar sobrescrever a planilha.");
+      }
+      return;
+    }
+
+    const changes = buildDirtyCellPayload();
+    if (!changes.length) {
+      if (!silent) alert("Não há células válidas pendentes para salvar.");
+      return;
+    }
+
+    const prev = lastSavedPayload ? deepClone(lastSavedPayload) : null;
+    const responsePayload = await persistDirtyCellsToApi(changes);
+
+    if (responsePayload && typeof responsePayload === "object") {
+      hydrateContFlowFromApiPayload(responsePayload);
+      rebuildViewMap();
+      renderTable();
+      refreshDirtyVisuals();
+      syncPainelTributarioFromContFlow(true);
+      saveLocalDraft(buildServerPayload());
+    }
+
+    const nextPayload = buildServerPayload();
+    const delta = computeDelta(prev, nextPayload);
+
+    publishContFlowUpdate({
+      ts: new Date().toISOString(),
+      kind: "contflow_update",
+      saveMode: "cells",
+      summary: {
+        added: delta.added.length,
+        changed: delta.changed.length,
+        removed: delta.removed.length,
+      },
+      delta: {
+        added: delta.added.slice(0, 60),
+        changed: delta.changed.slice(0, 60),
+        removed: delta.removed.slice(0, 60),
+      },
+    });
 
     if (!silent) {
-      if (hasStructuralChanges) {
-        alert("Células pendentes e ajustes estruturais salvos ✅");
-      } else {
-        alert("Células pendentes salvas ✅");
-      }
+      alert("Células pendentes salvas ✅");
     }
   } catch (err) {
     console.error("Erro ao salvar células:", err);
+    if (Number(err?.status) === 409 && err?.payload?.current) {
+      try {
+        hydrateContFlowFromApiPayload(err.payload.current);
+        rebuildViewMap();
+        renderTable();
+        refreshDirtyVisuals();
+      } catch (hydrateErr) {
+        console.error("Erro ao hidratar conflito de células:", hydrateErr);
+      }
+
+      if (!silent) {
+        alert("Outra pessoa alterou uma ou mais células antes de você. A base foi recarregada com a versão mais recente.");
+      }
+      throw err;
+    }
+
     if (!silent) alert("Erro ao salvar células.");
     throw err;
   }
@@ -3853,9 +3978,9 @@ function injectExtraStyles() {
   const st = document.createElement("style");
   st.id = "cf-extra-styles";
   st.textContent = `
-    .cf-cell.is-editing{ outline:2px solid rgba(78,204,163,.9)!important; outline-offset:-2px; background:rgba(78,204,163,.08)!important; }
-    .cf-cell.is-row-active{ background:rgba(255,255,255,.02); }
-    .cf-cell.is-col-active{ background:rgba(255,255,255,.015); }
+    .cf-cell.is-editing{ outline:2px solid rgba(78,204,163,.9)!important; outline-offset:-2px; background:var(--cf-active-bg)!important; box-shadow: inset 0 0 0 9999px var(--cf-active-bg); }
+    .cf-cell.is-row-active{ background:var(--cf-row-active-bg); box-shadow: inset 0 0 0 9999px var(--cf-row-active-bg); }
+    .cf-cell.is-col-active{ background:var(--cf-col-active-bg); box-shadow: inset 0 0 0 9999px var(--cf-col-active-bg); }
     .cf-cell.is-find-hit{ box-shadow: inset 0 0 0 9999px rgba(56,189,248,.12); }
     .cf-cell.is-find-current{ outline:2px solid rgba(56,189,248,.95)!important; outline-offset:-2px; }
     .cf-cell.is-dirty{ box-shadow: inset 0 0 0 9999px rgba(250,204,21,.10); border-color: rgba(250,204,21,.35)!important; }

@@ -4,11 +4,6 @@
     "equipe": "Equipe Matheus",
     "accessProfile": "ti"
   },
-  "3": {
-    "coordenador": "Matheus",
-    "equipe": "Equipe Matheus",
-    "accessProfile": "operacional"
-  },
   "10": {
     "coordenador": "Marcos",
     "equipe": "Equipe Marcos",
@@ -67,11 +62,6 @@
   "26": {
     "coordenador": "Leticia",
     "equipe": "Equipe Leticia",
-    "accessProfile": "operacional"
-  },
-  "27": {
-    "coordenador": "Marcos",
-    "equipe": "Equipe Marcos",
     "accessProfile": "operacional"
   },
   "28": {
@@ -134,11 +124,6 @@
     "equipe": "Equipe Marcos",
     "accessProfile": "operacional"
   },
-  "martha.anjos@franco-rnc.com.br": {
-    "coordenador": "Marcos",
-    "equipe": "Equipe Marcos",
-    "accessProfile": "operacional"
-  },
   "igor.oliveira@franco-rnc.com.br": {
     "coordenador": "Cleide",
     "equipe": "Equipe Cleide",
@@ -195,11 +180,6 @@
     "accessProfile": "operacional"
   },
   "caua.sakugawa@franco-rnc.com.br": {
-    "coordenador": "Matheus",
-    "equipe": "Equipe Matheus",
-    "accessProfile": "operacional"
-  },
-  "gabriel.lopes@franco-rnc.com.br": {
     "coordenador": "Matheus",
     "equipe": "Equipe Matheus",
     "accessProfile": "operacional"

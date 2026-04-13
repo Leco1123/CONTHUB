@@ -917,6 +917,10 @@ button.btn-acao {
 ========================================================= */
 .cf-cell {
   position: relative;
+  --cf-selection-bg: #12372f;
+  --cf-active-bg: #0e2b26;
+  --cf-row-active-bg: #0c1825;
+  --cf-col-active-bg: #0b1d2a;
 }
 
 .cf-input {
@@ -1011,25 +1015,27 @@ button.btn-acao {
    SELECTION / FIND / DIRTY
 ========================================================= */
 .cf-cell.is-selected {
-  background: rgba(78, 204, 163, 0.14) !important;
+  background: var(--cf-selection-bg) !important;
+  box-shadow: inset 0 0 0 9999px var(--cf-selection-bg);
 }
 
 .cf-cell.is-selected .cf-input,
 .cf-cell.is-selected .cf-read {
-  background: rgba(78, 204, 163, 0.14) !important;
+  background: var(--cf-selection-bg) !important;
 }
 
 .cf-cell.is-active {
   outline: 2px solid var(--accent);
   outline-offset: -2px;
   z-index: 2;
-  background: rgba(78, 204, 163, 0.08) !important;
+  background: var(--cf-active-bg) !important;
+  box-shadow: inset 0 0 0 9999px var(--cf-active-bg);
 }
 
 .cf-cell.is-active .cf-input,
 .cf-cell.is-active .cf-read,
 .cf-cell.is-active .cf-input:focus {
-  background: rgba(78, 204, 163, 0.08) !important;
+  background: var(--cf-active-bg) !important;
 }
 
 .cf-cell.is-find-hit {
@@ -1682,11 +1688,11 @@ body.sidebar-open .overlay {
 }
 
 #pt-table .cf-cell.pt-frozen-col.is-selected {
-  --pt-cell-freeze-bg: rgba(78, 204, 163, 0.14);
+  --pt-cell-freeze-bg: #12372f;
 }
 
 #pt-table .cf-cell.pt-frozen-col.is-active {
-  --pt-cell-freeze-bg: rgba(78, 204, 163, 0.08);
+  --pt-cell-freeze-bg: #0e2b26;
 }
 
 #pt-table .cf-cell.pt-frozen-col.pt-frozen-col-last {
