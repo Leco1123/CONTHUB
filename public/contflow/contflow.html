@@ -723,10 +723,34 @@
           🗑 Excluir seleção
         </button>
       </div>
+
+      <section id="pt-backups-panel" class="cf-backups-panel" hidden>
+        <div class="cf-backups-head">
+          <div>
+            <strong>Histórico de backups</strong>
+            <p class="muted">Cada salvamento do Painel Tributário gera uma versão anterior automática.</p>
+          </div>
+
+          <div class="cf-backups-head-actions">
+            <button id="pt-backups-refresh" class="cf-btn cf-btn--ghost" type="button">
+              Atualizar
+            </button>
+            <button id="pt-backups-close" class="cf-btn cf-btn--ghost" type="button">
+              Fechar
+            </button>
+          </div>
+        </div>
+
+        <div id="pt-backups-status" class="cf-backups-status muted">
+          Carregando backups...
+        </div>
+
+        <div id="pt-backups-list" class="cf-backups-list"></div>
+      </section>
     </div>
 
     <script src="./contflow.js?v=20260427-12"></script>
-    <script src="./painel-tributario-sheet.js?v=20260427-12"></script>
+    <script src="./painel-tributario-sheet.js?v=20260428-01"></script>
     <script src="./painel-tributario-lr-sheet.js?v=20260427-12"></script>
   </body>
 </html>

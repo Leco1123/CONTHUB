@@ -5,6 +5,8 @@ window.PainelTributarioSheet = (() => {
   const API_SHEET_KEY = "painel-tributario";
   const API_SHEET_URL = `/api/sheets/${API_SHEET_KEY}`;
   const API_SHEET_CELLS_URL = `${API_SHEET_URL}/cells`;
+  const API_SHEET_BACKUPS_URL = `${API_SHEET_URL}/backups`;
+  const BACKUPS_KEY = "conthub:contflow:painel-tributario:local-backups";
   const POLL_INTERVAL_MS = 8000;
   const MAX_ROWS_START = 15;
 
@@ -101,6 +103,7 @@ window.PainelTributarioSheet = (() => {
     let lastSavedPayload = null;
     let pollTimer = null;
     let clipboardTextCache = "";
+    let painelServerBackups = [];
 
   function activeView() {
     return String(document.querySelector(".cf-view-btn.is-active")?.dataset.view || "contflow");
@@ -281,6 +284,33 @@ window.PainelTributarioSheet = (() => {
       err.status = Number(resp.status || 500);
       err.payload = data;
       throw err;
+    }
+
+    return data;
+  }
+
+  async function loadServerBackups() {
+    const resp = await apiFetch(API_SHEET_BACKUPS_URL, { method: "GET" });
+    const data = await resp.json().catch(() => null);
+
+    if (!resp.ok) {
+      throw new Error(data?.error || "Erro ao carregar backups do Painel Tributário.");
+    }
+
+    return Array.isArray(data?.backups) ? data.backups : [];
+  }
+
+  async function restoreServerBackupById(backupId) {
+    const resp = await apiFetch(`${API_SHEET_BACKUPS_URL}/${encodeURIComponent(String(backupId || "").trim())}/restore`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    });
+
+    const data = await resp.json().catch(() => null);
+
+    if (!resp.ok) {
+      throw new Error(data?.error || "Erro ao restaurar backup do Painel Tributário.");
     }
 
     return data;
@@ -1211,6 +1241,269 @@ window.PainelTributarioSheet = (() => {
     sheetRows.splice(insertAfter + 1, 0, ...clones);
     state.dirty = true;
     renderTable();
+  }
+
+  function formatBackupDate(value) {
+    if (!value) return "Data indisponível";
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return String(value);
+    return date.toLocaleString("pt-BR");
+  }
+
+  function getLocalBackupActorLabel() {
+    const user = typeof getSessionUser === "function" ? getSessionUser() : null;
+    return String(user?.email || user?.name || "Navegador local");
+  }
+
+  function loadLocalBackups() {
+    try {
+      const raw = window.localStorage.getItem(BACKUPS_KEY);
+      if (!raw) return [];
+      const backups = JSON.parse(raw);
+      return Array.isArray(backups) ? backups : [];
+    } catch (err) {
+      console.warn("Erro ao ler backups locais do Painel Tributário:", err);
+      return [];
+    }
+  }
+
+  function saveLocalBackups(backups) {
+    try {
+      window.localStorage.setItem(
+        BACKUPS_KEY,
+        JSON.stringify(Array.isArray(backups) ? backups.slice(0, 100) : [])
+      );
+    } catch (err) {
+      console.warn("Erro ao salvar backups locais do Painel Tributário:", err);
+    }
+  }
+
+  function createLocalBackupSnapshot(reason = "before_local_save", payload = null) {
+    const basePayload = payload && typeof payload === "object" ? payload : buildServerPayload();
+    const createdAt = new Date().toISOString();
+    const backupId = `local-${createdAt.replace(/[:.]/g, "-")}`;
+    const backups = loadLocalBackups();
+
+    backups.unshift({
+      backupId,
+      createdAt,
+      updatedAt: createdAt,
+      snapshotVersion: Number(lastSavedPayload?.version || 0),
+      reason,
+      source: "local",
+      actor: {
+        email: getLocalBackupActorLabel(),
+      },
+      snapshot: deepClone(basePayload),
+    });
+
+    saveLocalBackups(backups);
+    return backups[0];
+  }
+
+  function getBackupReasonLabel(reason) {
+    const key = String(reason || "").trim().toLowerCase();
+    if (key === "before_update") return "Antes de salvar";
+    if (key === "before_restore") return "Antes de restaurar";
+    if (key === "before_local_save") return "Backup local";
+    if (key === "local_restore_point") return "Antes de restaurar local";
+    return key || "Backup";
+  }
+
+  function resetLocalStateAfterRestore() {
+    state.activeRow = 0;
+    state.activeCol = 0;
+    state.selectionAnchor = null;
+    state.lastSelectionBounds = null;
+    state.mouseSelecting = false;
+    state.dirty = false;
+  }
+
+  function getBackupsPanelElements() {
+    return {
+      panel: document.getElementById("pt-backups-panel"),
+      list: document.getElementById("pt-backups-list"),
+      status: document.getElementById("pt-backups-status"),
+    };
+  }
+
+  function setBackupsPanelStatus(message = "", tone = "neutral") {
+    const { status } = getBackupsPanelElements();
+    if (!status) return;
+    status.textContent = String(message || "");
+    status.classList.toggle("text-danger", tone === "error");
+  }
+
+  function renderBackupsPanel() {
+    const { panel, list } = getBackupsPanelElements();
+    if (!panel || !list) return;
+
+    list.innerHTML = "";
+
+    if (!painelServerBackups.length) {
+      const empty = document.createElement("div");
+      empty.className = "cf-backup-empty";
+      empty.textContent = "Ainda não existe backup salvo para o Painel Tributário.";
+      list.appendChild(empty);
+      return;
+    }
+
+    painelServerBackups.forEach((backup) => {
+      const card = document.createElement("article");
+      card.className = "cf-backup-card";
+
+      const main = document.createElement("div");
+      main.className = "cf-backup-card-main";
+
+      const title = document.createElement("div");
+      title.className = "cf-backup-card-title";
+
+      const name = document.createElement("strong");
+      name.textContent = formatBackupDate(backup.createdAt || backup.updatedAt);
+
+      const reason = document.createElement("span");
+      reason.className = "cf-backup-pill";
+      reason.textContent = getBackupReasonLabel(backup.reason);
+
+      title.appendChild(name);
+      title.appendChild(reason);
+
+      if (String(backup?.source || "").toLowerCase() === "local") {
+        const localPill = document.createElement("span");
+        localPill.className = "cf-backup-pill";
+        localPill.textContent = "Local";
+        title.appendChild(localPill);
+      }
+
+      const meta = document.createElement("div");
+      meta.className = "cf-backup-card-meta";
+
+      const version = document.createElement("span");
+      version.textContent = `Versão ${Number(backup.snapshotVersion || 0)}`;
+
+      const actor = document.createElement("span");
+      actor.textContent = backup?.actor?.email
+        ? `Por ${backup.actor.email}`
+        : "Autor não identificado";
+
+      const file = document.createElement("span");
+      file.textContent = String(backup.backupId || "");
+
+      meta.appendChild(version);
+      meta.appendChild(actor);
+      meta.appendChild(file);
+
+      main.appendChild(title);
+      main.appendChild(meta);
+
+      const actions = document.createElement("div");
+      actions.className = "cf-backup-card-actions";
+
+      const restoreBtn = document.createElement("button");
+      restoreBtn.type = "button";
+      restoreBtn.className = "cf-btn";
+      restoreBtn.textContent = "Restaurar";
+      restoreBtn.addEventListener("click", () => {
+        handleBackupRestore(backup);
+      });
+
+      actions.appendChild(restoreBtn);
+      card.appendChild(main);
+      card.appendChild(actions);
+      list.appendChild(card);
+    });
+  }
+
+  async function refreshBackupsPanel(options = {}) {
+    const { panel } = getBackupsPanelElements();
+    if (!panel) return;
+
+    if (!options.silent) {
+      setBackupsPanelStatus("Carregando backups...");
+    }
+
+    try {
+      const remoteBackups = await loadServerBackups();
+      const localBackups = loadLocalBackups();
+      painelServerBackups = [...remoteBackups, ...localBackups].sort((a, b) =>
+        String(b.createdAt || b.updatedAt || "").localeCompare(String(a.createdAt || a.updatedAt || ""))
+      );
+      renderBackupsPanel();
+      setBackupsPanelStatus(
+        painelServerBackups.length
+          ? `${painelServerBackups.length} backup(s) disponível(is).`
+          : "Nenhum backup disponível ainda."
+      );
+    } catch (err) {
+      console.error("Erro ao carregar backups do Painel Tributário:", err);
+      painelServerBackups = loadLocalBackups();
+      renderBackupsPanel();
+      if (painelServerBackups.length) {
+        setBackupsPanelStatus("API indisponível. Exibindo backups locais do navegador.");
+      } else {
+        setBackupsPanelStatus(err?.message || "Erro ao carregar backups.", "error");
+      }
+    }
+  }
+
+  async function openBackupsPanel() {
+    const { panel } = getBackupsPanelElements();
+    if (!panel) return;
+    openModal("base");
+    panel.hidden = false;
+    await refreshBackupsPanel();
+  }
+
+  function closeBackupsPanel() {
+    const { panel } = getBackupsPanelElements();
+    if (!panel) return;
+    panel.hidden = true;
+  }
+
+  async function handleBackupRestore(backup) {
+    const backupId = String(backup?.backupId || "").trim();
+    if (!backupId) return;
+
+    const ok = confirm(
+      `Restaurar o Painel Tributário para o backup de ${formatBackupDate(backup.createdAt || backup.updatedAt)}?\n\nA versão atual será salva automaticamente antes da restauração.`
+    );
+    if (!ok) return;
+
+    if (String(backup?.source || "").toLowerCase() === "local") {
+      try {
+        createLocalBackupSnapshot("local_restore_point");
+        hydrateFromApiPayload(backup.snapshot || {});
+        saveState();
+        resetLocalStateAfterRestore();
+        renderTable();
+        emitRevenueMirrorChange();
+        await refreshBackupsPanel({ silent: true });
+        setBackupsPanelStatus("Backup local restaurado com sucesso.");
+        alert("Backup local restaurado ✅");
+      } catch (err) {
+        console.error("Erro ao restaurar backup local do Painel Tributário:", err);
+        setBackupsPanelStatus(err?.message || "Erro ao restaurar backup local.", "error");
+        alert(err?.message || "Erro ao restaurar backup local.");
+      }
+      return;
+    }
+
+    try {
+      setBackupsPanelStatus("Restaurando backup...");
+      const payload = await restoreServerBackupById(backupId);
+      hydrateFromApiPayload(payload);
+      saveState();
+      resetLocalStateAfterRestore();
+      renderTable();
+      emitRevenueMirrorChange();
+      await refreshBackupsPanel({ silent: true });
+      setBackupsPanelStatus("Backup restaurado com sucesso.");
+      alert("Backup restaurado ✅");
+    } catch (err) {
+      console.error("Erro ao restaurar backup do Painel Tributário:", err);
+      setBackupsPanelStatus(err?.message || "Erro ao restaurar backup.", "error");
+      alert(err?.message || "Erro ao restaurar backup.");
+    }
   }
 
   function deleteSelectedRows() {
@@ -2350,6 +2643,7 @@ window.PainelTributarioSheet = (() => {
   async function saveBase(options = {}) {
     try {
       const payload = buildServerPayload();
+      createLocalBackupSnapshot("before_local_save", payload);
       const response = await persistBaseToApi(payload);
       if (response) hydrateFromApiPayload(response);
       saveState();
@@ -2374,6 +2668,7 @@ window.PainelTributarioSheet = (() => {
     renderQuotaPanel();
     document.getElementById("pt-modal")?.classList.add("is-open");
     document.getElementById("pt-modal-backdrop")?.classList.add("is-open");
+    closeBackupsPanel();
   }
 
   function closeModal() {
@@ -2384,6 +2679,7 @@ window.PainelTributarioSheet = (() => {
     renderQuotaPanel();
     document.getElementById("pt-modal")?.classList.remove("is-open");
     document.getElementById("pt-modal-backdrop")?.classList.remove("is-open");
+    closeBackupsPanel();
   }
 
   function switchView(view) {
@@ -2448,6 +2744,30 @@ window.PainelTributarioSheet = (() => {
     document.getElementById("pt-base-btn")?.addEventListener("click", () => openModal("base"));
     document.getElementById("pt-modal-close")?.addEventListener("click", closeModal);
     document.getElementById("pt-modal-backdrop")?.addEventListener("click", closeModal);
+    document.getElementById("pt-backups-refresh")?.addEventListener("click", () => {
+      refreshBackupsPanel().catch((err) => console.error("Erro ao atualizar backups:", err));
+    });
+    document.getElementById("pt-backups-close")?.addEventListener("click", closeBackupsPanel);
+
+    const modalActions = document.querySelector("#pt-modal .cf-modal-actions");
+    if (modalActions && !modalActions.dataset.ptBackupEnhanced) {
+      modalActions.dataset.ptBackupEnhanced = "1";
+
+      const extra = document.createElement("div");
+      extra.className = "cf-modal-extra-actions";
+      extra.style.marginTop = "10px";
+
+      const backupsBtn = document.createElement("button");
+      backupsBtn.className = "cf-btn";
+      backupsBtn.type = "button";
+      backupsBtn.textContent = "Histórico de backups";
+      backupsBtn.onclick = () => {
+        openBackupsPanel().catch((err) => console.error("Erro ao abrir histórico de backups:", err));
+      };
+
+      extra.appendChild(backupsBtn);
+      modalActions.appendChild(extra);
+    }
 
     document.getElementById("pt-add-row")?.addEventListener("click", () => {
       addRow();

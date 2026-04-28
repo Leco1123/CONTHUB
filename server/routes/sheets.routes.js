@@ -6,6 +6,7 @@ const db = require("../db");
 
 const SHEET_BACKUP_ROOT = path.join(__dirname, "..", "data", "sheet-backups");
 const MAX_BACKUPS_PER_SHEET = 100;
+const AUTO_BACKUP_SHEET_KEYS = new Set(["contflow", "painel-tributario"]);
 
 function getSheetCellsQuery(sheetId, includeDeleted = false) {
   return {
@@ -852,7 +853,7 @@ router.put("/:key", async (req, res) => {
     }
 
     let backupMeta = null;
-    if (key === "contflow") {
+    if (AUTO_BACKUP_SHEET_KEYS.has(key)) {
       const previousPayload = await loadFullSheetPayload(sheet);
       backupMeta = createSheetBackup(sheet, previousPayload, req.currentUser, "before_update");
     }
