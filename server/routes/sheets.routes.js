@@ -4,7 +4,9 @@ const path = require("path");
 const router = express.Router();
 const db = require("../db");
 
-const SHEET_BACKUP_ROOT = path.join(__dirname, "..", "data", "sheet-backups");
+const SHEET_BACKUP_ROOT = process.env.SHEET_BACKUP_ROOT
+  ? path.resolve(process.env.SHEET_BACKUP_ROOT)
+  : path.join(__dirname, "..", "data", "sheet-backups");
 const MAX_BACKUPS_PER_SHEET = 100;
 const AUTO_BACKUP_SHEET_KEYS = new Set(["contflow", "painel-tributario"]);
 

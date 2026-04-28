@@ -1525,12 +1525,7 @@ window.PainelTributarioSheet = (() => {
     renderTable();
   }
 
-  function exportJson() {
-    const payload = {
-      sheetIndex: state.sheetIndex,
-      rows: currentSheet(),
-    };
-
+  function downloadJsonFile(payload, fileName) {
     const blob = new Blob([JSON.stringify(payload, null, 2)], {
       type: "application/json",
     });
@@ -1538,9 +1533,36 @@ window.PainelTributarioSheet = (() => {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `painel_tributario_planilha_${state.sheetIndex + 1}.json`;
+    a.download = fileName;
     a.click();
     URL.revokeObjectURL(url);
+  }
+
+  function exportJson() {
+    const payload = {
+      format: "painel-tributario-current-sheet",
+      exportedAt: new Date().toISOString(),
+      sheetIndex: state.sheetIndex,
+      sheetTitle: SHEET_TITLES[state.sheetIndex],
+      rows: currentSheet(),
+    };
+
+    downloadJsonFile(payload, `painel_tributario_planilha_${state.sheetIndex + 1}.json`);
+  }
+
+  function exportTransferJson() {
+    recalcAll();
+
+    const payload = {
+      format: "painel-tributario-transfer-v1",
+      exportedAt: new Date().toISOString(),
+      activeSheetIndex: state.sheetIndex,
+      sheetTitles: SHEET_TITLES,
+      payload: buildServerPayload(),
+    };
+
+    const stamp = new Date().toISOString().slice(0, 10);
+    downloadJsonFile(payload, `painel_tributario_base_completa_${stamp}.json`);
   }
 
   function getReportCellValue(col, row) {
@@ -1597,6 +1619,32 @@ window.PainelTributarioSheet = (() => {
       try {
         const data = JSON.parse(reader.result);
 
+        const transferPayload =
+          data?.format === "painel-tributario-transfer-v1" && data?.payload
+            ? data.payload
+            : data?.version && Array.isArray(data?.columns) && Array.isArray(data?.data)
+              ? data
+              : null;
+
+        if (transferPayload) {
+          const ok = hydrateFromApiPayload(transferPayload);
+          if (!ok) {
+            alert("Arquivo de base inválido.");
+            return;
+          }
+
+          state.sheetIndex = clamp(Number(data?.activeSheetIndex ?? state.sheetIndex), 0, 3);
+          document
+            .querySelectorAll("#view-painel-tributario .cf-sheet-tab")
+            .forEach((btn) => btn.classList.toggle("is-active", Number(btn.dataset.sheet) === state.sheetIndex));
+          state.lastSelectionBounds = null;
+          state.dirty = true;
+          renderTable();
+          emitRevenueMirrorChange();
+          alert("Base importada. Confira os dados e clique em Salvar base para gravar neste painel.");
+          return;
+        }
+
         if (!data || !Array.isArray(data.rows)) {
           alert("Arquivo inválido.");
           return;
@@ -1618,6 +1666,8 @@ window.PainelTributarioSheet = (() => {
         state.lastSelectionBounds = null;
         state.dirty = true;
         renderTable();
+        emitRevenueMirrorChange();
+        alert("Planilha importada. Confira os dados e clique em Salvar base para gravar neste painel.");
       } catch (err) {
         console.error(err);
         alert("Erro ao importar JSON.");
@@ -2779,12 +2829,21 @@ window.PainelTributarioSheet = (() => {
       closeModal();
     });
 
+    document.getElementById("pt-export-transfer")?.addEventListener("click", () => {
+      exportTransferJson();
+      closeModal();
+    });
+
     document.getElementById("pt-export-xlsx")?.addEventListener("click", () => {
       exportXlsx();
       closeModal();
     });
 
     document.getElementById("pt-export-xlsx-top")?.addEventListener("click", exportXlsx);
+    document.getElementById("pt-export-transfer-top")?.addEventListener("click", exportTransferJson);
+    document.getElementById("pt-import-top")?.addEventListener("click", () => {
+      document.getElementById("pt-import")?.click();
+    });
 
     document.getElementById("pt-import")?.addEventListener("change", (e) => {
       const file = e.target.files?.[0];
