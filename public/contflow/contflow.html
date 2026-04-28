@@ -3,12 +3,16 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="ContFlow é o módulo do ContHub para controle de rotinas contábeis, fluxo operacional, base de clientes e painel tributário."
+    />
     <title>ContFlow • ContHub</title>
 
     <!-- XLSX (import/export) -->
     <script src="/libs/xlsx.full.min.js"></script>
 
-    <link rel="stylesheet" href="./contflow.css" />
+    <link rel="stylesheet" href="./contflow.css?v=20260427-12" />
   </head>
 
   <body>
@@ -174,25 +178,55 @@
         </header>
 
         <!-- SELETOR DE PLANILHAS -->
-        <section class="cf-view-switcher-wrap">
-          <div class="cf-view-switcher">
-            <button class="cf-view-btn is-active" type="button" data-view="contflow">
-              ContFlow
-            </button>
-            <button class="cf-view-btn" type="button" data-view="painel-tributario">
-              Painel Tributário
-            </button>
-          </div>
-        </section>
+          <section class="cf-view-switcher-wrap">
+            <div class="cf-view-switcher">
+              <button class="cf-view-btn is-active" type="button" data-view="contflow">
+                ContFlow
+              </button>
+              <button class="cf-view-btn" type="button" data-view="painel-tributario">
+                Painel Tributário
+              </button>
+              <button class="cf-view-btn" type="button" data-view="painel-tributario-lr">
+                Painel Tributário LR
+              </button>
+            </div>
+          </section>
 
         <!-- VIEW CONTFLOW -->
         <section id="view-contflow" class="cf-view is-active">
           <section class="cf-card">
             <header class="cf-header">
-              <h2>ContFlow</h2>
+              <div class="cf-header-left">
+                <h2 id="cf-sheet-title">1º Trimestre</h2>
+                <div class="cf-sheet-tabs">
+                  <button class="cf-btn cf-main-sheet-tab is-active" type="button" data-cf-sheet="0">
+                    1º Trimestre
+                  </button>
+                  <button class="cf-btn cf-main-sheet-tab" type="button" data-cf-sheet="1">
+                    2º Trimestre
+                  </button>
+                  <button class="cf-btn cf-main-sheet-tab" type="button" data-cf-sheet="2">
+                    3º Trimestre
+                  </button>
+                  <button class="cf-btn cf-main-sheet-tab" type="button" data-cf-sheet="3">
+                    4º Trimestre
+                  </button>
+                </div>
+              </div>
 
               <div class="cf-actions">
+                <input
+                  id="cf-global-search"
+                  class="cf-search"
+                  type="text"
+                  placeholder="Buscar em tudo..."
+                />
                 <button id="cf-save-cells-top" class="cf-btn" type="button">🧩 Salvar células</button>
+                <button id="cf-save-base-top" class="cf-btn" type="button">💾 Salvar base</button>
+                <button id="cf-export-xlsx-top" class="cf-btn cf-btn--ghost" type="button">⬇ Exportar XLSX</button>
+                <button id="cf-clear-filters-top" class="cf-btn cf-btn--ghost" type="button">
+                  Limpar filtros
+                </button>
                 <button id="cf-base-btn" class="cf-btn" type="button">Base</button>
                 <span id="cf-status-bar" class="muted">Linhas: 0 · Selecionadas: 0 x 0</span>
               </div>
@@ -227,16 +261,20 @@
                       <th class="cf-col-header" data-col-index="2">CNPJ/CPF</th>
                       <th class="cf-col-header" data-col-index="3">Trib.</th>
                       <th class="cf-col-header" data-col-index="4">Grupo</th>
-                      <th class="cf-col-header" data-col-index="5">Resp.1</th>
-                      <th class="cf-col-header" data-col-index="6">Resp.2</th>
-                      <th class="cf-col-header" data-col-index="7">Tipo</th>
-                      <th class="cf-col-header" data-col-index="8">Num Quotas</th>
-                      <th class="cf-col-header" data-col-index="9">1º quota</th>
-                      <th class="cf-col-header" data-col-index="10">2º quota</th>
-                      <th class="cf-col-header" data-col-index="11">3º quota</th>
-                      <th class="cf-col-header" data-col-index="12">Obs</th>
-                      <th class="cf-col-header" data-col-index="13">MIT</th>
-                      <th class="cf-col-header" data-col-index="14">Controle de MIT</th>
+                      <th class="cf-col-header" data-col-index="5">Class</th>
+                      <th class="cf-col-header" data-col-index="6">Desligamento</th>
+                      <th class="cf-col-header" data-col-index="7">Status</th>
+                      <th class="cf-col-header" data-col-index="8">Resp.1</th>
+                      <th class="cf-col-header" data-col-index="9">Resp.2</th>
+                      <th class="cf-col-header" data-col-index="10">Tipo</th>
+                      <th class="cf-col-header" data-col-index="11">Num Quotas</th>
+                      <th class="cf-col-header" data-col-index="12">1º quota</th>
+                      <th class="cf-col-header" data-col-index="13">2º quota</th>
+                      <th class="cf-col-header" data-col-index="14">3º quota</th>
+                      <th class="cf-col-header" data-col-index="15">Obs</th>
+                      <th class="cf-col-header" data-col-index="16">MIT</th>
+                      <th class="cf-col-header" data-col-index="17">Controle de MIT</th>
+                      <th class="cf-col-header" data-col-index="18">Inconsistência Athenas</th>
                     </tr>
                   </thead>
 
@@ -281,6 +319,7 @@
                 />
 
                 <button id="pt-save-cells-top" class="cf-btn" type="button">🧩 Salvar células</button>
+                <button id="pt-export-xlsx-top" class="cf-btn cf-btn--ghost" type="button">⬇ Exportar XLSX</button>
                 <button id="pt-base-btn" class="cf-btn" type="button">Base</button>
                 <span id="pt-status-bar" class="muted">Linhas: 0 · Selecionadas: 0 x 0</span>
               </div>
@@ -297,6 +336,7 @@
                     <col style="width: 110px" />
                     <col style="width: 150px" />
                     <col style="width: 90px" />
+                    <col style="width: 120px" />
                     <col style="width: 120px" />
                     <col style="width: 90px" />
                     <col style="width: 120px" />
@@ -352,7 +392,7 @@
 
     <div id="cf-modal" role="dialog" aria-modal="true" aria-label="Base ContFlow">
       <header>
-        <strong>Base ContFlow</strong>
+        <strong id="cf-modal-title">Base ContFlow • 1º Trimestre</strong>
         <button id="cf-modal-close" class="cf-btn cf-btn--ghost" type="button">✕</button>
       </header>
 
@@ -366,8 +406,6 @@
 
         <button id="cf-export" class="cf-btn" type="button">⬇ Exportar CSV</button>
         <button id="cf-export-xlsx" class="cf-btn" type="button">⬇ Exportar XLSX</button>
-
-        <button id="cf-save-base" class="cf-btn" type="button">💾 Salvar base</button>
 
         <button id="cf-delete-selected" class="cf-btn cf-btn--danger" type="button">
           🗑 Excluir seleção
@@ -474,6 +512,198 @@
             </div>
           </div>
         </section>
+
+        <section id="pt-base-total-calc" class="pt-base-total-calc pt-base-total-calc--simple" hidden>
+          <div class="pt-base-total-head">
+            <div class="pt-base-total-head-copy">
+              <span>Memória de cálculo</span>
+              <strong>Total BC</strong>
+              <p>Resumo direto da base, do excedente e do IRPJ calculado no trimestre.</p>
+            </div>
+
+            <div class="pt-base-total-tag">Lucro presumido</div>
+          </div>
+
+          <section class="pt-base-total-hero">
+            <div class="pt-base-total-hero-main">
+              <span>Base de cálculo total</span>
+              <strong id="pt-base-total-banner-base">R$ 0,00</strong>
+            </div>
+
+            <div class="pt-base-total-banner">
+              <div class="pt-base-total-banner-item">
+                <span>Receita bruta</span>
+                <strong id="pt-base-total-banner-receita">R$ 0,00</strong>
+              </div>
+
+              <div class="pt-base-total-banner-item is-highlight">
+                <span>Excedente</span>
+                <strong id="pt-base-total-banner-excedente">R$ 0,00</strong>
+              </div>
+            </div>
+          </section>
+
+          <div class="pt-base-total-layout">
+            <section class="pt-base-total-panel">
+              <div class="pt-base-total-panel-head">
+                <div>
+                  <span>1. Composição</span>
+                  <strong>Como a base foi formada</strong>
+                </div>
+              </div>
+
+              <div class="pt-base-total-grid">
+                <div class="pt-base-total-card">
+                  <span>BC-1</span>
+                  <strong id="pt-base-total-bc1">R$ 0,00</strong>
+                  <small id="pt-base-total-bc1-meta">0,00 x 0,00%</small>
+                </div>
+
+                <div class="pt-base-total-card">
+                  <span>BC-2</span>
+                  <strong id="pt-base-total-bc2">R$ 0,00</strong>
+                  <small id="pt-base-total-bc2-meta">0,00 x 0,00%</small>
+                </div>
+
+                <div class="pt-base-total-card">
+                  <span>BC-3</span>
+                  <strong id="pt-base-total-bc3">R$ 0,00</strong>
+                  <small id="pt-base-total-bc3-meta">0,00 x 0,00%</small>
+                </div>
+              </div>
+
+              <div class="pt-base-total-breakdown">
+                <div class="pt-base-total-row">
+                  <span>Receita bruta do trimestre</span>
+                  <strong id="pt-base-total-receita">R$ 0,00</strong>
+                </div>
+
+                <div class="pt-base-total-row">
+                  <span>Parte calculada na presunção normal</span>
+                  <strong id="pt-base-total-receita-comum">R$ 0,00</strong>
+                </div>
+
+                <div class="pt-base-total-row">
+                  <span>Base normal</span>
+                  <strong id="pt-base-total-base-comum">R$ 0,00</strong>
+                </div>
+
+                <div class="pt-base-total-row">
+                  <span>Base do excedente majorado</span>
+                  <strong id="pt-base-total-base-majorada">R$ 0,00</strong>
+                </div>
+
+                <div class="pt-base-total-row">
+                  <span>Outras receitas</span>
+                  <strong id="pt-base-total-outras">R$ 0,00</strong>
+                </div>
+
+                <div class="pt-base-total-row is-total">
+                  <span>Base de cálculo total</span>
+                  <strong id="pt-base-total-total">R$ 0,00</strong>
+                </div>
+              </div>
+            </section>
+
+            <section class="pt-base-total-panel pt-base-total-panel--accent">
+              <div class="pt-base-total-panel-head">
+                <div>
+                  <span>2. Excedente</span>
+                  <strong>Regra dos R$ 1.250.000,00</strong>
+                </div>
+              </div>
+
+              <div class="pt-base-total-breakdown">
+                <div class="pt-base-total-row">
+                  <span>Limite trimestral</span>
+                  <strong id="pt-base-total-limite">R$ 0,00</strong>
+                </div>
+
+                <div class="pt-base-total-row">
+                  <span>Receita dentro do limite</span>
+                  <strong id="pt-base-total-acum">R$ 0,00</strong>
+                </div>
+
+                <div class="pt-base-total-row">
+                  <span>Receita acima do limite</span>
+                  <strong id="pt-base-total-excedente-acum">R$ 0,00</strong>
+                </div>
+
+                <div class="pt-base-total-row is-total">
+                  <span>Excedente sujeito a +10%</span>
+                  <strong id="pt-base-total-excedente-tri">R$ 0,00</strong>
+                </div>
+              </div>
+
+              <div class="pt-base-total-rateio-head">
+                <span>3. Rateio</span>
+                <strong>Excedente distribuído por base</strong>
+              </div>
+
+              <div class="pt-base-total-grid pt-base-total-grid--stacked">
+                <div class="pt-base-total-card pt-base-total-card--soft">
+                  <span>Rateio BC-1</span>
+                  <strong id="pt-base-total-rateio-1">R$ 0,00</strong>
+                  <small id="pt-base-total-rateio-1-meta">0,00% x 0,00%</small>
+                  <div class="pt-base-total-rateio-lines">
+                    <div class="pt-base-total-rateio-line">
+                      <span>Receita da faixa</span>
+                      <strong id="pt-base-total-rateio-1-receita">R$ 0,00</strong>
+                    </div>
+                    <div class="pt-base-total-rateio-line">
+                      <span>Participação</span>
+                      <strong id="pt-base-total-rateio-1-share">0,00%</strong>
+                    </div>
+                    <div class="pt-base-total-rateio-line">
+                      <span>Excedente rateado</span>
+                      <strong id="pt-base-total-rateio-1-excedente">R$ 0,00</strong>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="pt-base-total-card pt-base-total-card--soft">
+                  <span>Rateio BC-2</span>
+                  <strong id="pt-base-total-rateio-2">R$ 0,00</strong>
+                  <small id="pt-base-total-rateio-2-meta">0,00% x 0,00%</small>
+                  <div class="pt-base-total-rateio-lines">
+                    <div class="pt-base-total-rateio-line">
+                      <span>Receita da faixa</span>
+                      <strong id="pt-base-total-rateio-2-receita">R$ 0,00</strong>
+                    </div>
+                    <div class="pt-base-total-rateio-line">
+                      <span>Participação</span>
+                      <strong id="pt-base-total-rateio-2-share">0,00%</strong>
+                    </div>
+                    <div class="pt-base-total-rateio-line">
+                      <span>Excedente rateado</span>
+                      <strong id="pt-base-total-rateio-2-excedente">R$ 0,00</strong>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="pt-base-total-card pt-base-total-card--soft">
+                  <span>Rateio BC-3</span>
+                  <strong id="pt-base-total-rateio-3">R$ 0,00</strong>
+                  <small id="pt-base-total-rateio-3-meta">0,00% x 0,00%</small>
+                  <div class="pt-base-total-rateio-lines">
+                    <div class="pt-base-total-rateio-line">
+                      <span>Receita da faixa</span>
+                      <strong id="pt-base-total-rateio-3-receita">R$ 0,00</strong>
+                    </div>
+                    <div class="pt-base-total-rateio-line">
+                      <span>Participação</span>
+                      <strong id="pt-base-total-rateio-3-share">0,00%</strong>
+                    </div>
+                    <div class="pt-base-total-rateio-line">
+                      <span>Excedente rateado</span>
+                      <strong id="pt-base-total-rateio-3-excedente">R$ 0,00</strong>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </section>
+          </div>
+        </section>
       </section>
 
       <div class="cf-modal-actions">
@@ -485,6 +715,7 @@
         </label>
 
         <button id="pt-export-json" class="cf-btn" type="button">⬇ Exportar JSON</button>
+        <button id="pt-export-xlsx" class="cf-btn" type="button">⬇ Exportar XLSX</button>
         <button id="pt-save-cells" class="cf-btn" type="button">🧩 Salvar células</button>
         <button id="pt-save-base" class="cf-btn" type="button">💾 Salvar base</button>
 
@@ -494,7 +725,8 @@
       </div>
     </div>
 
-    <script src="./contflow.js"></script>
-    <script src="./painel-tributario-sheet.js"></script>
+    <script src="./contflow.js?v=20260427-12"></script>
+    <script src="./painel-tributario-sheet.js?v=20260427-12"></script>
+    <script src="./painel-tributario-lr-sheet.js?v=20260427-12"></script>
   </body>
 </html>

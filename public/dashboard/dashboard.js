@@ -5,6 +5,13 @@
 (function () {
   let AUTH_USER = null;
   let MODULES_MAP = {};
+  const dashboardTicketsState = {
+    selectedFunction: "",
+    imageDataUrl: "",
+    doc: null,
+    lastSignature: "",
+    pollTimer: null,
+  };
 
   // ----------------------------
   // CONFIG
@@ -13,15 +20,31 @@
   const API_MODULES = `${API_BASE}/api/admin/modules`;
 
   const CONTFLOW_KEY = "conthub:contflow:data";
+  const TICKETS_API_SHEET_KEY = "dashboard-chamados";
+  const TICKETS_API_SHEET_URL = `${API_BASE}/api/sheets/${TICKETS_API_SHEET_KEY}`;
+  const TICKETS_POLL_INTERVAL_MS = 10000;
+  const TICKET_FUNCTIONS = [
+    "Contábil",
+    "Fiscal",
+    "Departamento Pessoal",
+    "Legalização",
+    "Financeiro",
+    "Societário",
+    "Atendimento",
+  ];
+  const TICKET_PRIORITIES = ["baixa", "media", "alta", "critica"];
+  const TICKET_STATUSES = ["aberto", "em_andamento", "aguardando", "concluido"];
+  const MAX_TICKET_IMAGE_SIZE = 2 * 1024 * 1024;
+  dashboardTicketsState.selectedFunction = TICKET_FUNCTIONS[0];
 
   // LEGADO (fallback apenas)
   const CF_SNAPSHOT_PREFIX = "conthub:dashboard:contflow_snapshot:";
   const CF_FEED_PREFIX = "conthub:dashboard:contflow_feed:";
   const NEXT_ACTIONS_PREFIX = "conthub:dashboard:nextActions:";
+  const TICKETS_PREFIX = "conthub:dashboard:tickets:";
 
   const DEFAULT_MANUAL = ["", "", "", ""];
   const DEFAULT_CHECKS = [false, false, false, false, false, false];
-
   const STATUS_LABEL = {
     online: "ONLINE",
     dev: "DEV",
@@ -343,6 +366,656 @@
       saveNextActionsStateLegacy(state);
       return false;
     }
+  }
+
+  // ----------------------------
+  // CHAMADOS (COMPARTILHADO / TI)
+  // ----------------------------
+  function ticketsStorageKey() {
+    return TICKETS_PREFIX + getUserKey();
+  }
+
+  function normalizeAccessProfile(value) {
+    const normalized = String(value || "").trim().toLowerCase();
+    return ["ti", "gerencial", "coordenacao", "operacional", "consulta"].includes(normalized)
+      ? normalized
+      : "operacional";
+  }
+
+  function legacyRoleToAccessProfile(role) {
+    const normalized = String(role || "").trim().toLowerCase();
+    if (normalized === "ti") return "ti";
+    if (normalized === "admin") return "gerencial";
+    return "operacional";
+  }
+
+  function getAccessProfile(user) {
+    return normalizeAccessProfile(
+      user?.accessProfile ||
+      user?.access_profile ||
+      legacyRoleToAccessProfile(user?.role)
+    );
+  }
+
+  function isTiUser() {
+    return getAccessProfile(getSessionUser()) === "ti";
+  }
+
+  function emptyTicketsDocument() {
+    return {
+      version: 1,
+      savedAt: new Date().toISOString(),
+      columns: [
+        { key: "id", label: "ID" },
+        { key: "funcao", label: "Função" },
+        { key: "descricao", label: "Descrição" },
+        { key: "urgencia", label: "Urgência" },
+        { key: "status", label: "Status" },
+        { key: "solicitanteNome", label: "Solicitante" },
+        { key: "solicitanteEmail", label: "Email" },
+        { key: "imagem", label: "Imagem" },
+        { key: "createdAt", label: "Criado em" },
+        { key: "updatedAt", label: "Atualizado em" },
+      ],
+      data: [],
+    };
+  }
+
+  function normalizeTicketRecord(raw) {
+    if (!raw || typeof raw !== "object") return null;
+
+    const id = String(raw.id || "").trim() || `tk_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+    const funcao = TICKET_FUNCTIONS.includes(String(raw.funcao || "").trim())
+      ? String(raw.funcao || "").trim()
+      : TICKET_FUNCTIONS[0];
+    const descricao = String(raw.descricao || raw.title || "").trim().slice(0, 1000);
+    const urgencia = TICKET_PRIORITIES.includes(String(raw.urgencia || raw.priority || "").trim().toLowerCase())
+      ? String(raw.urgencia || raw.priority || "").trim().toLowerCase()
+      : "media";
+    const status = TICKET_STATUSES.includes(String(raw.status || "").trim().toLowerCase())
+      ? String(raw.status || "").trim().toLowerCase()
+      : "aberto";
+    const solicitanteNome = String(raw.solicitanteNome || raw.requesterName || "").trim().slice(0, 160);
+    const solicitanteEmail = String(raw.solicitanteEmail || raw.requesterEmail || "").trim().slice(0, 220);
+    const imagem = /^data:image\//i.test(String(raw.imagem || raw.imageDataUrl || "").trim())
+      ? String(raw.imagem || raw.imageDataUrl || "").trim()
+      : "";
+    const createdAt = String(raw.createdAt || raw.abertoEm || new Date().toISOString()).trim();
+    const updatedAt = String(raw.updatedAt || createdAt || new Date().toISOString()).trim();
+
+    return {
+      id,
+      funcao,
+      descricao,
+      urgencia,
+      status,
+      solicitanteNome,
+      solicitanteEmail,
+      imagem,
+      createdAt,
+      updatedAt,
+    };
+  }
+
+  function normalizeTicketsDocument(payload) {
+    const fallback = emptyTicketsDocument();
+    if (!payload || typeof payload !== "object") return fallback;
+
+    const data = Array.isArray(payload.data)
+      ? payload.data.map(normalizeTicketRecord).filter(Boolean)
+      : [];
+
+    return {
+      version: Number(payload.version || 1) || 1,
+      savedAt: String(payload.savedAt || new Date().toISOString()),
+      columns: Array.isArray(payload.columns) && payload.columns.length ? payload.columns : fallback.columns,
+      data,
+    };
+  }
+
+  function relationalSheetToTicketsDocument(payload) {
+    if (
+      !payload ||
+      !Array.isArray(payload.columns) ||
+      !Array.isArray(payload.rows) ||
+      !Array.isArray(payload.cells)
+    ) {
+      return null;
+    }
+
+    const orderedColumns = payload.columns
+      .slice()
+      .sort((a, b) => Number(a?.order || 0) - Number(b?.order || 0))
+      .map((col) => ({
+        key: String(col?.key || "").trim(),
+        label: String(col?.label || col?.key || "").trim(),
+      }))
+      .filter((col) => col.key);
+
+    const rowMap = new Map();
+    payload.rows
+      .slice()
+      .sort((a, b) => Number(a?.order || 0) - Number(b?.order || 0))
+      .forEach((row) => {
+        const key = String(row?.clientRowId || row?.id || "").trim();
+        if (!key) return;
+        const base = { __id: key };
+        orderedColumns.forEach((col) => {
+          base[col.key] = "";
+        });
+        rowMap.set(Number(row?.id), base);
+      });
+
+    payload.cells.forEach((cell) => {
+      const rowObj = rowMap.get(Number(cell?.rowId));
+      const colKey = String(cell?.colKey || "").trim();
+      if (!rowObj || !colKey) return;
+      rowObj[colKey] = cell?.value == null ? "" : String(cell.value);
+    });
+
+    return normalizeTicketsDocument({
+      version: Number(payload?.sheet?.version || 1) || 1,
+      savedAt: String(payload?.sheet?.updatedAt || new Date().toISOString()),
+      columns: orderedColumns,
+      data: Array.from(rowMap.values()).map((row) => ({
+        id: row.id || row.__id,
+        funcao: row.funcao,
+        descricao: row.descricao,
+        urgencia: row.urgencia,
+        status: row.status,
+        solicitanteNome: row.solicitanteNome,
+        solicitanteEmail: row.solicitanteEmail,
+        imagem: row.imagem,
+        createdAt: row.createdAt,
+        updatedAt: row.updatedAt,
+      })),
+    });
+  }
+
+  function loadTicketsStateLegacy() {
+    const raw = localStorage.getItem(ticketsStorageKey());
+    const data = safeJSONParse(raw, []);
+    const items = Array.isArray(data) ? data.map(normalizeTicketRecord).filter(Boolean) : [];
+    return {
+      ...emptyTicketsDocument(),
+      data: items,
+    };
+  }
+
+  function saveTicketsStateLegacy(doc) {
+    localStorage.setItem(ticketsStorageKey(), JSON.stringify((doc && Array.isArray(doc.data)) ? doc.data : []));
+  }
+
+  async function loadTicketsDocument() {
+    try {
+      const resp = await apiFetch(TICKETS_API_SHEET_URL, { method: "GET" });
+      const data = await resp?.json().catch(() => null);
+      if (!resp || !resp.ok) throw new Error(data?.error || "Falha ao carregar chamados.");
+      return (
+        relationalSheetToTicketsDocument(data) ||
+        normalizeTicketsDocument(data?.payload || data?.sheet || data)
+      );
+    } catch (err) {
+      console.warn("Falha ao carregar chamados do banco, usando fallback local:", err);
+      return loadTicketsStateLegacy();
+    }
+  }
+
+  async function saveTicketsDocument(doc) {
+    const payload = normalizeTicketsDocument({
+      ...doc,
+      savedAt: new Date().toISOString(),
+    });
+
+    try {
+      const resp = await apiFetch(TICKETS_API_SHEET_URL, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const data = await resp?.json().catch(() => null);
+      if (!resp || !resp.ok) throw new Error(data?.error || "Falha ao salvar chamados.");
+      saveTicketsStateLegacy(payload);
+      dashboardTicketsState.doc = payload;
+      return payload;
+    } catch (err) {
+      console.warn("Falha ao salvar chamados no banco, usando fallback local:", err);
+      saveTicketsStateLegacy(payload);
+      dashboardTicketsState.doc = payload;
+      return payload;
+    }
+  }
+
+  function currentTicketAuthorName() {
+    const user = getSessionUser();
+    return String(user?.nome || user?.name || "Usuário").trim();
+  }
+
+  function currentTicketAuthorEmail() {
+    const user = getSessionUser();
+    return String(user?.email || "").trim();
+  }
+
+  function ticketPriorityLabel(priority) {
+    switch (String(priority || "").trim().toLowerCase()) {
+      case "baixa":
+        return "Baixa";
+      case "alta":
+        return "Alta";
+      case "critica":
+        return "Crítica";
+      default:
+        return "Média";
+    }
+  }
+
+  function ticketStatusLabel(status) {
+    switch (String(status || "").trim().toLowerCase()) {
+      case "em_andamento":
+        return "Em andamento";
+      case "aguardando":
+        return "Aguardando";
+      case "concluido":
+        return "Concluído";
+      default:
+        return "Aberto";
+    }
+  }
+
+  function sortTickets(items) {
+    return [...items].sort((a, b) => {
+      const aTime = new Date(a.updatedAt || a.createdAt || 0).getTime();
+      const bTime = new Date(b.updatedAt || b.createdAt || 0).getTime();
+      return bTime - aTime;
+    });
+  }
+
+  function getTicketsSignature(doc) {
+    const items = Array.isArray(doc?.data) ? doc.data : [];
+    return JSON.stringify(
+      items.map((ticket) => [
+        ticket.id,
+        ticket.funcao,
+        ticket.urgencia,
+        ticket.status,
+        ticket.descricao,
+        ticket.solicitanteNome,
+        ticket.solicitanteEmail,
+        ticket.imagem ? "img" : "",
+        ticket.updatedAt,
+      ])
+    );
+  }
+
+  function filteredTicketsForSelectedFunction() {
+    const items = Array.isArray(dashboardTicketsState.doc?.data) ? dashboardTicketsState.doc.data : [];
+    return sortTickets(items.filter((ticket) => ticket.funcao === dashboardTicketsState.selectedFunction));
+  }
+
+  function getTicketCode(index) {
+    return `CH-${String(index + 1).padStart(3, "0")}`;
+  }
+
+  function getTicketCodeById(id) {
+    const items = sortTickets(Array.isArray(dashboardTicketsState.doc?.data) ? dashboardTicketsState.doc.data : []);
+    const index = items.findIndex((ticket) => ticket.id === id);
+    return getTicketCode(index >= 0 ? index : items.length);
+  }
+
+  function renderTicketFunctionTabs() {
+    const el = document.getElementById("ticketFunctionTabs");
+    if (!el) return;
+
+    el.innerHTML = TICKET_FUNCTIONS.map((funcao) => `
+      <button
+        class="ticketTab ${funcao === dashboardTicketsState.selectedFunction ? "is-active" : ""}"
+        type="button"
+        data-ticket-function="${escapeHTML(funcao)}"
+      >
+        ${escapeHTML(funcao)}
+      </button>
+    `).join("");
+  }
+
+  function renderTicketComposerMeta() {
+    const functionEl = document.getElementById("ticketSelectedFunction");
+    const authorEl = document.getElementById("ticketOpenedBy");
+    if (functionEl) functionEl.textContent = `Função: ${dashboardTicketsState.selectedFunction}`;
+    if (authorEl) authorEl.textContent = `Solicitante: ${currentTicketAuthorName()}${currentTicketAuthorEmail() ? ` • ${currentTicketAuthorEmail()}` : ""}`;
+  }
+
+  function renderTicketImagePreview() {
+    const wrap = document.getElementById("ticketImagePreviewWrap");
+    const img = document.getElementById("ticketImagePreview");
+    if (!wrap || !img) return;
+
+    if (!dashboardTicketsState.imageDataUrl) {
+      wrap.classList.add("is-hidden");
+      img.removeAttribute("src");
+      return;
+    }
+
+    img.src = dashboardTicketsState.imageDataUrl;
+    wrap.classList.remove("is-hidden");
+  }
+
+  function renderTickets() {
+    renderTicketFunctionTabs();
+    renderTicketComposerMeta();
+    renderTicketImagePreview();
+
+    const el = document.getElementById("ticketsList");
+    if (!el) return;
+
+    const tickets = filteredTicketsForSelectedFunction();
+    if (!tickets.length) {
+      el.innerHTML = `<div class="tickets__empty">Nenhum chamado aberto para ${escapeHTML(dashboardTicketsState.selectedFunction)} ainda.</div>`;
+      return;
+    }
+
+    el.innerHTML = tickets.map((ticket) => `
+      <article class="ticket" data-ticket-id="${escapeHTML(ticket.id)}" data-status="${escapeHTML(ticket.status)}">
+        <div class="ticket__code">${escapeHTML(getTicketCodeById(ticket.id))}</div>
+
+        <div class="ticket__content">
+          <div class="ticket__meta">
+            <span class="ticket__badge ticket__badge--urgency-${escapeHTML(ticket.urgencia)}">${escapeHTML(ticketPriorityLabel(ticket.urgencia))}</span>
+            <span class="ticket__badge">${escapeHTML(ticketStatusLabel(ticket.status))}</span>
+          </div>
+
+          <div class="ticket__description">${escapeHTML(ticket.descricao)}</div>
+          <div class="ticket__author">Aberto por ${escapeHTML(ticket.solicitanteNome || "Usuário")} ${ticket.solicitanteEmail ? `• ${escapeHTML(ticket.solicitanteEmail)}` : ""}</div>
+        </div>
+
+        <div class="ticket__side">
+          ${ticket.imagem ? `<img class="ticket__thumb" src="${ticket.imagem}" alt="Anexo do chamado" />` : `<div class="ticket__badge">Sem imagem</div>`}
+        </div>
+      </article>
+    `).join("");
+  }
+
+  function renderTiTickets() {
+    const panel = document.getElementById("tiTicketsPanel");
+    const shortcut = document.getElementById("shortcutTiTickets");
+    const list = document.getElementById("tiTicketsList");
+    const tiMode = isTiUser();
+
+    if (panel) panel.classList.toggle("is-hidden", !tiMode);
+    if (shortcut) shortcut.classList.toggle("is-hidden", !tiMode);
+    if (!list) return;
+
+    if (!tiMode) {
+      list.innerHTML = "";
+      return;
+    }
+
+    const tickets = sortTickets(Array.isArray(dashboardTicketsState.doc?.data) ? dashboardTicketsState.doc.data : []);
+    if (!tickets.length) {
+      list.innerHTML = `<div class="tickets__empty">Nenhum chamado registrado ainda.</div>`;
+      return;
+    }
+
+    list.innerHTML = tickets.map((ticket) => `
+      <article class="tiTicket" data-ti-ticket-id="${escapeHTML(ticket.id)}">
+        <div class="tiTicket__main">
+          <div class="tiTicket__top">
+            <span class="ticket__code">${escapeHTML(getTicketCodeById(ticket.id))}</span>
+            <span class="ticket__badge">${escapeHTML(ticket.funcao)}</span>
+            <span class="ticket__badge ticket__badge--urgency-${escapeHTML(ticket.urgencia)}">${escapeHTML(ticketPriorityLabel(ticket.urgencia))}</span>
+          </div>
+
+          <div class="tiTicket__title">${escapeHTML(ticketStatusLabel(ticket.status))}</div>
+          <div class="tiTicket__desc">${escapeHTML(ticket.descricao)}</div>
+          <div class="tiTicket__author">Aberto por ${escapeHTML(ticket.solicitanteNome || "Usuário")} ${ticket.solicitanteEmail ? `• ${escapeHTML(ticket.solicitanteEmail)}` : ""}</div>
+        </div>
+
+        <div class="tiTicket__side">
+          <div class="tiTicket__meta">
+            <span class="tiTicket__metaLabel">Urgência</span>
+            <strong>${escapeHTML(ticketPriorityLabel(ticket.urgencia))}</strong>
+          </div>
+
+          <div class="tiTicket__meta">
+            <span class="tiTicket__metaLabel">Status</span>
+            <select class="ticket__status" data-ti-ticket-status="${escapeHTML(ticket.id)}">
+              ${TICKET_STATUSES.map((status) => `
+                <option value="${status}" ${status === ticket.status ? "selected" : ""}>${escapeHTML(ticketStatusLabel(status))}</option>
+              `).join("")}
+            </select>
+          </div>
+
+          ${ticket.imagem ? `<img class="tiTicket__image" src="${ticket.imagem}" alt="Anexo do chamado" />` : ""}
+
+          <div class="tiTicket__actions">
+            <button class="btn btn--ghost" type="button" data-ti-ticket-delete="${escapeHTML(ticket.id)}">Excluir</button>
+          </div>
+        </div>
+      </article>
+    `).join("");
+  }
+
+  function clearTicketComposer() {
+    const descriptionEl = document.getElementById("ticketDescription");
+    const priorityEl = document.getElementById("ticketPriority");
+    const fileEl = document.getElementById("ticketImageInput");
+
+    if (descriptionEl) descriptionEl.value = "";
+    if (priorityEl) priorityEl.value = "media";
+    if (fileEl) fileEl.value = "";
+    dashboardTicketsState.imageDataUrl = "";
+    renderTicketImagePreview();
+  }
+
+  async function refreshTickets({ force = false } = {}) {
+    const doc = await loadTicketsDocument();
+    const signature = getTicketsSignature(doc);
+    const changed = force || dashboardTicketsState.lastSignature !== signature;
+
+    dashboardTicketsState.doc = doc;
+    dashboardTicketsState.lastSignature = signature;
+
+    if (changed) {
+      renderTickets();
+      renderTiTickets();
+    } else {
+      renderTiTickets();
+    }
+  }
+
+  async function createTicket() {
+    const descriptionEl = document.getElementById("ticketDescription");
+    const priorityEl = document.getElementById("ticketPriority");
+
+    const descricao = String(descriptionEl?.value || "").trim().slice(0, 1000);
+    if (!descricao) {
+      alert("Preencha a descrição do chamado antes de abrir.");
+      descriptionEl?.focus();
+      return;
+    }
+
+    const nextDoc = normalizeTicketsDocument(dashboardTicketsState.doc || emptyTicketsDocument());
+    nextDoc.data.push(normalizeTicketRecord({
+      id: `tk_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
+      funcao: dashboardTicketsState.selectedFunction,
+      descricao,
+      urgencia: String(priorityEl?.value || "media").trim().toLowerCase(),
+      status: "aberto",
+      solicitanteNome: currentTicketAuthorName(),
+      solicitanteEmail: currentTicketAuthorEmail(),
+      imagem: dashboardTicketsState.imageDataUrl,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    }));
+
+    await saveTicketsDocument(nextDoc);
+    dashboardTicketsState.lastSignature = getTicketsSignature(nextDoc);
+    clearTicketComposer();
+    renderTickets();
+    renderTiTickets();
+  }
+
+  async function clearClosedTickets() {
+    const currentDoc = normalizeTicketsDocument(dashboardTicketsState.doc || emptyTicketsDocument());
+    const nextItems = currentDoc.data.filter((ticket) => {
+      if (ticket.status !== "concluido") return true;
+      if (!isTiUser()) return ticket.funcao !== dashboardTicketsState.selectedFunction;
+      return false;
+    });
+
+    currentDoc.data = nextItems;
+    await saveTicketsDocument(currentDoc);
+    dashboardTicketsState.lastSignature = getTicketsSignature(currentDoc);
+    renderTickets();
+    renderTiTickets();
+  }
+
+  async function updateTiTicketStatus(ticketId, nextStatus) {
+    const currentDoc = normalizeTicketsDocument(dashboardTicketsState.doc || emptyTicketsDocument());
+    const target = currentDoc.data.find((ticket) => ticket.id === ticketId);
+    if (!target) return;
+
+    target.status = TICKET_STATUSES.includes(String(nextStatus || "").trim().toLowerCase())
+      ? String(nextStatus || "").trim().toLowerCase()
+      : target.status;
+    target.updatedAt = new Date().toISOString();
+
+    await saveTicketsDocument(currentDoc);
+    dashboardTicketsState.lastSignature = getTicketsSignature(currentDoc);
+    renderTickets();
+    renderTiTickets();
+  }
+
+  async function deleteTiTicket(ticketId) {
+    const currentDoc = normalizeTicketsDocument(dashboardTicketsState.doc || emptyTicketsDocument());
+    currentDoc.data = currentDoc.data.filter((ticket) => ticket.id !== ticketId);
+    await saveTicketsDocument(currentDoc);
+    dashboardTicketsState.lastSignature = getTicketsSignature(currentDoc);
+    renderTickets();
+    renderTiTickets();
+  }
+
+  function bindTicketButtons() {
+    const tabsEl = document.getElementById("ticketFunctionTabs");
+    const btnRefresh = document.getElementById("btnResetTickets");
+    const btnCreate = document.getElementById("btnCreateTicket");
+    const btnClearImage = document.getElementById("btnClearTicketImage");
+    const btnClearClosed = document.getElementById("btnClearClosedTickets");
+    const btnRefreshTi = document.getElementById("btnRefreshTiTickets");
+    const shortcutTi = document.getElementById("shortcutTiTickets");
+    const fileInput = document.getElementById("ticketImageInput");
+    const tiList = document.getElementById("tiTicketsList");
+
+    if (tabsEl && !tabsEl.__bound) {
+      tabsEl.__bound = true;
+      tabsEl.addEventListener("click", (e) => {
+        const tab = e.target.closest("[data-ticket-function]");
+        if (!tab) return;
+        dashboardTicketsState.selectedFunction = String(tab.getAttribute("data-ticket-function") || "").trim() || TICKET_FUNCTIONS[0];
+        renderTickets();
+      });
+    }
+
+    if (btnRefresh && !btnRefresh.__bound) {
+      btnRefresh.__bound = true;
+      btnRefresh.addEventListener("click", async () => {
+        await refreshTickets({ force: true });
+      });
+    }
+
+    if (btnCreate && !btnCreate.__bound) {
+      btnCreate.__bound = true;
+      btnCreate.addEventListener("click", async () => {
+        await createTicket();
+      });
+    }
+
+    if (btnClearImage && !btnClearImage.__bound) {
+      btnClearImage.__bound = true;
+      btnClearImage.addEventListener("click", () => {
+        clearTicketComposer();
+      });
+    }
+
+    if (btnClearClosed && !btnClearClosed.__bound) {
+      btnClearClosed.__bound = true;
+      btnClearClosed.addEventListener("click", async () => {
+        await clearClosedTickets();
+      });
+    }
+
+    if (btnRefreshTi && !btnRefreshTi.__bound) {
+      btnRefreshTi.__bound = true;
+      btnRefreshTi.addEventListener("click", async () => {
+        await refreshTickets({ force: true });
+      });
+    }
+
+    if (shortcutTi && !shortcutTi.__bound) {
+      shortcutTi.__bound = true;
+      shortcutTi.addEventListener("click", () => {
+        document.getElementById("tiTicketsPanel")?.scrollIntoView({ behavior: "smooth", block: "start" });
+      });
+    }
+
+    if (fileInput && !fileInput.__bound) {
+      fileInput.__bound = true;
+      fileInput.addEventListener("change", () => {
+        const file = fileInput.files?.[0];
+        if (!file) {
+          dashboardTicketsState.imageDataUrl = "";
+          renderTicketImagePreview();
+          return;
+        }
+
+        if (file.size > MAX_TICKET_IMAGE_SIZE) {
+          alert("A imagem está muito grande. Use um arquivo de até 2 MB.");
+          fileInput.value = "";
+          dashboardTicketsState.imageDataUrl = "";
+          renderTicketImagePreview();
+          return;
+        }
+
+        const reader = new FileReader();
+        reader.onload = () => {
+          dashboardTicketsState.imageDataUrl = typeof reader.result === "string" ? reader.result : "";
+          renderTicketImagePreview();
+        };
+        reader.readAsDataURL(file);
+      });
+    }
+
+    if (tiList && !tiList.__bound) {
+      tiList.__bound = true;
+      tiList.addEventListener("change", async (e) => {
+        const select = e.target.closest("[data-ti-ticket-status]");
+        if (!select) return;
+        await updateTiTicketStatus(
+          String(select.getAttribute("data-ti-ticket-status") || "").trim(),
+          String(select.value || "").trim().toLowerCase()
+        );
+      });
+
+      tiList.addEventListener("click", async (e) => {
+        const delBtn = e.target.closest("[data-ti-ticket-delete]");
+        if (!delBtn) return;
+        const ok = confirm("Excluir este chamado da central?");
+        if (!ok) return;
+        await deleteTiTicket(String(delBtn.getAttribute("data-ti-ticket-delete") || "").trim());
+      });
+    }
+  }
+
+  function startTicketsSyncLoop() {
+    if (dashboardTicketsState.pollTimer) clearInterval(dashboardTicketsState.pollTimer);
+    dashboardTicketsState.pollTimer = setInterval(() => {
+      refreshTickets().catch((err) => console.warn("Falha ao sincronizar chamados:", err));
+    }, TICKETS_POLL_INTERVAL_MS);
+
+    document.addEventListener("visibilitychange", () => {
+      if (!document.hidden) {
+        refreshTickets().catch((err) => console.warn("Falha ao sincronizar chamados:", err));
+      }
+    });
   }
 
   // ----------------------------
@@ -1095,14 +1768,17 @@
     applyRoleToSidebar();
     fillModulesStats();
     bindGotoButtons();
+    bindTicketButtons();
 
     await computeContFlowNewsAndSaveSnapshot();
     await renderContFlowNewsBadge();
 
     await renderNextActions();
+    await refreshTickets({ force: true });
     await renderQuickAutoCard();
 
     renderMonthlySlaIndicator();
     bindContFlowAutoUpdates();
+    startTicketsSyncLoop();
   });
 })();

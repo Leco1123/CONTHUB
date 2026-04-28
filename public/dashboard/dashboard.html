@@ -3,6 +3,10 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="Dashboard do ContHub com visão geral da operação contábil, indicadores, produtividade e acompanhamento da equipe."
+    />
     <title>ContHub • Boas-vindas</title>
 
     <link rel="stylesheet" href="./dashboard.css" />
@@ -118,7 +122,7 @@
       <section class="grid">
 
         <!-- ATALHOS -->
-        <div class="panel glass">
+        <div class="panel panel--atalhos glass">
           <div class="panel__header">
             <h2 class="h2">Atalhos</h2>
             <p class="muted">Clique para navegar rápido.</p>
@@ -192,12 +196,27 @@
               <div class="pill" data-pill="contadmin">ADMIN</div>
             </button>
 
+            <button
+              class="card card--ti-only is-hidden"
+              type="button"
+              id="shortcutTiTickets"
+            >
+              <div class="card__icon">🧰</div>
+
+              <div class="card__body">
+                <div class="card__title">Central TI</div>
+                <div class="card__sub muted">Fila de chamados</div>
+              </div>
+
+              <div class="pill" data-pill="ti-tickets">TI</div>
+            </button>
+
           </div>
         </div>
 
 
         <!-- PRÓXIMAS AÇÕES -->
-        <div class="panel glass">
+        <div class="panel panel--acoes glass">
           <div class="panel__header panel__header--row">
 
             <div>
@@ -249,7 +268,7 @@
 
 
         <!-- INDICADOR SLA -->
-        <div class="panel glass">
+        <div class="panel panel--sla glass">
 
           <div class="panel__header">
             <h2 class="h2">Indicador de SLA</h2>
@@ -317,6 +336,137 @@
           </div>
         </div>
 
+
+        <!-- CHAMADOS -->
+        <div class="panel panel--chamados glass">
+          <div class="panel__header panel__header--row">
+
+            <div>
+              <h2 class="h2">Chamados</h2>
+              <p class="muted">Abra chamados por função e acompanhe o andamento.</p>
+            </div>
+
+            <div class="panel__headerActions">
+
+              <button
+                class="btn"
+                type="button"
+                id="btnResetTickets"
+              >
+                Atualizar
+              </button>
+
+            </div>
+          </div>
+
+          <div class="ticketTabs" id="ticketFunctionTabs"></div>
+
+          <div class="ticketComposer">
+            <div class="ticketComposer__meta">
+              <div class="ticketComposer__pill" id="ticketSelectedFunction">Função: --</div>
+              <div class="ticketComposer__pill ticketComposer__pill--soft" id="ticketOpenedBy">Solicitante: --</div>
+            </div>
+
+            <div class="ticketComposer__grid">
+              <label class="ticketComposer__field ticketComposer__field--wide">
+                <span class="ticketComposer__label">O que é o chamado</span>
+                <textarea
+                  id="ticketDescription"
+                  class="ticketComposer__textarea"
+                  rows="4"
+                  maxlength="1000"
+                  placeholder="Descreva o chamado com contexto, erro, tela e o que precisa."
+                ></textarea>
+              </label>
+
+              <label class="ticketComposer__field">
+                <span class="ticketComposer__label">Urgência</span>
+                <select id="ticketPriority" class="ticketComposer__select">
+                  <option value="baixa">Baixa</option>
+                  <option value="media" selected>Média</option>
+                  <option value="alta">Alta</option>
+                  <option value="critica">Crítica</option>
+                </select>
+              </label>
+
+              <label class="ticketComposer__field">
+                <span class="ticketComposer__label">Imagem</span>
+                <input
+                  id="ticketImageInput"
+                  class="ticketComposer__file"
+                  type="file"
+                  accept="image/*"
+                />
+              </label>
+            </div>
+
+            <div
+              class="ticketComposer__image is-hidden"
+              id="ticketImagePreviewWrap"
+            >
+              <img
+                id="ticketImagePreview"
+                class="ticketComposer__imagePreview"
+                alt="Prévia da imagem do chamado"
+              />
+
+              <button
+                class="btn btn--ghost"
+                type="button"
+                id="btnClearTicketImage"
+              >
+                Remover imagem
+              </button>
+            </div>
+
+            <div class="ticketComposer__actions">
+              <button
+                class="btn btn--primary"
+                type="button"
+                id="btnCreateTicket"
+              >
+                Abrir chamado
+              </button>
+            </div>
+          </div>
+
+          <div class="tickets" id="ticketsList"></div>
+
+          <div class="panel__footer">
+            <button
+              class="btn btn--ghost"
+              type="button"
+              id="btnClearClosedTickets"
+            >
+              Fechar concluídos
+            </button>
+          </div>
+        </div>
+
+      </section>
+
+      <section
+        class="panel panel--ti-only panel--ti-support glass is-hidden"
+        id="tiTicketsPanel"
+      >
+        <div class="panel__header panel__header--row">
+          <div>
+            <h2 class="h2">Central TI</h2>
+            <p class="muted">Veja quem abriu o chamado, a urgência, o conteúdo e os anexos.</p>
+          </div>
+
+          <div class="panel__headerActions">
+            <button
+              class="btn"
+              type="button"
+              id="btnRefreshTiTickets"
+            >
+              Atualizar chamados
+            </button>
+          </div>
+        </div>
+
+        <div class="tiTickets" id="tiTicketsList"></div>
       </section>
 
       <footer class="footer muted">

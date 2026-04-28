@@ -14,15 +14,66 @@ const CF_BC_NAME = "conthub:contflow:bc";
 /* ===========================
    API
 =========================== */
-const CF_API_SHEET_KEY = "contflow";
-const CF_API_SHEET_URL = `/api/sheets/${CF_API_SHEET_KEY}`;
-const CF_API_SHEET_CELLS_URL = `${CF_API_SHEET_URL}/cells`;
-const CF_API_IMPORT_URL = `/api/sheets/${CF_API_SHEET_KEY}/import-local`;
-const CF_API_BACKUPS_URL = `${CF_API_SHEET_URL}/backups`;
 const API_MODULES = "/api/admin/modules";
 const API_PREFERRED_PORT = "3000";
-const CF_LOCAL_DRAFT_KEY = "conthub:contflow:local-draft";
-const CF_LOCAL_BACKUPS_KEY = "conthub:contflow:local-backups";
+const CF_SHEET_DEFS = [
+  { index: 0, key: "contflow", label: "1º Trimestre", draftKey: "conthub:contflow:local-draft", backupsKey: "conthub:contflow:local-backups" },
+  { index: 1, key: "contflow-q2", label: "2º Trimestre", draftKey: "conthub:contflow-q2:local-draft", backupsKey: "conthub:contflow-q2:local-backups" },
+  { index: 2, key: "contflow-q3", label: "3º Trimestre", draftKey: "conthub:contflow-q3:local-draft", backupsKey: "conthub:contflow-q3:local-backups" },
+  { index: 3, key: "contflow-q4", label: "4º Trimestre", draftKey: "conthub:contflow-q4:local-draft", backupsKey: "conthub:contflow-q4:local-backups" },
+];
+const CF_SHARED_COL_KEYS = [
+  "cod",
+  "razao_social",
+  "cnpj_cpf",
+  "trib",
+  "grupo",
+  "class",
+  "desligamento",
+  "status",
+  "resp1",
+  "resp2",
+  "tipo",
+];
+const CF_ACTIVE_QUARTER_STORAGE_KEY = "conthub:contflow:active-quarter";
+
+function parseContFlowQuarterFromHash(hash = "") {
+  const match = String(hash || "").trim().match(/^#cf-quarter-(\d+)$/i);
+  if (!match) return null;
+  const index = Number(match[1]) - 1;
+  return Number.isInteger(index) && index >= 0 && index < CF_SHEET_DEFS.length ? index : null;
+}
+
+function buildContFlowQuarterHash(index = activeContFlowSheetIndex) {
+  return `#cf-quarter-${Number(index) + 1}`;
+}
+
+function persistActiveContFlowQuarter(index = activeContFlowSheetIndex) {
+  try {
+    localStorage.setItem(CF_ACTIVE_QUARTER_STORAGE_KEY, String(index));
+  } catch (_) {}
+}
+
+function restoreActiveContFlowQuarter() {
+  const fromHash = parseContFlowQuarterFromHash(window.location.hash);
+  if (fromHash != null) return fromHash;
+
+  try {
+    const raw = localStorage.getItem(CF_ACTIVE_QUARTER_STORAGE_KEY);
+    const parsed = Number(raw);
+    if (Number.isInteger(parsed) && parsed >= 0 && parsed < CF_SHEET_DEFS.length) {
+      return parsed;
+    }
+  } catch (_) {}
+
+  return 0;
+}
+
+function syncContFlowQuarterHash(index = activeContFlowSheetIndex) {
+  const nextHash = buildContFlowQuarterHash(index);
+  if (window.location.hash === nextHash) return;
+  window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}${nextHash}`);
+}
 
 function resolveApiUrl(url) {
   const target = String(url || "").trim();
@@ -37,6 +88,42 @@ function resolveApiUrl(url) {
   } catch (_) {}
 
   return target;
+}
+
+function getContFlowSheetDef(index = activeContFlowSheetIndex) {
+  return CF_SHEET_DEFS[index] || CF_SHEET_DEFS[0];
+}
+
+function getActiveContFlowSheetDef() {
+  return getContFlowSheetDef(activeContFlowSheetIndex);
+}
+
+function getContFlowApiSheetUrl() {
+  return `/api/sheets/${getActiveContFlowSheetDef().key}`;
+}
+
+function getContFlowCellsUrl() {
+  return `${getContFlowApiSheetUrl()}/cells`;
+}
+
+function getContFlowImportUrl() {
+  return `${getContFlowApiSheetUrl()}/import-local`;
+}
+
+function getContFlowBackupsUrl() {
+  return `${getContFlowApiSheetUrl()}/backups`;
+}
+
+function getContFlowLocalDraftKey() {
+  return getActiveContFlowSheetDef().draftKey;
+}
+
+function getContFlowLocalBackupsKey() {
+  return getActiveContFlowSheetDef().backupsKey;
+}
+
+function getContFlowLocalDraftKeyByIndex(index) {
+  return getContFlowSheetDef(index).draftKey;
 }
 
 async function apiFetch(url, options = {}) {
@@ -91,6 +178,9 @@ let CF_COLUMNS = [
   { key: "cnpj_cpf", label: "CNPJ/CPF" },
   { key: "trib", label: "Trib." },
   { key: "grupo", label: "Grupo" },
+  { key: "class", label: "Class" },
+  { key: "desligamento", label: "Desligamento" },
+  { key: "status", label: "Status" },
   { key: "resp1", label: "Resp.1" },
   { key: "resp2", label: "Resp.2" },
   { key: "tipo", label: "Tipo" },
@@ -101,14 +191,18 @@ let CF_COLUMNS = [
   { key: "obs", label: "Obs" },
   { key: "mit", label: "MIT" },
   { key: "controle_mit", label: "Controle de MIT" },
+  { key: "inconsistencia_athenas", label: "Inconsistência Athenas" },
 ];
 
 let cfData = [];
 let viewMap = [];
 let cfCellMeta = new Map();
+let activeContFlowSheetIndex = 0;
+let cfQuarterCache = Array.from({ length: 4 }, () => null);
 
 let sortState = null;
 let filters = {};
+let globalSearch = "";
 let colWidths = {};
 
 let activeRow = 0;
@@ -123,6 +217,7 @@ let suppressClickSelect = false;
 
 let undoStack = [];
 let redoStack = [];
+let clipboardTextCache = "";
 
 let findUI = null;
 let findResults = [];
@@ -130,6 +225,8 @@ let findIndex = -1;
 
 let ctxMenuEl = null;
 let cfBC = null;
+let cfFilterAnchorEl = null;
+let cfFilterPositionRaf = null;
 
 /* versões agora ficam só em memória da página */
 let cfVersions = [];
@@ -143,6 +240,7 @@ let currentUser = null;
 /* controle de pendências */
 let dirtyCells = new Set();
 let hasStructuralChanges = false;
+let hasConfigChanges = false;
 let cfServerBackups = [];
 
 /* módulos */
@@ -155,7 +253,141 @@ const STATUS_LABEL = {
   admin: "ADMIN",
 };
 
-const CF_FROZEN_COL_KEYS = ["cod", "razao_social", "cnpj_cpf", "trib"];
+const CF_FROZEN_COL_KEYS = ["cod", "razao_social", "cnpj_cpf", "trib", "grupo"];
+
+function cloneMap(source) {
+  return new Map(Array.from(source?.entries?.() || []));
+}
+
+function createQuarterSnapshot() {
+  return {
+    columns: deepClone(CF_COLUMNS),
+    rows: deepClone(cfData),
+    cellMeta: cloneMap(cfCellMeta),
+    sortState: deepClone(sortState),
+    filters: deepClone(filters),
+    colWidths: deepClone(colWidths),
+    versions: deepClone(cfVersions),
+    dirtyCells: new Set(Array.from(dirtyCells)),
+    hasStructuralChanges: Boolean(hasStructuralChanges),
+    hasConfigChanges: Boolean(hasConfigChanges),
+    lastSavedPayload: deepClone(lastSavedPayload),
+  };
+}
+
+function applyQuarterSnapshot(snapshot) {
+  if (!snapshot) return false;
+
+  if (Array.isArray(snapshot.columns) && snapshot.columns.length) {
+    CF_COLUMNS = deepClone(snapshot.columns);
+  }
+  cfData = Array.isArray(snapshot.rows) ? deepClone(snapshot.rows) : [];
+  cfCellMeta = cloneMap(snapshot.cellMeta);
+  sortState = deepClone(snapshot.sortState);
+  filters = deepClone(snapshot.filters || {});
+  colWidths = deepClone(snapshot.colWidths || {});
+  cfVersions = Array.isArray(snapshot.versions) ? deepClone(snapshot.versions) : [];
+  dirtyCells = new Set(Array.from(snapshot.dirtyCells || []));
+  hasStructuralChanges = Boolean(snapshot.hasStructuralChanges);
+  hasConfigChanges = Boolean(snapshot.hasConfigChanges);
+  lastSavedPayload = snapshot.lastSavedPayload ? deepClone(snapshot.lastSavedPayload) : null;
+  return true;
+}
+
+function cacheActiveQuarterState() {
+  cfQuarterCache[activeContFlowSheetIndex] = createQuarterSnapshot();
+}
+
+function getCanonicalContFlowSharedKeyFromLabel(label = "") {
+  const normalized = normalizeLabel(label);
+  if (!normalized) return "";
+  if (/^cod\b|^codigo\b/.test(normalized)) return "cod";
+  if (/razao.*social/.test(normalized)) return "razao_social";
+  if (/cnpj|cpf/.test(normalized)) return "cnpj_cpf";
+  if (/^trib\b|tribut/.test(normalized)) return "trib";
+  if (/^grupo\b/.test(normalized)) return "grupo";
+  if (/^class\b|^classe\b/.test(normalized)) return "class";
+  if (/deslig/.test(normalized)) return "desligamento";
+  if (/^status\b|situac/.test(normalized)) return "status";
+  if (/resp.*1|responsavel.*1/.test(normalized)) return "resp1";
+  if (/resp.*2|responsavel.*2/.test(normalized)) return "resp2";
+  if (/^tipo\b/.test(normalized)) return "tipo";
+  return "";
+}
+
+function getContFlowSharedColumnKeyMap(columns = CF_COLUMNS) {
+  const map = {};
+  (Array.isArray(columns) ? columns : []).forEach((col) => {
+    const canonical = getCanonicalContFlowSharedKeyFromLabel(col?.label || col?.key || "");
+    if (!canonical) return;
+    map[canonical] = String(col?.key || "").trim() || canonical;
+  });
+  return map;
+}
+
+function applyCanonicalSharedAliasesToRows(rows = [], columns = []) {
+  const keyMap = getContFlowSharedColumnKeyMap(columns);
+  return (Array.isArray(rows) ? rows : []).map((sourceRow) => {
+    const row = { ...(sourceRow || {}) };
+    Object.entries(keyMap).forEach(([canonicalKey, sourceKey]) => {
+      if (!sourceKey) return;
+      if (row[canonicalKey] == null || row[canonicalKey] === "") {
+        row[canonicalKey] = row[sourceKey] != null ? row[sourceKey] : "";
+      }
+    });
+    return row;
+  });
+}
+
+function getSharedValueFromRow(row, canonicalKey, sourceKeyMap = null) {
+  if (!row) return "";
+  const sourceKey = sourceKeyMap?.[canonicalKey];
+  if (sourceKey && row[sourceKey] != null && row[sourceKey] !== "") {
+    return row[sourceKey];
+  }
+  if (row[canonicalKey] != null) return row[canonicalKey];
+  return "";
+}
+
+function buildBootstrapRowsFromFirstQuarter() {
+  const sourceSnapshot =
+    cfQuarterCache[0] || (activeContFlowSheetIndex === 0 ? createQuarterSnapshot() : null);
+  const sourceRows = Array.isArray(sourceSnapshot?.rows) ? sourceSnapshot.rows : [];
+  const sourceKeyMap = getContFlowSharedColumnKeyMap(sourceSnapshot?.columns || CF_COLUMNS);
+  const targetKeyMap = getContFlowSharedColumnKeyMap(CF_COLUMNS);
+
+  if (!sourceRows.length) {
+    return Array.from({ length: 15 }, () => createEmptyRow());
+  }
+
+  return sourceRows.map((sourceRow) => {
+    const row = createEmptyRow();
+    CF_SHARED_COL_KEYS.forEach((key) => {
+      const targetKey = targetKeyMap[key] || key;
+      row[targetKey] = normalizeCellValue(
+        targetKey,
+        getSharedValueFromRow(sourceRow, key, sourceKeyMap)
+      );
+    });
+    row.__id = String(sourceRow?.__id || genId());
+    return row;
+  });
+}
+
+function applyQuarterBootstrap(index) {
+  const rows = index === 0 ? Array.from({ length: 15 }, () => createEmptyRow()) : buildBootstrapRowsFromFirstQuarter();
+  cfData = coerceRowsToCurrentColumns(rows);
+  cfCellMeta = new Map();
+  sortState = null;
+  filters = {};
+  CF_COLUMNS.forEach((c) => {
+    if (colWidths[c.key] == null) setDefaultWidthForCol(c.key);
+  });
+  cfVersions = [];
+  clearDirtyState();
+  lastSavedPayload = buildServerPayload();
+  cacheActiveQuarterState();
+}
 
 /* ===========================
    HELPERS
@@ -176,6 +408,52 @@ function goto(url) {
 
 function getSessionUser() {
   return currentUser;
+}
+
+function normalizeAccessProfile(value) {
+  const profile = String(value || "")
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+
+  if (profile === "ti") return "ti";
+  if (profile === "admin" || profile === "gerencial" || profile === "gerencia") return "gerencial";
+  if (profile === "coordenacao" || profile === "coordenador") return "coordenacao";
+  if (profile === "consulta") return "consulta";
+  if (profile === "operacional" || profile === "user" || profile === "usuario") return "operacional";
+  return profile || "operacional";
+}
+
+function getAccessProfile(user) {
+  const target = user && typeof user === "object" ? user : {};
+  return normalizeAccessProfile(
+    target.accessProfile || target.access_profile || target.perfilAcesso || target.perfil_acesso || target.role
+  );
+}
+
+function canManageContFlowBase(user) {
+  const profile = getAccessProfile(user);
+  return profile === "ti" || profile === "gerencial" || profile === "coordenacao";
+}
+
+function applyContFlowBaseAccess() {
+  const baseBtn = document.getElementById("cf-base-btn");
+  const saveBaseTopBtn = document.getElementById("cf-save-base-top");
+
+  const allowed = canManageContFlowBase(getSessionUser());
+
+  if (baseBtn) {
+    baseBtn.hidden = !allowed;
+    baseBtn.disabled = !allowed;
+    baseBtn.setAttribute("aria-hidden", allowed ? "false" : "true");
+  }
+
+  if (saveBaseTopBtn) {
+    saveBaseTopBtn.hidden = !allowed;
+    saveBaseTopBtn.disabled = !allowed;
+    saveBaseTopBtn.setAttribute("aria-hidden", allowed ? "false" : "true");
+  }
 }
 
 function roleLabel(role) {
@@ -205,9 +483,51 @@ function clamp(v, min, max) {
 
 function normalizeLabel(s) {
   return String(s ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
     .trim()
+    .replace(/[^a-zA-Z0-9]+/g, " ")
     .replace(/\s+/g, " ")
     .toLowerCase();
+}
+
+function normalizeSearchText(value) {
+  return String(value ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim();
+}
+
+function canonicalContFlowLabel(label) {
+  const nl = normalizeLabel(label);
+
+  if (!nl) return "";
+  if (/^(cod|codigo)$/.test(nl)) return "Cód.";
+  if (/^razao social$/.test(nl)) return "Razão Social";
+  if (/^(cnpj cpf|cnpj ou cpf|cpf cnpj)$/.test(nl)) return "CNPJ/CPF";
+  if (/^(trib|tributacao|tributario)$/.test(nl)) return "Trib.";
+  if (nl === "grupo") return "Grupo";
+  if (/^(class|classe)$/.test(nl)) return "Class";
+  if (/^(desligamento|data desligamento|dt desligamento|data de desligamento)$/.test(nl)) {
+    return "Desligamento";
+  }
+  if (/^(status|situacao|situacao fiscal)$/.test(nl)) return "Status";
+  if (/^(resp 1|resp1|responsavel 1|responsavel1)$/.test(nl)) return "Resp.1";
+  if (/^(resp 2|resp2|responsavel 2|responsavel2)$/.test(nl)) return "Resp.2";
+  if (nl === "tipo") return "Tipo";
+  if (/^(num quotas|numero quotas|numero de quotas|qtd quotas|quantidade quotas)$/.test(nl)) {
+    return "Num Quotas";
+  }
+  if (/^(1 quota|1a quota|primeira quota)$/.test(nl)) return "1º quota";
+  if (/^(2 quota|2a quota|segunda quota)$/.test(nl)) return "2º quota";
+  if (/^(3 quota|3a quota|terceira quota)$/.test(nl)) return "3º quota";
+  if (/^(obs|observacao|observacoes)$/.test(nl)) return "Obs";
+  if (nl === "mit") return "MIT";
+  if (/^(controle de mit|controle mit)$/.test(nl)) return "Controle de MIT";
+  if (/^(inconsistencia athenas|inconsistência athenas)$/.test(nl)) return "Inconsistência Athenas";
+
+  return String(label ?? "").trim();
 }
 
 function slugKeyFromLabel(label) {
@@ -243,7 +563,7 @@ function deepClone(obj) {
 }
 
 async function loadBaseFromApi() {
-  const resp = await apiFetch(CF_API_SHEET_URL, { method: "GET" });
+  const resp = await apiFetch(getContFlowApiSheetUrl(), { method: "GET" });
   const data = await resp.json().catch(() => null);
 
   if (!resp.ok) {
@@ -329,14 +649,20 @@ function markStructureDirty() {
   refreshDirtyVisuals();
 }
 
+function markConfigDirty() {
+  hasConfigChanges = true;
+  refreshDirtyVisuals();
+}
+
 function clearDirtyState() {
   dirtyCells.clear();
   hasStructuralChanges = false;
+  hasConfigChanges = false;
   refreshDirtyVisuals();
 }
 
 function hasPendingDirtyChanges() {
-  return dirtyCells.size > 0 || hasStructuralChanges;
+  return dirtyCells.size > 0 || hasStructuralChanges || hasConfigChanges;
 }
 
 function getActiveWorkbookView() {
@@ -349,12 +675,293 @@ function hasAnyPendingChanges() {
     window.PainelTributarioSheet && typeof window.PainelTributarioSheet.hasPendingChanges === "function"
       ? window.PainelTributarioSheet.hasPendingChanges()
       : false;
-  return hasPendingDirtyChanges() || ptDirty;
+  const ptLrDirty =
+    window.PainelTributarioLRSheet &&
+    typeof window.PainelTributarioLRSheet.hasPendingChanges === "function"
+      ? window.PainelTributarioLRSheet.hasPendingChanges()
+      : false;
+  return hasPendingDirtyChanges() || ptDirty || ptLrDirty;
+}
+
+async function loadCurrentContFlowSheet() {
+  updateContFlowSheetUI();
+
+  try {
+    const payload = await loadBaseFromApi();
+    hydrateContFlowFromApiPayload(payload);
+    if (!cfData.length) {
+      cfData = Array.from({ length: 15 }, () => createEmptyRow());
+      CF_COLUMNS.forEach((c) => setDefaultWidthForCol(c.key));
+      markStructureDirty();
+    }
+    await mirrorSharedColumnsFromFirstQuarter();
+    saveLocalDraft(buildServerPayload());
+    cacheActiveQuarterState();
+    renderTable();
+  } catch (err) {
+    console.error(`❌ Falha ao carregar ${getActiveContFlowSheetDef().label}:`, err);
+
+    const localDraft = loadLocalDraft();
+    if (localDraft) {
+      hydrateContFlowFromApiPayload(localDraft);
+      if (activeContFlowSheetIndex > 0) {
+        await mirrorSharedColumnsFromFirstQuarter();
+      }
+      cacheActiveQuarterState();
+      renderTable();
+      return;
+    }
+
+    forceDefaultColumns([
+      { key: "cod", label: "Cód." },
+      { key: "razao_social", label: "Razão Social" },
+      { key: "cnpj_cpf", label: "CNPJ/CPF" },
+      { key: "trib", label: "Trib." },
+      { key: "grupo", label: "Grupo" },
+      { key: "class", label: "Class" },
+      { key: "desligamento", label: "Desligamento" },
+      { key: "status", label: "Status" },
+      { key: "resp1", label: "Resp.1" },
+      { key: "resp2", label: "Resp.2" },
+      { key: "tipo", label: "Tipo" },
+      { key: "num_quotas", label: "Num Quotas" },
+      { key: "quota1", label: "1º quota" },
+      { key: "quota2", label: "2º quota" },
+      { key: "quota3", label: "3º quota" },
+      { key: "obs", label: "Obs" },
+      { key: "mit", label: "MIT" },
+      { key: "controle_mit", label: "Controle de MIT" },
+      { key: "inconsistencia_athenas", label: "Inconsistência Athenas" },
+    ]);
+
+    cfData = Array.from({ length: 15 }, () => createEmptyRow());
+    cfCellMeta = new Map();
+    sortState = null;
+    filters = {};
+    colWidths = {};
+    CF_COLUMNS.forEach((c) => setDefaultWidthForCol(c.key));
+    cfVersions = [];
+    lastSavedPayload = buildServerPayload();
+    clearDirtyState();
+    if (activeContFlowSheetIndex > 0) {
+      await mirrorSharedColumnsFromFirstQuarter();
+    }
+    cacheActiveQuarterState();
+    renderTable();
+  }
+}
+
+async function switchContFlowSheet(nextIndex, options = {}) {
+  const next = Number(nextIndex);
+  if (!Number.isInteger(next) || next === activeContFlowSheetIndex) return;
+
+  if (editing) commitEdit();
+  saveLocalDraft(buildServerPayload());
+
+  hideFilterDropdown();
+  if (typeof hideCtxMenu === "function") {
+    hideCtxMenu();
+  }
+
+  cacheActiveQuarterState();
+
+  activeContFlowSheetIndex = next;
+  persistActiveContFlowQuarter(next);
+  activeRow = 0;
+  activeCol = 0;
+  selectionAnchor = null;
+  lastSelectionBounds = null;
+  globalSearch = "";
+  const globalSearchInput = document.getElementById("cf-global-search");
+  if (globalSearchInput) globalSearchInput.value = "";
+
+  updateContFlowSheetUI();
+
+  if (applyQuarterSnapshot(cfQuarterCache[next])) {
+    rebuildViewMap();
+    renderTable();
+    refreshDirtyVisuals();
+    return;
+  }
+
+  const localDraft = loadLocalDraftByIndex(next);
+  if (localDraft) {
+    hydrateContFlowFromApiPayload(localDraft);
+    if (next > 0) {
+      await mirrorSharedColumnsFromFirstQuarter();
+    }
+    cacheActiveQuarterState();
+    rebuildViewMap();
+    renderTable();
+    refreshDirtyVisuals();
+    return;
+  }
+
+  applyQuarterBootstrap(next);
+  rebuildViewMap();
+  renderTable();
+  refreshDirtyVisuals();
+
+  loadCurrentContFlowSheet().catch((err) => {
+    console.error(`Erro ao sincronizar ${getActiveContFlowSheetDef().label}:`, err);
+  });
+}
+
+window.switchContFlowQuarter = async function switchContFlowQuarter(nextIndex) {
+  await switchContFlowSheet(nextIndex, { direct: true });
+};
+
+document.addEventListener("click", (event) => {
+  const btn = event.target?.closest?.("#view-contflow .cf-main-sheet-tab");
+  if (!btn) return;
+  event.preventDefault();
+  event.stopPropagation();
+  window.switchContFlowQuarter(btn.dataset.cfSheet);
+});
+
+function updateContFlowSheetUI() {
+  const activeDef = getActiveContFlowSheetDef();
+  const titleEl = document.getElementById("cf-sheet-title");
+  const modalTitleEl = document.getElementById("cf-modal-title");
+
+  if (titleEl) titleEl.textContent = activeDef.label;
+  if (modalTitleEl) modalTitleEl.textContent = `Base ContFlow • ${activeDef.label}`;
+
+  document.querySelectorAll("#view-contflow .cf-main-sheet-tab").forEach((btn) => {
+    const btnIndex = Number(btn.dataset.cfSheet);
+    btn.classList.toggle("is-active", btnIndex === activeContFlowSheetIndex);
+  });
+}
+
+function getContFlowRowMirrorKey(row) {
+  const cod = String(row?.cod ?? "").trim().toLowerCase();
+  if (cod) return `cod:${cod}`;
+
+  const doc = String(row?.cnpj_cpf ?? "").trim().toLowerCase();
+  if (doc) return `doc:${doc}`;
+
+  const razao = String(row?.razao_social ?? "").trim().toLowerCase();
+  if (razao) return `razao:${razao}`;
+
+  const id = String(row?.__id ?? "").trim().toLowerCase();
+  if (id) return `id:${id}`;
+
+  return "";
+}
+
+function extractRowsFromContFlowPayload(payload) {
+  if (isApiRelationalPayload(payload)) {
+    const cols = Array.isArray(payload?.columns) ? payload.columns : [];
+    const rows = Array.isArray(payload?.rows) ? payload.rows : [];
+    const cells = Array.isArray(payload?.cells) ? payload.cells : [];
+
+    const rowMap = new Map();
+    rows.forEach((r) => {
+      const rowObj = { __id: String(r?.clientRowId || genId()) };
+      cols.forEach((col) => {
+        const key = String(col?.key || "").trim();
+        if (key) rowObj[key] = "";
+      });
+      rowMap.set(Number(r?.id), rowObj);
+    });
+
+    cells.forEach((cell) => {
+      const rowObj = rowMap.get(Number(cell?.rowId));
+      const key = String(cell?.colKey || "").trim();
+      if (!rowObj || !key) return;
+      rowObj[key] = String(cell?.value ?? "");
+    });
+
+    return applyCanonicalSharedAliasesToRows(Array.from(rowMap.values()), cols);
+  }
+
+  if (isApiDocumentPayload(payload)) {
+    return applyCanonicalSharedAliasesToRows(
+      Array.isArray(payload?.data) ? payload.data.map((row) => ({ ...row })) : [],
+      payload?.columns || []
+    );
+  }
+
+  return [];
+}
+
+async function getFirstQuarterSharedRows() {
+  const localDraft = loadLocalDraftByIndex(0);
+  if (localDraft) {
+    return extractRowsFromContFlowPayload(localDraft);
+  }
+
+  const resp = await apiFetch(`/api/sheets/${getContFlowSheetDef(0).key}`, { method: "GET" });
+  const data = await resp.json().catch(() => null);
+  if (!resp.ok) {
+    throw new Error(data?.error || "Erro ao carregar o 1º trimestre do ContFlow.");
+  }
+
+  return extractRowsFromContFlowPayload(data);
+}
+
+async function mirrorSharedColumnsFromFirstQuarter() {
+  if (activeContFlowSheetIndex === 0) return;
+
+  const sourceRows = await getFirstQuarterSharedRows();
+  if (!sourceRows.length) return;
+  const targetKeyMap = getContFlowSharedColumnKeyMap(CF_COLUMNS);
+
+  const targetMap = new Map();
+  (cfData || []).forEach((row) => {
+    const key = getContFlowRowMirrorKey(row);
+    if (key) targetMap.set(key, row);
+  });
+
+  const merged = [];
+  sourceRows.forEach((sourceRow) => {
+    const key = getContFlowRowMirrorKey(sourceRow);
+    const currentRow = (key && targetMap.get(key)) || createEmptyRow();
+    const nextRow = { ...currentRow };
+
+    nextRow.__id = String(currentRow?.__id || sourceRow?.__id || genId());
+
+    CF_SHARED_COL_KEYS.forEach((colKey) => {
+      const targetKey = targetKeyMap[colKey] || colKey;
+      nextRow[targetKey] = normalizeCellValue(
+        targetKey,
+        getSharedValueFromRow(sourceRow, colKey)
+      );
+    });
+
+    merged.push(nextRow);
+    if (key) targetMap.delete(key);
+  });
+
+  targetMap.forEach((row) => {
+    merged.push(row);
+  });
+
+  cfData = coerceRowsToCurrentColumns(merged);
 }
 
 let lastPainelTributarioSyncSignature = "";
+let lastPainelTributarioLRSyncSignature = "";
+let lastPainelTributarioRevenueToLRSignature = "";
 
 function getContFlowRowsForPainelTributario() {
+  const classKey =
+    findColKeyByLabelRegex(/\bclass\b/) ||
+    findColKeyByLabelRegex(/\bclasse\b/) ||
+    "class";
+  const statusKey =
+    findColKeyByLabelRegex(/\bstatus\b/) ||
+    findColKeyByLabelRegex(/\bsituacao\b/) ||
+    "status";
+  const resp1Key =
+    findColKeyByLabelRegex(/\bresp\.?\s*1\b/) ||
+    findColKeyByLabelRegex(/\bresponsavel\b.*\b1\b/) ||
+    "resp1";
+  const resp2Key =
+    findColKeyByLabelRegex(/\bresp\.?\s*2\b/) ||
+    findColKeyByLabelRegex(/\bresponsavel\b.*\b2\b/) ||
+    "resp2";
+
   return (cfData || []).map((row) => ({
     __id: String(row?.__id || "").trim(),
     __sourceRowId: String(row?.__id || "").trim(),
@@ -362,40 +969,120 @@ function getContFlowRowsForPainelTributario() {
     razao_social: String(row?.razao_social ?? ""),
     tipo: String(row?.tipo ?? ""),
     cnpj_cpf: String(row?.cnpj_cpf ?? ""),
-    class: "",
+    class: String(row?.[classKey] ?? ""),
     grupo: String(row?.grupo ?? ""),
     trib: String(row?.trib ?? ""),
-    status: "",
-    resp1: String(row?.resp1 ?? ""),
+    status: String(row?.[statusKey] ?? ""),
+    resp1: String(row?.[resp1Key] ?? ""),
+    resp2: String(row?.[resp2Key] ?? ""),
   }));
 }
 
-function syncPainelTributarioFromContFlow(force = false) {
+function syncPainelTributarioFromContFlow(force = false, options = {}) {
+  const rows = getContFlowRowsForPainelTributario();
+  const signature = JSON.stringify(
+      rows.map((row) => [
+        row.__sourceRowId,
+        row.cod,
+        row.razao_social,
+        row.tipo,
+        row.cnpj_cpf,
+        row.class,
+        row.grupo,
+        row.trib,
+        row.status,
+        row.resp1,
+        row.resp2,
+      ])
+  );
+
+  if (
+    window.PainelTributarioSheet &&
+    typeof window.PainelTributarioSheet.syncFromContFlowRows === "function"
+  ) {
+    if (force || signature !== lastPainelTributarioSyncSignature) {
+      lastPainelTributarioSyncSignature = signature;
+      window.PainelTributarioSheet.syncFromContFlowRows(rows, options);
+    }
+  }
+
+  if (
+    window.PainelTributarioLRSheet &&
+    typeof window.PainelTributarioLRSheet.syncFromContFlowRows === "function"
+  ) {
+    if (force || signature !== lastPainelTributarioLRSyncSignature) {
+      lastPainelTributarioLRSyncSignature = signature;
+      window.PainelTributarioLRSheet.syncFromContFlowRows(rows, options);
+    }
+  }
+
+  syncPainelTributarioRevenueToLR(force);
+}
+
+const PAINEL_TRIBUTARIO_MIRROR_KEYS = new Set([
+  "cod",
+  "razao_social",
+  "tipo",
+  "cnpj_cpf",
+  "class",
+  "grupo",
+  "trib",
+  "status",
+  "resp1",
+  "resp2",
+]);
+
+function syncPainelTributarioAfterContFlowChange(changes = [], options = {}) {
+  const shouldSync = !Array.isArray(changes) || !changes.length
+    ? true
+    : changes.some((change) => PAINEL_TRIBUTARIO_MIRROR_KEYS.has(String(change?.colKey || "")));
+
+  if (!shouldSync) return;
+  syncPainelTributarioFromContFlow(true, options);
+  syncPainelTributarioRevenueToLR(true);
+}
+
+function syncPainelTributarioRevenueToLR(force = false) {
   if (
     !window.PainelTributarioSheet ||
-    typeof window.PainelTributarioSheet.syncFromContFlowRows !== "function"
+    typeof window.PainelTributarioSheet.exportRevenueMirrorSheets !== "function" ||
+    !window.PainelTributarioLRSheet ||
+    typeof window.PainelTributarioLRSheet.syncRevenueFromPainelTributarioSheets !== "function"
   ) {
     return;
   }
 
-  const rows = getContFlowRowsForPainelTributario();
+  const sourceSheets = window.PainelTributarioSheet.exportRevenueMirrorSheets();
   const signature = JSON.stringify(
-    rows.map((row) => [
-      row.__sourceRowId,
-      row.cod,
-      row.razao_social,
-      row.tipo,
-      row.cnpj_cpf,
-      row.grupo,
-      row.trib,
-      row.resp1,
-    ])
+    (Array.isArray(sourceSheets) ? sourceSheets : []).map((sheetRows) =>
+      (Array.isArray(sheetRows) ? sheetRows : [])
+        .map((row) => {
+          const sourceId = String(row?.__sourceRowId || row?.__id || "").trim();
+          const cod = String(row?.cod || "").trim();
+          const cnpjCpf = String(row?.cnpj_cpf || "").trim();
+          const razaoSocial = String(row?.razao_social || "").trim().toLowerCase();
+          if (!cod && !cnpjCpf && !razaoSocial && !sourceId) return null;
+
+          return [
+            sourceId,
+            cod,
+            cnpjCpf,
+            razaoSocial,
+            row?.fat_m1 || 0,
+            row?.fat_m2 || 0,
+            row?.fat_m3 || 0,
+          ];
+        })
+        .filter(Boolean)
+    )
   );
 
-  if (!force && signature === lastPainelTributarioSyncSignature) return;
+  if (!force && signature === lastPainelTributarioRevenueToLRSignature) {
+    return;
+  }
 
-  lastPainelTributarioSyncSignature = signature;
-  window.PainelTributarioSheet.syncFromContFlowRows(rows);
+  lastPainelTributarioRevenueToLRSignature = signature;
+  window.PainelTributarioLRSheet.syncRevenueFromPainelTributarioSheets(sourceSheets);
 }
 
 /* ===========================
@@ -525,6 +1212,7 @@ function refreshDirtyVisuals() {
     const parts = [];
     if (dirtyCells.size > 0) parts.push(`${dirtyCells.size} célula(s)`);
     if (hasStructuralChanges) parts.push("estrutura");
+    if (hasConfigChanges) parts.push("configuração");
     statusEl.textContent = `${cleanText} · Pendências: ${parts.join(" + ")}`;
   } else {
     statusEl.textContent = cleanText;
@@ -567,6 +1255,9 @@ function hydrateContFlowFromApiPayload(payload) {
       { key: "cnpj_cpf", label: "CNPJ/CPF" },
       { key: "trib", label: "Trib." },
       { key: "grupo", label: "Grupo" },
+      { key: "class", label: "Class" },
+      { key: "desligamento", label: "Desligamento" },
+      { key: "status", label: "Status" },
       { key: "resp1", label: "Resp.1" },
       { key: "resp2", label: "Resp.2" },
       { key: "tipo", label: "Tipo" },
@@ -577,6 +1268,7 @@ function hydrateContFlowFromApiPayload(payload) {
       { key: "obs", label: "Obs" },
       { key: "mit", label: "MIT" },
       { key: "controle_mit", label: "Controle de MIT" },
+      { key: "inconsistencia_athenas", label: "Inconsistência Athenas" },
     ]);
 
     const rowMap = new Map();
@@ -637,6 +1329,9 @@ function hydrateContFlowFromApiPayload(payload) {
       { key: "cnpj_cpf", label: "CNPJ/CPF" },
       { key: "trib", label: "Trib." },
       { key: "grupo", label: "Grupo" },
+      { key: "class", label: "Class" },
+      { key: "desligamento", label: "Desligamento" },
+      { key: "status", label: "Status" },
       { key: "resp1", label: "Resp.1" },
       { key: "resp2", label: "Resp.2" },
       { key: "tipo", label: "Tipo" },
@@ -647,6 +1342,7 @@ function hydrateContFlowFromApiPayload(payload) {
       { key: "obs", label: "Obs" },
       { key: "mit", label: "MIT" },
       { key: "controle_mit", label: "Controle de MIT" },
+      { key: "inconsistencia_athenas", label: "Inconsistência Athenas" },
     ]);
 
     cfData = coerceRowsToCurrentColumns(payload.data || []);
@@ -681,7 +1377,7 @@ function buildServerPayload() {
 }
 
 async function persistBaseToApi(payload) {
-  const resp = await apiFetch(CF_API_SHEET_URL, {
+  const resp = await apiFetch(getContFlowApiSheetUrl(), {
     method: "PUT",
     headers: {
       "Content-Type": "application/json",
@@ -699,7 +1395,7 @@ async function persistBaseToApi(payload) {
 }
 
 async function loadServerBackups() {
-  const resp = await apiFetch(CF_API_BACKUPS_URL, { method: "GET" });
+  const resp = await apiFetch(getContFlowBackupsUrl(), { method: "GET" });
   const data = await resp.json().catch(() => null);
 
   if (!resp.ok) {
@@ -710,7 +1406,7 @@ async function loadServerBackups() {
 }
 
 async function restoreServerBackupById(backupId) {
-  const resp = await apiFetch(`${CF_API_BACKUPS_URL}/${encodeURIComponent(String(backupId || "").trim())}/restore`, {
+  const resp = await apiFetch(`${getContFlowBackupsUrl()}/${encodeURIComponent(String(backupId || "").trim())}/restore`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -750,7 +1446,7 @@ function buildDirtyCellPayload() {
 }
 
 async function persistDirtyCellsToApi(changes) {
-  const resp = await apiFetch(CF_API_SHEET_CELLS_URL, {
+  const resp = await apiFetch(getContFlowCellsUrl(), {
     method: "PATCH",
     headers: {
       "Content-Type": "application/json",
@@ -784,7 +1480,7 @@ function getLocalBackupActorLabel() {
 
 function loadLocalDraft() {
   try {
-    const raw = window.localStorage.getItem(CF_LOCAL_DRAFT_KEY);
+    const raw = window.localStorage.getItem(getContFlowLocalDraftKey());
     if (!raw) return null;
     const payload = JSON.parse(raw);
     return payload && typeof payload === "object" ? payload : null;
@@ -794,9 +1490,21 @@ function loadLocalDraft() {
   }
 }
 
+function loadLocalDraftByIndex(index) {
+  try {
+    const raw = window.localStorage.getItem(getContFlowLocalDraftKeyByIndex(index));
+    if (!raw) return null;
+    const payload = JSON.parse(raw);
+    return payload && typeof payload === "object" ? payload : null;
+  } catch (err) {
+    console.warn("Erro ao ler rascunho local trimestral do ContFlow:", err);
+    return null;
+  }
+}
+
 function saveLocalDraft(payload) {
   try {
-    window.localStorage.setItem(CF_LOCAL_DRAFT_KEY, JSON.stringify(payload));
+    window.localStorage.setItem(getContFlowLocalDraftKey(), JSON.stringify(payload));
   } catch (err) {
     console.warn("Erro ao salvar rascunho local do ContFlow:", err);
   }
@@ -804,7 +1512,7 @@ function saveLocalDraft(payload) {
 
 function loadLocalBackups() {
   try {
-    const raw = window.localStorage.getItem(CF_LOCAL_BACKUPS_KEY);
+    const raw = window.localStorage.getItem(getContFlowLocalBackupsKey());
     if (!raw) return [];
     const backups = JSON.parse(raw);
     return Array.isArray(backups) ? backups : [];
@@ -817,7 +1525,7 @@ function loadLocalBackups() {
 function saveLocalBackups(backups) {
   try {
     window.localStorage.setItem(
-      CF_LOCAL_BACKUPS_KEY,
+      getContFlowLocalBackupsKey(),
       JSON.stringify(Array.isArray(backups) ? backups.slice(0, 100) : [])
     );
   } catch (err) {
@@ -1089,6 +1797,21 @@ function syncQuotasByNum(row) {
   normalizeNumQuotas(row);
 }
 
+function formatDesligamentoDate(value) {
+  const digits = String(value ?? "").replace(/\D+/g, "").slice(0, 8);
+  if (!digits) return "";
+
+  if (digits.length <= 2) return digits;
+  if (digits.length <= 4) return `${digits.slice(0, 2)}/${digits.slice(2)}`;
+  return `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4)}`;
+}
+
+function normalizeCellValue(colKey, value) {
+  const raw = String(value ?? "");
+  if (colKey === "desligamento") return formatDesligamentoDate(raw);
+  return raw;
+}
+
 function createEmptyRow() {
   const row = {};
   CF_COLUMNS.forEach((col) => (row[col.key] = ""));
@@ -1110,7 +1833,7 @@ function coerceRowsToCurrentColumns(rows) {
 
     CF_COLUMNS.forEach((c) => {
       const v = r && r[c.key] != null ? r[c.key] : "";
-      row[c.key] = v;
+      row[c.key] = normalizeCellValue(c.key, v);
     });
 
     if (row[nqKey] != null && String(row[nqKey]).trim() === "") {
@@ -1173,7 +1896,7 @@ async function saveDirtyCells(silent = false) {
 
     if (hasStructuralChanges) {
       if (!silent) {
-        alert("Há alterações estruturais pendentes. Use o botão de salvar base para evitar sobrescrever a planilha.");
+        alert("Há alterações estruturais pendentes. Use o botão de salvar base para concluir as mudanças da planilha.");
       }
       return;
     }
@@ -1192,7 +1915,7 @@ async function saveDirtyCells(silent = false) {
       rebuildViewMap();
       renderTable();
       refreshDirtyVisuals();
-      syncPainelTributarioFromContFlow(true);
+      syncPainelTributarioFromContFlow(true, { persist: true });
       saveLocalDraft(buildServerPayload());
     }
 
@@ -1245,19 +1968,27 @@ async function saveDirtyCells(silent = false) {
    VIEW MAP
 =========================== */
 function passesFilters(row) {
+  const search = normalizeSearchText(globalSearch);
+  if (search) {
+    const rowText = normalizeSearchText(
+      CF_COLUMNS.map((col) => row?.[col.key] ?? "").join(" ")
+    );
+    if (!rowText.includes(search)) return false;
+  }
+
   for (const colKey of Object.keys(filters)) {
     const f = filters[colKey];
     if (!isFilterActive(f)) continue;
 
     const cellRaw = row[colKey] ?? "";
     const cell = String(cellRaw);
-    const a = cell.toLowerCase().trim();
+    const a = normalizeSearchText(cell);
 
     if (f.mode === "equals") {
-      const b = String(f.value ?? "").toLowerCase().trim();
+      const b = normalizeSearchText(f.value);
       if (a !== b) return false;
     } else if (f.mode === "starts") {
-      const b = String(f.value ?? "").toLowerCase();
+      const b = normalizeSearchText(f.value);
       if (!a.startsWith(b)) return false;
     } else if (f.mode === "empty") {
       if (a !== "") return false;
@@ -1267,7 +1998,7 @@ function passesFilters(row) {
       const set = new Set((f.values || []).map((x) => String(x ?? "").trim()));
       if (!set.has(String(cellRaw ?? "").trim())) return false;
     } else {
-      const b = String(f.value ?? "").toLowerCase();
+      const b = normalizeSearchText(f.value);
       if (!a.includes(b)) return false;
     }
   }
@@ -1395,7 +2126,7 @@ function loadVersions() {
 
 function saveVersions(arr) {
   cfVersions = Array.isArray(arr) ? arr.slice(0, MAX_VERSIONS) : [];
-  markStructureDirty();
+  markConfigDirty();
 }
 
 function saveVersion() {
@@ -1431,6 +2162,7 @@ function setDefaultWidthForCol(colKey) {
   else if (colKey === "obs") colWidths[colKey] = 220;
   else if (colKey === "mit") colWidths[colKey] = 120;
   else if (colKey === "controle_mit") colWidths[colKey] = 220;
+  else if (colKey === "inconsistencia_athenas") colWidths[colKey] = 240;
   else colWidths[colKey] = 140;
 }
 
@@ -1552,7 +2284,7 @@ function cycleSort(colKey) {
 
   rebuildViewMap();
   renderTable();
-  markStructureDirty();
+  markConfigDirty();
 }
 
 function promptFilter(colKey, label) {
@@ -1595,14 +2327,17 @@ function promptFilter(colKey, label) {
 
   rebuildViewMap();
   renderTable();
-  markStructureDirty();
+  markConfigDirty();
 }
 
 function clearAllFilters() {
   filters = {};
+  globalSearch = "";
+  const searchInput = document.getElementById("cf-global-search");
+  if (searchInput) searchInput.value = "";
   rebuildViewMap();
   renderTable();
-  markStructureDirty();
+  markConfigDirty();
 }
 
 /* ===========================
@@ -1621,6 +2356,7 @@ function ensureFilterDropdown() {
   cfFilterDD.style.maxWidth = "360px";
   cfFilterDD.style.maxHeight = "520px";
   cfFilterDD.style.overflow = "hidden";
+  cfFilterDD.style.overscrollBehavior = "contain";
   cfFilterDD.style.display = "none";
   cfFilterDD.style.background = "rgba(2,6,23,0.98)";
   cfFilterDD.style.border = "1px solid rgba(255,255,255,0.12)";
@@ -1635,13 +2371,70 @@ function ensureFilterDropdown() {
     hideFilterDropdown();
   });
 
-  document.addEventListener("scroll", () => hideFilterDropdown(), true);
+  document.addEventListener(
+    "scroll",
+    (e) => {
+      if (!cfFilterDD || cfFilterDD.style.display === "none") return;
+      if (cfFilterDD.contains(e.target)) return;
+      scheduleFilterDropdownPosition();
+    },
+    true
+  );
+
+  window.addEventListener("resize", () => {
+    if (!cfFilterDD || cfFilterDD.style.display === "none") return;
+    scheduleFilterDropdownPosition();
+  });
 
   return cfFilterDD;
 }
 
+function positionFilterDropdown(anchorEl = cfFilterAnchorEl) {
+  if (!cfFilterDD || cfFilterDD.style.display === "none") return;
+  if (!anchorEl || !anchorEl.isConnected) {
+    hideFilterDropdown();
+    return;
+  }
+
+  const viewportPadding = 8;
+  const gap = 6;
+  const rect = anchorEl.getBoundingClientRect();
+  const menuWidth = Math.max(cfFilterDD.offsetWidth || 320, 280);
+  const menuHeight = Math.max(cfFilterDD.offsetHeight || 0, 240);
+
+  const maxLeft = Math.max(viewportPadding, window.innerWidth - menuWidth - viewportPadding);
+  const left = clamp(rect.left, viewportPadding, maxLeft);
+
+  const belowTop = rect.bottom + gap;
+  const aboveTop = rect.top - menuHeight - gap;
+  const fitsBelow = belowTop + menuHeight <= window.innerHeight - viewportPadding;
+  const fitsAbove = aboveTop >= viewportPadding;
+
+  let top = belowTop;
+  if (!fitsBelow && fitsAbove) top = aboveTop;
+  else if (!fitsBelow) {
+    top = clamp(belowTop, viewportPadding, Math.max(viewportPadding, window.innerHeight - menuHeight - viewportPadding));
+  }
+
+  cfFilterDD.style.left = `${left}px`;
+  cfFilterDD.style.top = `${top}px`;
+}
+
+function scheduleFilterDropdownPosition() {
+  if (cfFilterPositionRaf != null) cancelAnimationFrame(cfFilterPositionRaf);
+  cfFilterPositionRaf = requestAnimationFrame(() => {
+    cfFilterPositionRaf = null;
+    positionFilterDropdown();
+  });
+}
+
 function hideFilterDropdown() {
   if (!cfFilterDD) return;
+  cfFilterAnchorEl = null;
+  if (cfFilterPositionRaf != null) {
+    cancelAnimationFrame(cfFilterPositionRaf);
+    cfFilterPositionRaf = null;
+  }
   cfFilterDD.style.display = "none";
   cfFilterDD.innerHTML = "";
 }
@@ -1668,6 +2461,7 @@ function openFilterDropdownForHeader(thEl, colIndex) {
   if (!col) return;
 
   const menu = ensureFilterDropdown();
+  cfFilterAnchorEl = thEl;
   menu.innerHTML = "";
 
   menu.addEventListener("keydown", (ev) => ev.stopPropagation(), true);
@@ -1677,17 +2471,11 @@ function openFilterDropdownForHeader(thEl, colIndex) {
   const colKey = col.key;
   const colLabel = col.label;
 
-  const rect = thEl.getBoundingClientRect();
-  const left = clamp(rect.left, 8, window.innerWidth - 380);
-  const top = clamp(rect.bottom + 6, 8, window.innerHeight - 520);
-
-  menu.style.left = left + "px";
-  menu.style.top = top + "px";
-
   menu.style.display = "flex";
   menu.style.flexDirection = "column";
   menu.style.maxHeight = "520px";
   menu.style.overflow = "hidden";
+  menu.style.overscrollBehavior = "contain";
 
   const header = document.createElement("div");
   header.style.padding = "10px 12px";
@@ -1724,6 +2512,7 @@ function openFilterDropdownForHeader(thEl, colIndex) {
   body.style.display = "grid";
   body.style.gap = "10px";
   body.style.overflow = "auto";
+  body.style.overscrollBehavior = "contain";
   body.style.flex = "1 1 auto";
   menu.appendChild(body);
 
@@ -1820,6 +2609,7 @@ function openFilterDropdownForHeader(thEl, colIndex) {
   scroller.style.padding = "8px";
   scroller.style.maxHeight = "260px";
   scroller.style.overflow = "auto";
+  scroller.style.overscrollBehavior = "contain";
   scroller.style.background = "rgba(255,255,255,.03)";
   body.appendChild(scroller);
 
@@ -1920,17 +2710,20 @@ function openFilterDropdownForHeader(thEl, colIndex) {
       }
     }
 
-    rebuildViewMap();
-    renderTable();
-    markStructureDirty();
-    hideFilterDropdown();
-  };
+      rebuildViewMap();
+      renderTable();
+      markConfigDirty();
+      hideFilterDropdown();
+    };
 
   footer.appendChild(btnConfirm);
   menu.appendChild(footer);
 
   menu.style.display = "flex";
-  setTimeout(() => input.focus(), 0);
+  requestAnimationFrame(() => {
+    positionFilterDropdown(thEl);
+    input.focus();
+  });
 }
 
 /* ===========================
@@ -2155,6 +2948,23 @@ function enterEditMode(viewRow, colIndex, initialText = null, selectAll = false)
   sel.addRange(range);
 }
 
+function handleEditingInput(e) {
+  if (!editing || editing.el !== e.currentTarget) return;
+  if (editing.colKey !== "desligamento") return;
+
+  const formatted = normalizeCellValue(editing.colKey, e.currentTarget.textContent ?? "");
+  if (formatted === String(e.currentTarget.textContent ?? "")) return;
+
+  e.currentTarget.textContent = formatted;
+
+  const range = document.createRange();
+  range.selectNodeContents(e.currentTarget);
+  range.collapse(false);
+  const sel = window.getSelection();
+  sel.removeAllRanges();
+  sel.addRange(range);
+}
+
 function cancelEdit() {
   if (!editing) return;
   const { el, before } = editing;
@@ -2169,9 +2979,10 @@ function commitEdit() {
   if (!editing) return;
 
   const { el, before, dataIndex, colKey, viewRow, colIndex } = editing;
-  const after = String(el.textContent ?? "");
+  const after = normalizeCellValue(colKey, el.textContent ?? "");
 
   let finalAfter = after;
+  el.textContent = finalAfter;
 
   if (colKey === "num_quotas") {
     cfData[dataIndex][colKey] = finalAfter;
@@ -2196,6 +3007,7 @@ function commitEdit() {
     cfData[dataIndex][colKey] = finalAfter;
     pushUndo({ type: "cell", dataIndex, colKey, before, after: finalAfter });
     markCellDirty(dataIndex, colKey);
+    syncPainelTributarioAfterContFlowChange([{ dataIndex, colKey }]);
   }
 
   setSingleActiveCell(viewRow, colIndex);
@@ -2212,6 +3024,7 @@ function isTypingKey(e) {
    COPIAR / COLAR
 =========================== */
 async function copyToClipboard(text) {
+  clipboardTextCache = String(text ?? "");
   try {
     if (navigator.clipboard && navigator.clipboard.writeText) {
       await navigator.clipboard.writeText(text);
@@ -2231,7 +3044,7 @@ async function copyToClipboard(text) {
 }
 
 async function copySelection() {
-  if (!viewMap.length) return;
+  if (!viewMap.length) return "";
   const { rowMin, rowMax, colMin, colMax } = getSelectionBoundsFallback();
 
   const lines = [];
@@ -2245,14 +3058,14 @@ async function copySelection() {
     }
     lines.push(out.join("\t"));
   }
-  await copyToClipboard(lines.join("\n"));
+  const text = lines.join("\n");
+  await copyToClipboard(text);
+  return text;
 }
 
-async function pasteFromClipboard() {
+async function pasteFromClipboard(textOverride) {
   if (!viewMap.length) return;
-  if (!navigator.clipboard || !navigator.clipboard.readText) return;
-
-  const text = await navigator.clipboard.readText();
+  const text = textOverride ?? (await readClipboardText());
   if (!text) return;
 
   const rows = text.split(/\r?\n/).filter((l) => l !== "");
@@ -2276,7 +3089,7 @@ async function pasteFromClipboard() {
       for (let c = colMin; c <= colMax; c++) {
         const colDef = CF_COLUMNS[c];
         const before = String(cfData[di][colDef.key] ?? "");
-        const after = String(value);
+        const after = normalizeCellValue(colDef.key, value);
         if (before !== after) {
           cfData[di][colDef.key] = after;
           changes.push({ dataIndex: di, colKey: colDef.key, before, after });
@@ -2316,7 +3129,7 @@ async function pasteFromClipboard() {
       if (colIndex > maxColIndex) return;
       const colDef = CF_COLUMNS[colIndex];
       const before = String(cfData[di][colDef.key] ?? "");
-      const after = String(cellVal ?? "");
+      const after = normalizeCellValue(colDef.key, cellVal ?? "");
       if (before !== after) {
         cfData[di][colDef.key] = after;
         changes.push({ dataIndex: di, colKey: colDef.key, before, after });
@@ -2336,6 +3149,31 @@ async function pasteFromClipboard() {
   lastSelectionBounds = { rowMin: startViewRow, rowMax: newRowMax, colMin: startCol, colMax: newColMax };
 
   renderTable();
+}
+
+async function handleCopyEvent(e) {
+  if (getActiveWorkbookView() !== "contflow") return;
+  if (!viewMap.length) return;
+
+  const text = await copySelection();
+  if (!text) return;
+
+  if (e.clipboardData) {
+    e.preventDefault();
+    e.clipboardData.setData("text/plain", text);
+  }
+}
+
+async function handlePasteEvent(e) {
+  if (getActiveWorkbookView() !== "contflow") return;
+  if (!viewMap.length) return;
+
+  const text = e.clipboardData?.getData("text/plain");
+  if (!text) return;
+
+  e.preventDefault();
+  clipboardTextCache = String(text);
+  await pasteFromClipboard(text);
 }
 
 /* ===========================
@@ -2632,7 +3470,9 @@ function applyContFlowFrozenColumns() {
   });
 }
 
-function renderTable() {
+function renderTable(options = {}) {
+  const preserveFocus = options?.preserveFocus || null;
+  const suppressCellFocus = Boolean(options?.suppressCellFocus);
   renderColgroup();
 
   function ensureTbody() {
@@ -2701,6 +3541,7 @@ function renderTable() {
       td.addEventListener("dblclick", () => enterEditMode(viewRowIndex, colIndex, null, true));
       td.addEventListener("mousedown", handleCellMouseDown);
       td.addEventListener("mouseenter", handleCellMouseEnter);
+      td.addEventListener("input", handleEditingInput);
       td.addEventListener("blur", () => {
         if (editing && editing.el === td) commitEdit();
       });
@@ -2719,7 +3560,9 @@ function renderTable() {
 
   if (!selectionAnchor) {
     setTimeout(() => {
-      setSingleActiveCell(r, c);
+      if (!suppressCellFocus) {
+        setSingleActiveCell(r, c);
+      }
       refreshDirtyVisuals();
     }, 0);
   } else {
@@ -2734,6 +3577,23 @@ function renderTable() {
   applyFindHighlights();
   requestAnimationFrame(() => applyContFlowFrozenColumns());
   syncPainelTributarioFromContFlow();
+
+  if (preserveFocus?.element) {
+    const targetEl = preserveFocus.element;
+    const start = Number.isFinite(preserveFocus.start) ? preserveFocus.start : null;
+    const end = Number.isFinite(preserveFocus.end) ? preserveFocus.end : start;
+    setTimeout(() => {
+      if (!targetEl || typeof targetEl.focus !== "function") return;
+      targetEl.focus({ preventScroll: true });
+      if (
+        targetEl === document.activeElement &&
+        typeof targetEl.setSelectionRange === "function" &&
+        start != null
+      ) {
+        targetEl.setSelectionRange(start, end ?? start);
+      }
+    }, 0);
+  }
 }
 
 /* ===========================
@@ -2912,7 +3772,6 @@ async function handleGlobalKeyDown(e) {
     return;
   }
   if (isCtrl && !isShift && (e.key === "v" || e.key === "V")) {
-    if (!navigator.clipboard || !navigator.clipboard.readText) return;
     e.preventDefault();
     await pasteFromClipboard();
     return;
@@ -2999,10 +3858,10 @@ async function handleGlobalKeyDown(e) {
     let targetRow = activeRow + dRow;
     let targetCol = activeCol + dCol;
 
-    if (isCtrl && !isShift) {
-      const jumped = ctrlJump(activeRow, activeCol, dRow, dCol);
-      targetRow = jumped.r;
-      targetCol = jumped.c;
+      if (isCtrl) {
+        const jumped = ctrlJump(activeRow, activeCol, dRow, dCol);
+        targetRow = jumped.r;
+        targetCol = jumped.c;
     } else {
       targetRow = clamp(targetRow, 0, maxRow);
       targetCol = clamp(targetCol, 0, maxCol);
@@ -3154,7 +4013,7 @@ function rawToData(rawRows) {
   if (!rawRows || !rawRows.length) return { cols: [], rows: [] };
 
   const headerRow = rawRows[0];
-  const labels = (headerRow || []).map((h) => String(h ?? "").trim());
+  const labels = (headerRow || []).map((h) => canonicalContFlowLabel(h));
   const cols = ensureUniqueKeys(
     labels
       .filter((h) => h !== "")
@@ -3166,7 +4025,9 @@ function rawToData(rawRows) {
     cols.forEach((c, i) => (row[c.key] = cells[i] ?? ""));
     row.__id = genId();
     return row;
-  });
+  }).filter((row) =>
+    cols.some((c) => String(row[c.key] ?? "").trim() !== "")
+  );
 
   return { cols, rows };
 }
@@ -3222,15 +4083,15 @@ function mergeImportRows(importCols, importRows) {
   cfData = coerceRowsToCurrentColumns(cfData);
 
   const importMap = new Map(
-    (importCols || []).map((c) => [normalizeLabel(c.label), c.key])
+    (importCols || []).map((c) => [normalizeLabel(canonicalContFlowLabel(c.label)), c.key])
   );
 
   const incoming = (importRows || []).map((r) => {
     const out = {};
     CF_COLUMNS.forEach((c) => (out[c.key] = ""));
 
-    CF_COLUMNS.forEach((c) => {
-      const ik = importMap.get(normalizeLabel(c.label));
+      CF_COLUMNS.forEach((c) => {
+      const ik = importMap.get(normalizeLabel(canonicalContFlowLabel(c.label)));
       if (ik && r[ik] != null) {
         out[c.key] = String(r[ik]).trim();
       }
@@ -3339,6 +4200,9 @@ function handleImportFile(e) {
         { key: "cnpj_cpf", label: "CNPJ/CPF" },
         { key: "trib", label: "Trib." },
         { key: "grupo", label: "Grupo" },
+        { key: "class", label: "Class" },
+        { key: "desligamento", label: "Desligamento" },
+        { key: "status", label: "Status" },
         { key: "resp1", label: "Resp.1" },
         { key: "resp2", label: "Resp.2" },
         { key: "tipo", label: "Tipo" },
@@ -3349,6 +4213,7 @@ function handleImportFile(e) {
         { key: "obs", label: "Obs" },
         { key: "mit", label: "MIT" },
         { key: "controle_mit", label: "Controle de MIT" },
+        { key: "inconsistencia_athenas", label: "Inconsistência Athenas" },
       ]);
 
       CF_COLUMNS.forEach((c) => setDefaultWidthForCol(c.key));
@@ -3370,6 +4235,9 @@ function handleImportFile(e) {
         { key: "cnpj_cpf", label: "CNPJ/CPF" },
         { key: "trib", label: "Trib." },
         { key: "grupo", label: "Grupo" },
+        { key: "class", label: "Class" },
+        { key: "desligamento", label: "Desligamento" },
+        { key: "status", label: "Status" },
         { key: "resp1", label: "Resp.1" },
         { key: "resp2", label: "Resp.2" },
         { key: "tipo", label: "Tipo" },
@@ -3380,15 +4248,18 @@ function handleImportFile(e) {
         { key: "obs", label: "Obs" },
         { key: "mit", label: "MIT" },
         { key: "controle_mit", label: "Controle de MIT" },
+        { key: "inconsistencia_athenas", label: "Inconsistência Athenas" },
       ]);
 
       CF_COLUMNS.forEach((c) => setDefaultWidthForCol(c.key));
 
-      const importMap = new Map(cols.map((c) => [normalizeLabel(c.label), c.key]));
+      const importMap = new Map(
+        cols.map((c) => [normalizeLabel(canonicalContFlowLabel(c.label)), c.key])
+      );
       const incoming = rows.map((r) => {
         const out = createEmptyRow();
         CF_COLUMNS.forEach((c) => {
-          const ik = importMap.get(normalizeLabel(c.label));
+          const ik = importMap.get(normalizeLabel(canonicalContFlowLabel(c.label)));
           if (ik && r[ik] != null) out[c.key] = r[ik];
         });
         out.__id = genId();
@@ -3411,6 +4282,9 @@ function handleImportFile(e) {
         { key: "cnpj_cpf", label: "CNPJ/CPF" },
         { key: "trib", label: "Trib." },
         { key: "grupo", label: "Grupo" },
+        { key: "class", label: "Class" },
+        { key: "desligamento", label: "Desligamento" },
+        { key: "status", label: "Status" },
         { key: "resp1", label: "Resp.1" },
         { key: "resp2", label: "Resp.2" },
         { key: "tipo", label: "Tipo" },
@@ -3421,6 +4295,7 @@ function handleImportFile(e) {
         { key: "obs", label: "Obs" },
         { key: "mit", label: "MIT" },
         { key: "controle_mit", label: "Controle de MIT" },
+        { key: "inconsistencia_athenas", label: "Inconsistência Athenas" },
       ]);
       const after = snapshotState();
       pushUndo({ type: "snapshot", before, after });
@@ -3630,6 +4505,8 @@ async function saveBase(silent = false, options = {}) {
       clearDirtyState();
     }
 
+    syncPainelTributarioFromContFlow(true, { persist: true });
+
     const delta = computeDelta(prev, payload);
 
     publishContFlowUpdate({
@@ -3688,6 +4565,7 @@ function openModal() {
   const backdrop = document.getElementById("cf-modal-backdrop");
   const modal = document.getElementById("cf-modal");
   if (!backdrop || !modal) return;
+  if (!canManageContFlowBase(getSessionUser())) return;
   backdrop.classList.add("is-open");
   modal.classList.add("is-open");
   closeBackupsPanel();
@@ -3729,6 +4607,7 @@ function renderUserCard() {
     elUserName && (elUserName.textContent = "Usuário");
     elUserRole && (elUserRole.textContent = "Deslogado");
     elUserAvatar && (elUserAvatar.textContent = "U");
+    applyContFlowBaseAccess();
     return;
   }
 
@@ -3738,6 +4617,7 @@ function renderUserCard() {
   elUserName && (elUserName.textContent = nome);
   elUserRole && (elUserRole.textContent = roleLabel(role));
   elUserAvatar && (elUserAvatar.textContent = avatarFromName(nome));
+  applyContFlowBaseAccess();
 }
 
 /* ===========================
@@ -3789,7 +4669,7 @@ function bindHeaderInteractions() {
           const w = clamp(startW + dx, 60, 900);
           colWidths[col.key] = w;
           renderColgroup();
-          markStructureDirty();
+          markConfigDirty();
         };
 
         const up = () => {
@@ -3968,6 +4848,21 @@ function openContextMenu(e, ctx) {
     addMenuItem(menu, "Salvar base agora", () => saveVersion());
     addMenuItem(menu, "Histórico de backups", () => restoreVersion());
   }
+}
+
+async function readClipboardText() {
+  try {
+    if (navigator.clipboard && navigator.clipboard.readText) {
+      const text = await navigator.clipboard.readText();
+      if (text != null && String(text) !== "") {
+        clipboardTextCache = String(text);
+        return clipboardTextCache;
+      }
+    }
+  } catch (err) {
+    console.warn("Clipboard indisponível, usando cache local.", err);
+  }
+  return clipboardTextCache || "";
 }
 
 /* ===========================
@@ -4277,24 +5172,52 @@ document.addEventListener("DOMContentLoaded", async () => {
   renderUserCard();
 
   if (window.PainelTributarioSheet && typeof window.PainelTributarioSheet.init === "function") {
-    window.PainelTributarioSheet.init();
-    syncPainelTributarioFromContFlow(true);
+    await window.PainelTributarioSheet.init();
   }
+
+  if (window.PainelTributarioLRSheet && typeof window.PainelTributarioLRSheet.init === "function") {
+    await window.PainelTributarioLRSheet.init();
+  }
+
+  syncPainelTributarioFromContFlow(true);
+  syncPainelTributarioRevenueToLR(true);
+  window.addEventListener("painel-tributario:revenue-sync", (event) => {
+    syncPainelTributarioRevenueToLR(Boolean(event?.detail?.sheets));
+  });
 
   const btnAdd = document.getElementById("cf-add-row");
   const inputFile = document.getElementById("cf-import");
   const btnExportCSV = document.getElementById("cf-export");
   const btnExportXLSX = document.getElementById("cf-export-xlsx");
+  const btnExportXLSXTop = document.getElementById("cf-export-xlsx-top");
   const btnSaveCells = document.getElementById("cf-save-cells");
   const btnSaveBase = document.getElementById("cf-save-base");
+  const btnSaveBaseTop = document.getElementById("cf-save-base-top");
+  const btnClearFiltersTop = document.getElementById("cf-clear-filters-top");
   const btnDeleteSelected = document.getElementById("cf-delete-selected");
   const btnSaveCellsTop = document.getElementById("cf-save-cells-top");
+  const globalSearchInput = document.getElementById("cf-global-search");
+  const cfSheetTabs = Array.from(
+    document.querySelectorAll("#view-contflow .cf-main-sheet-tab")
+  );
 
   const baseBtn = document.getElementById("cf-base-btn");
   const modalClose = document.getElementById("cf-modal-close");
   const modalBackdrop = document.getElementById("cf-modal-backdrop");
   const backupsRefreshBtn = document.getElementById("cf-backups-refresh");
   const backupsCloseBtn = document.getElementById("cf-backups-close");
+
+  activeContFlowSheetIndex = restoreActiveContFlowQuarter();
+  updateContFlowSheetUI();
+  persistActiveContFlowQuarter(activeContFlowSheetIndex);
+
+  cfSheetTabs.forEach((btn) => {
+    btn.addEventListener("click", async (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      await window.switchContFlowQuarter(btn.dataset.cfSheet);
+    });
+  });
 
   const modalActions = document.querySelector(".cf-modal-actions");
   if (modalActions && !modalActions.dataset.enhanced) {
@@ -4304,23 +5227,11 @@ document.addEventListener("DOMContentLoaded", async () => {
     extra.className = "cf-modal-extra-actions";
     extra.style.marginTop = "10px";
 
-    const b1 = document.createElement("button");
-    b1.className = "cf-btn";
-    b1.type = "button";
-    b1.textContent = "Salvar base agora";
-    b1.onclick = () => saveVersion();
-
     const b2 = document.createElement("button");
     b2.className = "cf-btn";
     b2.type = "button";
     b2.textContent = "Histórico de backups";
     b2.onclick = () => restoreVersion();
-
-    const b3 = document.createElement("button");
-    b3.className = "cf-btn";
-    b3.type = "button";
-    b3.textContent = "Limpar filtros";
-    b3.onclick = () => clearAllFilters();
 
     const b4 = document.createElement("button");
     b4.className = "cf-btn";
@@ -4328,9 +5239,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     b4.textContent = "Buscar (Ctrl+F)";
     b4.onclick = () => openFindUI();
 
-    extra.appendChild(b1);
     extra.appendChild(b2);
-    extra.appendChild(b3);
     extra.appendChild(b4);
     modalActions.appendChild(extra);
   }
@@ -4362,6 +5271,10 @@ document.addEventListener("DOMContentLoaded", async () => {
     closeModal();
   });
 
+  btnExportXLSXTop?.addEventListener("click", () => {
+    handleExportXLSX();
+  });
+
   btnSaveCells?.addEventListener("click", async () => {
     await saveDirtyCells(false);
   });
@@ -4375,6 +5288,38 @@ document.addEventListener("DOMContentLoaded", async () => {
   btnSaveBase?.addEventListener("click", async () => {
     await saveBase(false, { mode: "base" });
     closeModal();
+  });
+
+  if (btnSaveBaseTop) {
+    btnSaveBaseTop.addEventListener("click", async () => {
+      if (!canManageContFlowBase(getSessionUser())) return;
+      await saveBase(false, { mode: "base" });
+    });
+  }
+
+  if (btnClearFiltersTop) {
+    btnClearFiltersTop.addEventListener("click", () => {
+      clearAllFilters();
+    });
+  }
+
+  globalSearchInput?.addEventListener("input", () => {
+    const selectionStart = globalSearchInput.selectionStart;
+    const selectionEnd = globalSearchInput.selectionEnd;
+    globalSearch = globalSearchInput.value || "";
+    rebuildViewMap();
+    activeRow = clamp(activeRow, 0, Math.max(0, viewMap.length - 1));
+    selectionAnchor = null;
+    lastSelectionBounds = null;
+    renderTable({
+      suppressCellFocus: true,
+      preserveFocus: {
+        element: globalSearchInput,
+        start: selectionStart,
+        end: selectionEnd,
+      },
+    });
+    refreshDirtyVisuals();
   });
 
   btnDeleteSelected?.addEventListener("click", () => {
@@ -4402,70 +5347,27 @@ document.addEventListener("DOMContentLoaded", async () => {
       ) {
         window.PainelTributarioSheet.closeModal();
       }
+      if (
+        window.PainelTributarioLRSheet &&
+        typeof window.PainelTributarioLRSheet.closeModal === "function"
+      ) {
+        window.PainelTributarioLRSheet.closeModal();
+      }
       if (findUI) findUI.style.display = "none";
     }
   });
 
   document.addEventListener("keydown", handleGlobalKeyDown);
+  document.addEventListener("copy", handleCopyEvent);
+  document.addEventListener("paste", handlePasteEvent);
 
   window.addEventListener("mouseup", () => (mouseSelecting = false));
 
-  try {
-    const payload = await loadBaseFromApi();
-    hydrateContFlowFromApiPayload(payload);
-
-    if (!cfData.length) {
-      cfData = Array.from({ length: 15 }, () => createEmptyRow());
-      CF_COLUMNS.forEach((c) => setDefaultWidthForCol(c.key));
-      markStructureDirty();
-    }
-
-    console.log("✅ ContFlow carregado da API.");
-  } catch (err) {
-    console.error("❌ Falha ao carregar ContFlow da API:", err);
-
-    const localDraft = loadLocalDraft();
-    if (localDraft) {
-      try {
-        hydrateContFlowFromApiPayload(localDraft);
-        console.log("🟡 ContFlow carregado do rascunho local.");
-      } catch (localErr) {
-        console.error("❌ Falha ao carregar rascunho local do ContFlow:", localErr);
-      }
-    }
-
-    if (!localDraft) {
-      forceDefaultColumns([
-        { key: "cod", label: "Cód." },
-        { key: "razao_social", label: "Razão Social" },
-        { key: "cnpj_cpf", label: "CNPJ/CPF" },
-        { key: "trib", label: "Trib." },
-        { key: "grupo", label: "Grupo" },
-        { key: "resp1", label: "Resp.1" },
-        { key: "resp2", label: "Resp.2" },
-        { key: "tipo", label: "Tipo" },
-        { key: "num_quotas", label: "Num Quotas" },
-        { key: "quota1", label: "1º quota" },
-        { key: "quota2", label: "2º quota" },
-        { key: "quota3", label: "3º quota" },
-        { key: "obs", label: "Obs" },
-        { key: "mit", label: "MIT" },
-        { key: "controle_mit", label: "Controle de MIT" },
-      ]);
-
-      cfData = Array.from({ length: 15 }, () => createEmptyRow());
-      CF_COLUMNS.forEach((c) => setDefaultWidthForCol(c.key));
-      markStructureDirty();
-      console.log("⚠️ ContFlow iniciado com estrutura vazia, sem fallback local.");
-    }
-  }
-
+  await loadCurrentContFlowSheet();
   rebuildViewMap();
   activeRow = 0;
   activeCol = 0;
   selectionAnchor = null;
-
-  renderTable();
   setTimeout(() => {
     setSingleActiveCell(0, 0);
     refreshDirtyVisuals();

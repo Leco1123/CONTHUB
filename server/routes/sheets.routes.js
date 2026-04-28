@@ -7,6 +7,24 @@ const db = require("../db");
 const SHEET_BACKUP_ROOT = path.join(__dirname, "..", "data", "sheet-backups");
 const MAX_BACKUPS_PER_SHEET = 100;
 
+function getSheetCellsQuery(sheetId, includeDeleted = false) {
+  return {
+    where: includeDeleted
+      ? { sheetId }
+      : { sheetId, deletedAt: null },
+    include: {
+      updatedBy: {
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          role: true,
+        },
+      },
+    },
+  };
+}
+
 function normalizeSheetPayload(sheet, columns, rows, cells) {
   return {
     sheet: {
@@ -39,6 +57,14 @@ function normalizeSheetPayload(sheet, columns, rows, cells) {
       value: c.value ?? "",
       type: c.type ?? "text",
       updatedAt: c.updatedAt,
+      updatedBy: c.updatedBy
+        ? {
+            id: c.updatedBy.id ?? null,
+            name: c.updatedBy.name ?? null,
+            email: c.updatedBy.email ?? null,
+            role: c.updatedBy.role ?? null,
+          }
+        : null,
     })),
   };
 }
@@ -93,9 +119,7 @@ async function loadFullSheetPayload(sheet) {
       where: { sheetId: sheet.id, deletedAt: null, active: true },
       orderBy: { order: "asc" },
     }),
-    db.sheetCell.findMany({
-      where: { sheetId: sheet.id, deletedAt: null },
-    }),
+    db.sheetCell.findMany(getSheetCellsQuery(sheet.id)),
   ]);
 
   return normalizeSheetPayload(sheet, columns, rows, cells);
@@ -350,9 +374,7 @@ async function replaceSheetData(tx, sheet, columns, rawData, nextVersion) {
       orderBy: { order: "asc" },
     }),
 
-    tx.sheetCell.findMany({
-      where: { sheetId: sheet.id },
-    }),
+    tx.sheetCell.findMany(getSheetCellsQuery(sheet.id, true)),
   ]);
 
   return {
@@ -536,9 +558,7 @@ async function patchSheetCells(tx, sheet, incomingChanges, actor) {
       where: { sheetId: sheet.id, deletedAt: null, active: true },
       orderBy: { order: "asc" },
     }),
-    tx.sheetCell.findMany({
-      where: { sheetId: sheet.id, deletedAt: null },
-    }),
+    tx.sheetCell.findMany(getSheetCellsQuery(sheet.id)),
   ]);
 
   return {
@@ -640,12 +660,19 @@ router.post("/:key/backups/:backupId/restore", async (req, res) => {
     const key = String(req.params.key || "").trim();
     const backupId = String(req.params.backupId || "").trim();
 
-    const sheet = await db.sheet.findFirst({
+    let sheet = await db.sheet.findFirst({
       where: { key, deletedAt: null },
     });
 
     if (!sheet) {
-      return res.status(404).json({ error: "Sheet não encontrada." });
+      sheet = await db.sheet.create({
+        data: {
+          key,
+          name: key,
+          version: 0,
+          active: true,
+        },
+      });
     }
 
     const { envelope } = readSheetBackupEnvelope(key, backupId);
@@ -662,8 +689,12 @@ router.post("/:key/backups/:backupId/restore", async (req, res) => {
     const currentPayload = await loadFullSheetPayload(sheet);
     const backupMeta = createSheetBackup(sheet, currentPayload, req.currentUser, "before_restore");
 
-    const result = await db.$transaction(async (tx) =>
-      replaceSheetData(tx, sheet, columns, rawData, (sheet.version || 0) + 1)
+    const result = await db.$transaction(
+      async (tx) => replaceSheetData(tx, sheet, columns, rawData, (sheet.version || 0) + 1),
+      {
+        maxWait: 10000,
+        timeout: 120000,
+      }
     );
 
     return res.json({
@@ -718,9 +749,7 @@ router.get("/:key", async (req, res) => {
         orderBy: { order: "asc" },
       }),
 
-      db.sheetCell.findMany({
-        where: { sheetId: sheet.id, deletedAt: null },
-      }),
+      db.sheetCell.findMany(getSheetCellsQuery(sheet.id)),
     ]);
 
     return res.json(
@@ -807,12 +836,19 @@ router.put("/:key", async (req, res) => {
   try {
     const key = String(req.params.key || "").trim();
 
-    const sheet = await db.sheet.findFirst({
+    let sheet = await db.sheet.findFirst({
       where: { key, deletedAt: null },
     });
 
     if (!sheet) {
-      return res.status(404).json({ error: "Sheet não encontrada." });
+      sheet = await db.sheet.create({
+        data: {
+          key,
+          name: key,
+          version: 0,
+          active: true,
+        },
+      });
     }
 
     let backupMeta = null;
@@ -833,8 +869,12 @@ router.put("/:key", async (req, res) => {
       .map((col, index) => normalizeColumnInput(col, index))
       .filter((c) => c.key && c.label);
 
-    const result = await db.$transaction(async (tx) =>
-      replaceSheetData(tx, sheet, columns, rawData, (sheet.version || 0) + 1)
+    const result = await db.$transaction(
+      async (tx) => replaceSheetData(tx, sheet, columns, rawData, (sheet.version || 0) + 1),
+      {
+        maxWait: 10000,
+        timeout: 120000,
+      }
     );
 
     return res.json({

@@ -3,8 +3,12 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="ContAnalytics reúne indicadores, métricas e análises gerenciais do ContHub para acompanhamento da operação contábil."
+    />
     <title>ContHub • ContAnalytics</title>
-    <link rel="stylesheet" href="./contanalytics.css" />
+    <link rel="stylesheet" href="./contanalytics.css?v=20260427-06" />
   </head>
 
   <body>
@@ -177,54 +181,482 @@
           </div>
         </header>
 
-        <section class="dev-shell">
-          <div class="dev-card">
-            <div class="dev-badge">Em desenvolvimento</div>
+        <section class="analytics-shell">
+          <section class="analytics-hero glass">
+            <div class="analytics-hero__copy">
+              <div class="analytics-eyebrow">Primeiro esboço do BI</div>
+              <h2 class="analytics-title">Visão gerencial da carteira contábil</h2>
+              <p class="analytics-subtitle">
+                Leitura rápida da base do ContFlow com foco em volume, responsáveis,
+                tributação, qualidade cadastral e pontos que exigem ação.
+              </p>
 
-            <div class="robot-wrap">
-              <div class="robot" id="robot">
-                <div class="robot-antenna"></div>
-
-                <div class="robot-head">
-                  <span class="eye eye-left"></span>
-                  <span class="eye eye-right"></span>
-                  <span class="mouth"></span>
-                </div>
-
-                <div class="robot-body">
-                  <span class="bot-dot dot-1"></span>
-                  <span class="bot-dot dot-2"></span>
-                  <span class="bot-dot dot-3"></span>
-                </div>
+              <div class="analytics-hero__meta">
+                <span class="analytics-chip analytics-chip--brand" id="analyticsSourceChip">
+                  Fonte: ContFlow
+                </span>
+                <span class="analytics-chip" id="analyticsUpdatedAt">
+                  Atualizando indicadores...
+                </span>
               </div>
             </div>
 
-            <div class="dev-module-name" id="devModuleName">ContAnalytics</div>
-
-            <h2 class="dev-title" id="devTitle">
-              ContAnalytics em desenvolvimento
-            </h2>
-
-            <p class="dev-subtitle" id="devSubtitle">
-              Estamos preparando este módulo para receber novas funcionalidades,
-              melhorias visuais e recursos adicionais.
-            </p>
-
-            <div class="dev-highlight">Mudanças e novidades em breve.</div>
-
-            <div class="dev-meta">
-              <span class="dev-dot"></span>
-              Atualizações em andamento
+            <div class="analytics-hero__actions">
+              <button class="btn btn--ghost" type="button" id="btnAnalyticsRefresh">
+                Atualizar BI
+              </button>
+              <button class="btn btn--ghost" type="button" id="btnAnalyticsExport">
+                Exportar XLSX
+              </button>
+              <button class="btn" type="button" data-goto="../contflow/contflow.html">
+                Abrir ContFlow
+              </button>
             </div>
+          </section>
 
-            <p class="dev-footer-note">
-              Esta área do painel ainda não está disponível para uso completo.
-            </p>
+          <section class="analytics-kpis" id="analyticsKpis">
+            <article class="metric-card glass">
+              <span class="metric-card__label">Ciclo completo de quotas</span>
+              <strong class="metric-card__value" id="metricQuotaComplete">--</strong>
+              <span class="metric-card__hint" id="metricQuotaCompleteHint">Clientes com 3 quotas entregues.</span>
+            </article>
+
+            <article class="metric-card glass">
+              <span class="metric-card__label">Cobertura de quotas</span>
+              <strong class="metric-card__value" id="metricQuotaCoverage">--</strong>
+              <span class="metric-card__hint" id="metricQuotaCoverageHint">Preenchimento médio entre 1ª, 2ª e 3ª quota.</span>
+            </article>
+
+            <article class="metric-card glass">
+              <span class="metric-card__label">Pendência de quotas</span>
+              <strong class="metric-card__value" id="metricQuotaPending">--</strong>
+              <span class="metric-card__hint" id="metricQuotaPendingHint">Clientes sem fechar o ciclo de quotas.</span>
+            </article>
+
+            <article class="metric-card glass">
+              <span class="metric-card__label">Carteira total</span>
+              <strong class="metric-card__value" id="metricTotal">--</strong>
+              <span class="metric-card__hint" id="metricTotalHint">Linhas válidas na base.</span>
+            </article>
+
+            <article class="metric-card glass">
+              <span class="metric-card__label">Status ativos</span>
+              <strong class="metric-card__value" id="metricActive">--</strong>
+              <span class="metric-card__hint" id="metricActiveHint">Clientes operando hoje.</span>
+            </article>
+
+            <article class="metric-card glass">
+              <span class="metric-card__label">Sem Resp.1</span>
+              <strong class="metric-card__value" id="metricNoResp1">--</strong>
+              <span class="metric-card__hint" id="metricNoResp1Hint">Base sem dono primário.</span>
+            </article>
+
+            <article class="metric-card glass">
+              <span class="metric-card__label">MIT pendente</span>
+              <strong class="metric-card__value" id="metricMit">--</strong>
+              <span class="metric-card__hint" id="metricMitHint">Leitura do MIT/Controle MIT.</span>
+            </article>
+
+            <article class="metric-card glass">
+              <span class="metric-card__label">Inconsistências</span>
+              <strong class="metric-card__value" id="metricAthenas">--</strong>
+              <span class="metric-card__hint" id="metricAthenasHint">Athenas com apontamento.</span>
+            </article>
+
+            <article class="metric-card glass">
+              <span class="metric-card__label">Desligamentos</span>
+              <strong class="metric-card__value" id="metricDesligamento">--</strong>
+              <span class="metric-card__hint" id="metricDesligamentoHint">Campos de data preenchidos.</span>
+            </article>
+
+            <article class="metric-card glass">
+              <span class="metric-card__label">Colunas auditadas</span>
+              <strong class="metric-card__value" id="metricColumns">--</strong>
+              <span class="metric-card__hint" id="metricColumnsHint">Estrutura atual da planilha.</span>
+            </article>
+
+            <article class="metric-card glass">
+              <span class="metric-card__label">Cobertura média</span>
+              <strong class="metric-card__value" id="metricCoverage">--</strong>
+              <span class="metric-card__hint" id="metricCoverageHint">Preenchimento médio da base.</span>
+            </article>
+          </section>
+
+          <div class="analytics-section-head">
+            <div>
+              <h3 class="analytics-section-head__title">Quotas e entregas</h3>
+              <p class="analytics-section-head__subtitle">Leitura prioritária do andamento das quotas, ciclo completo e evolução das entregas.</p>
+            </div>
           </div>
+
+          <section class="analytics-grid">
+            <article class="panel-card panel-card--wide glass">
+              <div class="panel-card__header">
+                <div>
+                  <h3 class="panel-card__title">Métrica de quotas</h3>
+                  <p class="panel-card__subtitle">Volume entregue, pendência, cobertura e linha do tempo das quotas.</p>
+                </div>
+              </div>
+              <div class="quota-grid quota-grid--hero" id="quotaMetrics"></div>
+              <div class="bar-list" id="quotaTimeline"></div>
+            </article>
+
+            <article class="panel-card glass">
+              <div class="panel-card__header">
+                <div>
+                  <h3 class="panel-card__title">Responsáveis</h3>
+                  <p class="panel-card__subtitle">Top distribuição por Resp.1.</p>
+                </div>
+              </div>
+              <div class="bar-list" id="responsavelDistribution"></div>
+            </article>
+
+            <article class="panel-card glass">
+              <div class="panel-card__header">
+                <div>
+                  <h3 class="panel-card__title">Apoio operacional</h3>
+                  <p class="panel-card__subtitle">Top distribuição por Resp.2.</p>
+                </div>
+              </div>
+              <div class="bar-list" id="resp2Distribution"></div>
+            </article>
+
+            <article class="panel-card glass">
+              <div class="panel-card__header">
+                <div>
+                  <h3 class="panel-card__title">Cobertura por etapa</h3>
+                  <p class="panel-card__subtitle">Quanto cada etapa de quota está sendo entregue sobre o universo esperado.</p>
+                </div>
+              </div>
+              <div class="bar-list" id="quotaStageCoverage"></div>
+            </article>
+
+            <article class="panel-card glass">
+              <div class="panel-card__header">
+                <div>
+                  <h3 class="panel-card__title">Num Quotas declarado</h3>
+                  <p class="panel-card__subtitle">Distribuição do campo Num Quotas, incluindo faltas e valores inválidos.</p>
+                </div>
+              </div>
+              <div class="bar-list" id="quotaExpectedDistribution"></div>
+            </article>
+
+            <article class="panel-card glass">
+              <div class="panel-card__header">
+                <div>
+                  <h3 class="panel-card__title">Pendência por Resp.1</h3>
+                  <p class="panel-card__subtitle">Onde está concentrada a carga de quotas pendentes ou inconsistentes.</p>
+                </div>
+              </div>
+              <div class="bar-list" id="quotaPendingByResp"></div>
+            </article>
+
+            <article class="panel-card glass">
+              <div class="panel-card__header">
+                <div>
+                  <h3 class="panel-card__title">Quem fez</h3>
+                  <p class="panel-card__subtitle">Distribuição dos autores identificados nas quotas.</p>
+                </div>
+              </div>
+              <div class="bar-list" id="quotaActorDistribution"></div>
+            </article>
+
+            <article class="panel-card panel-card--full glass">
+              <div class="panel-card__header">
+                <div>
+                  <h3 class="panel-card__title">Linha do tempo por etapa</h3>
+                  <p class="panel-card__subtitle">Histórico separado entre 1ª, 2ª e 3ª quota para entender ritmo e gargalo.</p>
+                </div>
+              </div>
+              <div class="quota-stage-grid" id="quotaStageTimelines"></div>
+            </article>
+
+            <article class="panel-card panel-card--full glass">
+              <div class="panel-card__header">
+                <div>
+                  <h3 class="panel-card__title">Auditoria detalhada de quotas</h3>
+                  <p class="panel-card__subtitle">Leitura linha a linha com quantidade esperada, entregue, pendente e inconsistências.</p>
+                </div>
+              </div>
+              <div class="table-shell">
+                <table class="analytics-table analytics-table--audit">
+                  <thead>
+                    <tr>
+                      <th>Cód.</th>
+                      <th>Razão social</th>
+                      <th>Resp.1</th>
+                      <th>Num Quotas</th>
+                      <th>Esperado</th>
+                      <th>Entregue</th>
+                      <th>Pendente</th>
+                      <th>Quotas</th>
+                      <th>Datas inválidas</th>
+                      <th>Quem fez</th>
+                      <th>Leitura</th>
+                    </tr>
+                  </thead>
+                  <tbody id="quotaAuditRows"></tbody>
+                </table>
+              </div>
+            </article>
+          </section>
+
+          <div class="analytics-section-head">
+            <div>
+              <h3 class="analytics-section-head__title">Mensal e trimestral</h3>
+              <p class="analytics-section-head__subtitle">Checklist mensal e trimestral com faturamento, base de cálculo e impostos dos painéis tributários.</p>
+            </div>
+          </div>
+
+          <section class="analytics-grid">
+            <article class="panel-card panel-card--wide glass">
+              <div class="panel-card__header">
+                <div>
+                  <h3 class="panel-card__title">Radar mensal</h3>
+                  <p class="panel-card__subtitle">Faturamento mensal consolidado do Painel Tributário, com conferência do espelho no LR.</p>
+                </div>
+              </div>
+              <div class="summary-kpis" id="monthlyKpis"></div>
+              <div class="bar-list" id="monthlyRevenueBars"></div>
+            </article>
+
+            <article class="panel-card panel-card--wide glass">
+              <div class="panel-card__header">
+                <div>
+                  <h3 class="panel-card__title">Resumo trimestral</h3>
+                  <p class="panel-card__subtitle">Leitura consolidada de clientes, quotas, faturamento, BC e tributos por trimestre.</p>
+                </div>
+              </div>
+              <div class="table-shell">
+                <table class="analytics-table analytics-table--audit">
+                  <thead>
+                    <tr>
+                      <th>Trimestre</th>
+                      <th>Clientes</th>
+                      <th>Quotas completas</th>
+                      <th>Fat PT</th>
+                      <th>BC PT</th>
+                      <th>IRPJ PT</th>
+                      <th>CSLL PT</th>
+                      <th>Fat LR</th>
+                      <th>BC LR</th>
+                      <th>IRPJ LR</th>
+                      <th>CSLL LR</th>
+                    </tr>
+                  </thead>
+                  <tbody id="quarterSummaryRows"></tbody>
+                </table>
+              </div>
+            </article>
+
+            <article class="panel-card panel-card--full glass">
+              <div class="panel-card__header">
+                <div>
+                  <h3 class="panel-card__title">Checklist das fontes</h3>
+                  <p class="panel-card__subtitle">Conferência rápida das bases lidas pelo BI, com volume e última leitura disponível.</p>
+                </div>
+              </div>
+              <div class="source-checks" id="sourceChecks"></div>
+            </article>
+          </section>
+
+          <div class="analytics-section-head">
+            <div>
+              <h3 class="analytics-section-head__title">Carteira e operação</h3>
+              <p class="analytics-section-head__subtitle">Indicadores-base da carteira, regime, status, responsáveis e saúde geral.</p>
+            </div>
+          </div>
+
+          <section class="analytics-grid">
+            <article class="panel-card panel-card--wide glass">
+              <div class="panel-card__header">
+                <div>
+                  <h3 class="panel-card__title">Radar operacional</h3>
+                  <p class="panel-card__subtitle">Leitura automática dos principais sinais da carteira.</p>
+                </div>
+                <span class="analytics-pill" id="analyticsHealthPill">Em leitura</span>
+              </div>
+              <div class="insight-list" id="analyticsInsights"></div>
+            </article>
+
+            <article class="panel-card panel-card--chart glass">
+              <div class="panel-card__header">
+                <div>
+                  <h3 class="panel-card__title">Tributação</h3>
+                  <p class="panel-card__subtitle">Distribuição da carteira por regime.</p>
+                </div>
+              </div>
+              <div class="chart-card">
+                <div class="donut-chart" id="tribDonutChart"></div>
+                <div class="donut-chart__legend" id="tribDonutLegend"></div>
+              </div>
+              <div class="bar-list" id="tribDistribution"></div>
+            </article>
+
+            <article class="panel-card panel-card--chart glass">
+              <div class="panel-card__header">
+                <div>
+                  <h3 class="panel-card__title">Status da carteira</h3>
+                  <p class="panel-card__subtitle">Como a base está classificada hoje.</p>
+                </div>
+              </div>
+              <div class="chart-card">
+                <div class="donut-chart" id="statusDonutChart"></div>
+                <div class="donut-chart__legend" id="statusDonutLegend"></div>
+              </div>
+              <div class="bar-list" id="statusDistribution"></div>
+            </article>
+
+            <article class="panel-card glass">
+              <div class="panel-card__header">
+                <div>
+                  <h3 class="panel-card__title">Grupos</h3>
+                  <p class="panel-card__subtitle">Carteira agrupada por operação.</p>
+                </div>
+              </div>
+              <div class="bar-list" id="grupoDistribution"></div>
+            </article>
+
+            <article class="panel-card glass">
+              <div class="panel-card__header">
+                <div>
+                  <h3 class="panel-card__title">Classes</h3>
+                  <p class="panel-card__subtitle">Carteira por classificação operacional.</p>
+                </div>
+              </div>
+              <div class="bar-list" id="classDistribution"></div>
+            </article>
+          </section>
+
+          <div class="analytics-section-head">
+            <div>
+              <h3 class="analytics-section-head__title">Qualidade e atividade</h3>
+              <p class="analytics-section-head__subtitle">Pendências cadastrais, qualidade da base e ritmo recente de atualização.</p>
+            </div>
+          </div>
+
+          <section class="analytics-grid">
+
+            <article class="panel-card glass">
+              <div class="panel-card__header">
+                <div>
+                  <h3 class="panel-card__title">Qualidade da base</h3>
+                  <p class="panel-card__subtitle">Pendências cadastrais que pedem ajuste.</p>
+                </div>
+              </div>
+              <div class="quality-grid" id="qualityGrid"></div>
+            </article>
+
+            <article class="panel-card glass">
+              <div class="panel-card__header">
+                <div>
+                  <h3 class="panel-card__title">Atividade recente</h3>
+                  <p class="panel-card__subtitle">Leitura de alterações recentes com base nos timestamps das células.</p>
+                </div>
+              </div>
+              <div class="activity-chart">
+                <svg class="activity-chart__svg" id="activityChart" viewBox="0 0 420 170" preserveAspectRatio="none"></svg>
+              </div>
+              <div class="activity-summary" id="activitySummary"></div>
+            </article>
+          </section>
+
+          <div class="analytics-section-head">
+            <div>
+              <h3 class="analytics-section-head__title">Auditoria e rastreabilidade</h3>
+              <p class="analytics-section-head__subtitle">Visão de foco, completude por coluna e espelho integral do ContFlow.</p>
+            </div>
+          </div>
+
+          <section class="analytics-grid">
+
+            <article class="panel-card panel-card--full glass">
+              <div class="panel-card__header">
+                <div>
+                  <h3 class="panel-card__title">Clientes em foco</h3>
+                  <p class="panel-card__subtitle">
+                    Lista com prioridade visual para cadastros mais sensíveis da operação.
+                  </p>
+                </div>
+              </div>
+
+              <div class="table-shell">
+                <table class="analytics-table">
+                  <thead>
+                    <tr>
+                      <th>Cód.</th>
+                      <th>Razão social</th>
+                      <th>Trib.</th>
+                      <th>Status</th>
+                      <th>Resp.1</th>
+                      <th>Resp.2</th>
+                      <th>MIT</th>
+                      <th>Inconsistência</th>
+                      <th>Sinal</th>
+                    </tr>
+                  </thead>
+                  <tbody id="analyticsRows"></tbody>
+                </table>
+              </div>
+            </article>
+
+            <article class="panel-card panel-card--full glass">
+              <div class="panel-card__header">
+                <div>
+                  <h3 class="panel-card__title">Auditoria por coluna</h3>
+                  <p class="panel-card__subtitle">
+                    Visão completa de preenchimento, vazios e última atividade de cada campo do ContFlow.
+                  </p>
+                </div>
+              </div>
+              <div class="table-shell">
+                <table class="analytics-table analytics-table--audit">
+                  <thead>
+                    <tr>
+                      <th>Coluna</th>
+                      <th>Preenchidos</th>
+                      <th>Vazios</th>
+                      <th>Cobertura</th>
+                      <th>Última atualização</th>
+                      <th>Leitura</th>
+                    </tr>
+                  </thead>
+                  <tbody id="analyticsAuditRows"></tbody>
+                </table>
+              </div>
+            </article>
+
+            <article class="panel-card panel-card--full glass">
+              <div class="panel-card__header panel-card__header--spreadsheet">
+                <div>
+                  <h3 class="panel-card__title">Planilha integrada do ContFlow</h3>
+                  <p class="panel-card__subtitle">
+                    Espelho analítico da base inteira, com busca rápida e todas as colunas atuais do ContFlow.
+                  </p>
+                </div>
+                <div class="spreadsheet-toolbar">
+                  <input
+                    class="spreadsheet-search"
+                    type="search"
+                    id="analyticsSheetSearch"
+                    placeholder="Buscar em toda a planilha..."
+                  />
+                  <span class="analytics-chip" id="analyticsSheetMeta">0 linha(s)</span>
+                </div>
+              </div>
+              <div class="table-shell table-shell--spreadsheet">
+                <table class="analytics-table analytics-table--spreadsheet">
+                  <thead id="analyticsSheetHead"></thead>
+                  <tbody id="analyticsSheetBody"></tbody>
+                </table>
+              </div>
+            </article>
+          </section>
         </section>
       </main>
     </div>
 
-    <script src="./contanalytics.js"></script>
+    <script src="/libs/xlsx.full.min.js"></script>
+    <script src="./contanalytics.js?v=20260427-06"></script>
   </body>
 </html>
