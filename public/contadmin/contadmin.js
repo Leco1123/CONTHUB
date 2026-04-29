@@ -47,6 +47,7 @@ document.addEventListener("DOMContentLoaded", () => {
   // =======================================
   let currentUser = null;
   let moduleStatusMap = {};
+  let moduleAccessMap = {};
   let modulesDbRows = [];
   let teamConfig = {};
   let userTeamMap = {};
@@ -398,6 +399,29 @@ document.addEventListener("DOMContentLoaded", () => {
     );
   }
 
+  function normalizeModuleAccess(access) {
+    return String(access || "")
+      .split("+")
+      .map((item) => normalizeAccessProfile(item))
+      .filter(Boolean);
+  }
+
+  function canAccessModule(moduleId, user = getSessionUser()) {
+    const id = String(moduleId || "").trim().toLowerCase();
+    const profile = getAccessProfile(user);
+    const role = String(user?.role || "").trim().toLowerCase();
+    const rules = normalizeModuleAccess(moduleAccessMap[id]);
+
+    if (profile === "ti" || role === "ti") return true;
+    if (id === "contadmin") return canViewAdmin(user);
+    if (id === "contanalytics") return ["gerencial", "coordenacao"].includes(profile) || role === "admin";
+    if (!rules.length || rules.includes("operacional")) return true;
+    if (rules.includes("all") || rules.includes("*") || rules.includes("auth")) return true;
+    if (rules.includes(profile) || rules.includes(role)) return true;
+    if (rules.includes("gerencial") && role === "admin") return true;
+    return false;
+  }
+
   function applyUserMetaToState(userRef, assignment, accessProfile) {
     const target = userRef || {};
     const nextAssignment = normalizeAssignment(assignment);
@@ -712,13 +736,16 @@ document.addEventListener("DOMContentLoaded", () => {
     modulesDbRows = Array.isArray(rows) ? rows : [];
 
     const map = {};
+    const accessMap = {};
     modulesDbRows.forEach((m) => {
       const slug = String(m.slug || "").trim().toLowerCase();
       if (!slug) return;
       map[slug] = normalizeModuleStatus(m.status, m.active);
+      accessMap[slug] = String(m.access || "").trim();
     });
 
     moduleStatusMap = map;
+    moduleAccessMap = accessMap;
     return map;
   }
 
@@ -2036,7 +2063,7 @@ document.addEventListener("DOMContentLoaded", () => {
       const moduleId = card.dataset.moduleId;
       if (!moduleId) return;
 
-      const blocked = moduleId === "contadmin" && !canViewAdmin(current);
+      const blocked = !canAccessModule(moduleId, current);
       card.setAttribute("data-noaccess", blocked ? "true" : "false");
     });
   }

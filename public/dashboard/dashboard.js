@@ -5,6 +5,7 @@
 (function () {
   let AUTH_USER = null;
   let MODULES_MAP = {};
+  let MODULE_ACCESS_MAP = {};
   const dashboardTicketsState = {
     selectedFunction: "",
     imageDataUrl: "",
@@ -197,17 +198,21 @@
       const rows = Array.isArray(data?.modules) ? data.modules : [];
 
       const map = {};
+      const accessMap = {};
       rows.forEach((m) => {
         const slug = String(m.slug || "").trim().toLowerCase();
         if (!slug) return;
         map[slug] = normalizeModuleStatus(m.status, m.active);
+        accessMap[slug] = String(m.access || "").trim();
       });
 
       MODULES_MAP = map;
+      MODULE_ACCESS_MAP = accessMap;
       return map;
     } catch (err) {
       console.warn("Falha ao carregar módulos do banco:", err);
       MODULES_MAP = {};
+      MODULE_ACCESS_MAP = {};
       return MODULES_MAP;
     }
   }
@@ -284,13 +289,12 @@
 
   function applyRoleToSidebar() {
     const u = getSessionUser();
-    const role = String(u?.role || "user").toLowerCase();
 
-    getSidebarCards().forEach((card) => {
+    [...getSidebarCards(), ...getShortcutCards()].forEach((card) => {
       const moduleId = String(card.dataset.moduleId || "").trim().toLowerCase();
       if (!moduleId) return;
 
-      const blocked = role === "user" && moduleId === "contadmin";
+      const blocked = !canAccessModule(u, { id: moduleId, access: MODULE_ACCESS_MAP[moduleId] });
       card.setAttribute("data-noaccess", blocked ? "true" : "false");
 
       if (blocked) {
@@ -395,6 +399,35 @@
       user?.access_profile ||
       legacyRoleToAccessProfile(user?.role)
     );
+  }
+
+  function normalizeModuleAccess(access) {
+    return String(access || "")
+      .split("+")
+      .map((item) =>
+        String(item || "")
+          .trim()
+          .toLowerCase()
+          .normalize("NFD")
+          .replace(/[\u0300-\u036f]/g, "")
+      )
+      .filter(Boolean);
+  }
+
+  function canAccessModule(user, module) {
+    const moduleId = String(module?.id || module?.slug || "").trim().toLowerCase();
+    const role = String(user?.role || "").trim().toLowerCase();
+    const accessProfile = getAccessProfile(user);
+    const rules = normalizeModuleAccess(module?.access);
+
+    if (role === "ti" || accessProfile === "ti") return true;
+    if (moduleId === "contadmin") return role === "admin" || accessProfile === "gerencial";
+    if (moduleId === "contanalytics") return ["gerencial", "coordenacao"].includes(accessProfile) || role === "admin";
+    if (!rules.length || rules.includes("user") || rules.includes("user+admin")) return true;
+    if (rules.includes("all") || rules.includes("*") || rules.includes("auth")) return true;
+    if (rules.includes(role) || rules.includes(accessProfile)) return true;
+    if (rules.includes("admin") && role === "admin") return true;
+    return false;
   }
 
   function isTiUser() {

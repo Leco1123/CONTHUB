@@ -258,7 +258,16 @@ document.addEventListener("DOMContentLoaded", () => {
       }
 
       const role = normalizeUser(current).role;
-      const blocked = role === "user" && moduleId === "contadmin";
+      const accessProfile = String(current.accessProfile || current.access_profile || role || "")
+        .trim()
+        .toLowerCase()
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "");
+      const blocked =
+        (moduleId === "contadmin" && role === "user") ||
+        (moduleId === "contanalytics" &&
+          !["ti", "admin", "gerencial", "coordenacao"].includes(accessProfile) &&
+          !["ti", "admin"].includes(role));
       card.setAttribute("data-noaccess", blocked ? "true" : "false");
     });
   }

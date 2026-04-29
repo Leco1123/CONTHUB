@@ -245,6 +245,7 @@ let cfServerBackups = [];
 
 /* módulos */
 let MODULES_MAP = {};
+let MODULE_ACCESS_MAP = {};
 
 const STATUS_LABEL = {
   online: "ONLINE",
@@ -430,6 +431,29 @@ function getAccessProfile(user) {
   return normalizeAccessProfile(
     target.accessProfile || target.access_profile || target.perfilAcesso || target.perfil_acesso || target.role
   );
+}
+
+function normalizeModuleAccess(access) {
+  return String(access || "")
+    .split("+")
+    .map(normalizeAccessProfile)
+    .filter(Boolean);
+}
+
+function canAccessModule(moduleId, user = getSessionUser()) {
+  const id = String(moduleId || "").trim().toLowerCase();
+  const profile = getAccessProfile(user);
+  const role = String(user?.role || "").trim().toLowerCase();
+  const rules = normalizeModuleAccess(MODULE_ACCESS_MAP[id]);
+
+  if (profile === "ti" || role === "ti") return true;
+  if (id === "contadmin") return profile === "gerencial" || role === "admin";
+  if (id === "contanalytics") return ["gerencial", "coordenacao"].includes(profile) || role === "admin";
+  if (!rules.length || rules.includes("operacional")) return true;
+  if (rules.includes("all") || rules.includes("*") || rules.includes("auth")) return true;
+  if (rules.includes(profile) || rules.includes(role)) return true;
+  if (rules.includes("gerencial") && role === "admin") return true;
+  return false;
 }
 
 function canManageContFlowBase(user) {
@@ -1134,17 +1158,21 @@ async function loadModulesMap() {
     const rows = Array.isArray(data?.modules) ? data.modules : [];
 
     const map = {};
+    const accessMap = {};
     rows.forEach((m) => {
       const slug = String(m.slug || "").trim().toLowerCase();
       if (!slug) return;
       map[slug] = normalizeModuleStatus(m.status, m.active);
+      accessMap[slug] = String(m.access || "").trim();
     });
 
     MODULES_MAP = map;
+    MODULE_ACCESS_MAP = accessMap;
     return map;
   } catch (err) {
     console.warn("Falha ao carregar módulos da API no ContFlow:", err);
     MODULES_MAP = {};
+    MODULE_ACCESS_MAP = {};
     return MODULES_MAP;
   }
 }
@@ -1201,13 +1229,12 @@ function syncSidebarFromStore() {
 
 function applyRoleToSidebar() {
   const u = getSessionUser();
-  const role = String(u?.role || "user").toLowerCase();
 
   getSidebarCards().forEach((card) => {
     const moduleId = String(card.dataset.moduleId || "").trim().toLowerCase();
     if (!moduleId) return;
 
-    const blocked = role === "user" && moduleId === "contadmin";
+    const blocked = !canAccessModule(moduleId, u);
     card.setAttribute("data-noaccess", blocked ? "true" : "false");
 
     if (blocked) {

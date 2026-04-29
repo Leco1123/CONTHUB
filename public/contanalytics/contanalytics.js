@@ -45,6 +45,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   let currentUser = null;
   let moduleStatusMap = {};
+  let moduleAccessMap = {};
   let analyticsDrillBound = false;
 
   const state = {
@@ -95,6 +96,46 @@ document.addEventListener("DOMContentLoaded", () => {
     if (r === "ti") return "TI";
     if (r === "admin") return "ADMIN";
     return "USER";
+  }
+
+  function normalizeAccessToken(value) {
+    return String(value || "")
+      .trim()
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "");
+  }
+
+  function getAccessProfile(user) {
+    const profile = normalizeAccessToken(
+      user?.accessProfile || user?.access_profile || user?.perfilAcesso || user?.perfil_acesso || user?.role
+    );
+    if (profile === "ti") return "ti";
+    if (profile === "admin" || profile === "gerencial" || profile === "gerencia") return "gerencial";
+    if (profile === "coordenacao" || profile === "coordenador") return "coordenacao";
+    if (profile === "consulta") return "consulta";
+    return "operacional";
+  }
+
+  function normalizeModuleAccess(access) {
+    return String(access || "")
+      .split("+")
+      .map(normalizeAccessToken)
+      .filter(Boolean);
+  }
+
+  function canAccessModule(moduleId, user = getSessionUser()) {
+    const id = normalizeAccessToken(moduleId);
+    const profile = getAccessProfile(user);
+    const role = normalizeAccessToken(user?.role);
+    const rules = normalizeModuleAccess(moduleAccessMap[id]);
+
+    if (profile === "ti" || role === "ti") return true;
+    if (id === "contadmin") return profile === "gerencial" || role === "admin";
+    if (id === "contanalytics") return ["ti", "gerencial", "coordenacao"].includes(profile) || role === "admin";
+    if (!rules.length || rules.includes("user") || rules.includes("user+admin")) return true;
+    if (rules.includes("all") || rules.includes("*") || rules.includes("auth")) return true;
+    return rules.includes(profile) || rules.includes(role) || (rules.includes("admin") && role === "admin");
   }
 
   function avatarFromName(name) {
@@ -342,13 +383,16 @@ document.addEventListener("DOMContentLoaded", () => {
     const rows = Array.isArray(payload?.modules) ? payload.modules : [];
 
     const map = {};
+    const accessMap = {};
     rows.forEach((m) => {
       const slug = String(m.slug || "").trim().toLowerCase();
       if (!slug) return;
       map[slug] = normalizeModuleStatus(m.status, m.active);
+      accessMap[slug] = String(m.access || "").trim();
     });
 
     moduleStatusMap = map;
+    moduleAccessMap = accessMap;
     return map;
   }
 
@@ -399,13 +443,12 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function applyRoleToSidebar() {
     const current = getSessionUser();
-    const role = (current?.role || "user").toLowerCase();
 
     getSidebarCards().forEach((card) => {
       const moduleId = card.dataset.moduleId;
       if (!moduleId) return;
 
-      const blocked = role === "user" && moduleId === "contadmin";
+      const blocked = !canAccessModule(moduleId, current);
       card.setAttribute("data-noaccess", blocked ? "true" : "false");
     });
   }
@@ -4078,6 +4121,12 @@ document.addEventListener("DOMContentLoaded", () => {
       }
 
       await loadModulesFromApi();
+
+      if (!canAccessModule(currentModuleId, currentUser)) {
+        alert("Seu cargo não possui acesso ao ContAnalytics.");
+        goto("../dashboard/dashboard.html");
+        return;
+      }
 
       fillPageTexts();
       bindMenu();
