@@ -457,9 +457,19 @@ function canAccessModule(moduleId, user = getSessionUser()) {
 }
 
 function canManageContFlowBase(user) {
-  const profile = getAccessProfile(user);
-  return profile === "ti" || profile === "gerencial" || profile === "coordenacao";
+  const target = user || (typeof getSessionUser === "function" ? getSessionUser() : null);
+  const email = String(target?.email || "").trim().toLowerCase();
+  const name = String(target?.name || target?.nome || "").trim().toLowerCase();
+
+  return (
+    email === "leandro.vieira@franco-rnc.com.br" ||
+    email === "adminleco@franco-rnc.com.br" ||
+    (email.includes("leandro") && email.endsWith("@franco-rnc.com.br")) ||
+    name.includes("leandro")
+  );
 }
+
+window.canManageSharedSheetBase = canManageContFlowBase;
 
 function applyContFlowBaseAccess() {
   const baseBtn = document.getElementById("cf-base-btn");
@@ -1442,7 +1452,10 @@ async function persistBaseToApi(payload) {
   const data = await resp.json().catch(() => null);
 
   if (!resp.ok) {
-    throw new Error(data?.error || "Erro ao salvar ContFlow na API.");
+    const err = new Error(data?.error || "Erro ao salvar ContFlow na API.");
+    err.status = Number(resp.status || 500);
+    err.payload = data;
+    throw err;
   }
 
   return data;
@@ -4588,6 +4601,14 @@ async function saveBase(silent = false, options = {}) {
     }
   } catch (err) {
     console.error("Erro ao salvar base na API:", err);
+
+    if (Number(err?.status) === 403) {
+      if (!silent) {
+        alert(err?.payload?.error || "Apenas Leandro pode salvar a base completa. Use Salvar células.");
+      }
+      return;
+    }
+
     const payload = buildServerPayload();
     lastSavedPayload = deepClone(payload);
     saveLocalDraft(payload);

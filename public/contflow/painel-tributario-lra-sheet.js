@@ -228,6 +228,24 @@ window.PainelTributarioLRASheet = (() => {
     return String(document.querySelector(".cf-view-btn.is-active")?.dataset.view || "contflow");
   }
 
+  function canManageBase() {
+    return (
+      typeof window.canManageSharedSheetBase !== "function" ||
+      window.canManageSharedSheetBase()
+    );
+  }
+
+  function applyBaseAccess() {
+    const allowed = canManageBase();
+    ["ptlra-base-btn", "ptlra-save-base", "ptlra-import-top"].forEach((id) => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      el.hidden = !allowed;
+      el.disabled = !allowed;
+      el.setAttribute("aria-hidden", allowed ? "false" : "true");
+    });
+  }
+
   function clamp(v, min, max) {
     return Math.max(min, Math.min(v, max));
   }
@@ -2116,6 +2134,13 @@ window.PainelTributarioLRASheet = (() => {
   }
 
   async function saveBase(options = {}) {
+    if (!canManageBase()) {
+      if (!options?.silent) {
+        alert("Apenas Leandro pode salvar a base completa. Use Salvar células.");
+      }
+      return;
+    }
+
     try {
       const payload = buildServerPayload();
       const response = await persistBaseToApi(payload);
@@ -2134,6 +2159,11 @@ window.PainelTributarioLRASheet = (() => {
   }
 
   function openModal(mode = "base", rowId = "", taxKind = "irpj") {
+    if (mode === "base" && !canManageBase()) {
+      alert("Apenas Leandro pode abrir e salvar a base completa. Use Salvar células.");
+      return;
+    }
+
     state.modalMode = mode;
     state.modalRowId = rowId || "";
     state.modalTaxKind = "lra";
@@ -2266,6 +2296,7 @@ window.PainelTributarioLRASheet = (() => {
 
   async function init() {
     ensureLRDom();
+    applyBaseAccess();
     let loaded = false;
     try {
       const payload = await loadStateFromApi();

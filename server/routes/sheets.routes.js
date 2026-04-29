@@ -14,6 +14,34 @@ const AUTO_BACKUP_SHEET_KEYS = new Set([
   "painel-tributario-lr",
   "painel-tributario-lra",
 ]);
+const BASE_OWNER_EMAILS = new Set([
+  "leandro.vieira@franco-rnc.com.br",
+  "adminleco@franco-rnc.com.br",
+]);
+
+function normalizeIdentity(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
+function canManageSheetBase(user) {
+  const email = normalizeIdentity(user?.email);
+  const name = normalizeIdentity(user?.name || user?.nome);
+
+  return (
+    BASE_OWNER_EMAILS.has(email) ||
+    (email.includes("leandro") && email.endsWith("@franco-rnc.com.br")) ||
+    name.includes("leandro")
+  );
+}
+
+function requireSheetBaseOwner(req, res) {
+  if (canManageSheetBase(req.currentUser)) return true;
+
+  res.status(403).json({
+    error: "Apenas Leandro pode salvar, importar ou restaurar a base completa.",
+  });
+  return false;
+}
 
 function getSheetCellsQuery(sheetId, includeDeleted = false) {
   return {
@@ -665,6 +693,8 @@ router.get("/:key/backups", async (req, res) => {
 
 router.post("/:key/backups/:backupId/restore", async (req, res) => {
   try {
+    if (!requireSheetBaseOwner(req, res)) return;
+
     const key = String(req.params.key || "").trim();
     const backupId = String(req.params.backupId || "").trim();
 
@@ -842,6 +872,8 @@ router.patch("/:key/cells", async (req, res) => {
 
 router.put("/:key", async (req, res) => {
   try {
+    if (!requireSheetBaseOwner(req, res)) return;
+
     const key = String(req.params.key || "").trim();
 
     let sheet = await db.sheet.findFirst({
@@ -913,6 +945,8 @@ router.put("/:key", async (req, res) => {
 
 router.post("/:key/import-local", async (req, res) => {
   try {
+    if (!requireSheetBaseOwner(req, res)) return;
+
 
     const key = String(req.params.key || "").trim();
 

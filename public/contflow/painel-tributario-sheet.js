@@ -109,6 +109,24 @@ window.PainelTributarioSheet = (() => {
     return String(document.querySelector(".cf-view-btn.is-active")?.dataset.view || "contflow");
   }
 
+  function canManageBase() {
+    return (
+      typeof window.canManageSharedSheetBase !== "function" ||
+      window.canManageSharedSheetBase()
+    );
+  }
+
+  function applyBaseAccess() {
+    const allowed = canManageBase();
+    ["pt-base-btn", "pt-save-base", "pt-import-top"].forEach((id) => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      el.hidden = !allowed;
+      el.disabled = !allowed;
+      el.setAttribute("aria-hidden", allowed ? "false" : "true");
+    });
+  }
+
   function normalizeTribValue(value) {
     return String(value || "")
       .normalize("NFD")
@@ -2709,6 +2727,13 @@ window.PainelTributarioSheet = (() => {
   }
 
   async function saveBase(options = {}) {
+    if (!canManageBase()) {
+      if (!options?.silent) {
+        alert("Apenas Leandro pode salvar a base completa. Use Salvar células.");
+      }
+      return;
+    }
+
     try {
       const payload = buildServerPayload();
       createLocalBackupSnapshot("before_local_save", payload);
@@ -2728,6 +2753,11 @@ window.PainelTributarioSheet = (() => {
   }
 
   function openModal(mode = "base", rowId = "", taxKind = "irpj") {
+    if (mode === "base" && !canManageBase()) {
+      alert("Apenas Leandro pode abrir e salvar a base completa. Use Salvar células.");
+      return;
+    }
+
     state.modalMode = mode;
     state.modalRowId = rowId || "";
     state.modalTaxKind =
@@ -2892,6 +2922,8 @@ window.PainelTributarioSheet = (() => {
   }
 
   async function init() {
+    applyBaseAccess();
+
     let loaded = false;
     try {
       const payload = await loadStateFromApi();
