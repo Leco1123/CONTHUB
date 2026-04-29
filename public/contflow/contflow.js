@@ -680,7 +680,12 @@ function hasAnyPendingChanges() {
     typeof window.PainelTributarioLRSheet.hasPendingChanges === "function"
       ? window.PainelTributarioLRSheet.hasPendingChanges()
       : false;
-  return hasPendingDirtyChanges() || ptDirty || ptLrDirty;
+  const ptLraDirty =
+    window.PainelTributarioLRASheet &&
+    typeof window.PainelTributarioLRASheet.hasPendingChanges === "function"
+      ? window.PainelTributarioLRASheet.hasPendingChanges()
+      : false;
+  return hasPendingDirtyChanges() || ptDirty || ptLrDirty || ptLraDirty;
 }
 
 async function loadCurrentContFlowSheet() {
@@ -942,6 +947,7 @@ async function mirrorSharedColumnsFromFirstQuarter() {
 
 let lastPainelTributarioSyncSignature = "";
 let lastPainelTributarioLRSyncSignature = "";
+let lastPainelTributarioLRASyncSignature = "";
 let lastPainelTributarioRevenueToLRSignature = "";
 
 function getContFlowRowsForPainelTributario() {
@@ -1016,6 +1022,16 @@ function syncPainelTributarioFromContFlow(force = false, options = {}) {
     }
   }
 
+  if (
+    window.PainelTributarioLRASheet &&
+    typeof window.PainelTributarioLRASheet.syncFromContFlowRows === "function"
+  ) {
+    if (force || signature !== lastPainelTributarioLRASyncSignature) {
+      lastPainelTributarioLRASyncSignature = signature;
+      window.PainelTributarioLRASheet.syncFromContFlowRows(rows, options);
+    }
+  }
+
   syncPainelTributarioRevenueToLR(force);
 }
 
@@ -1045,9 +1061,7 @@ function syncPainelTributarioAfterContFlowChange(changes = [], options = {}) {
 function syncPainelTributarioRevenueToLR(force = false) {
   if (
     !window.PainelTributarioSheet ||
-    typeof window.PainelTributarioSheet.exportRevenueMirrorSheets !== "function" ||
-    !window.PainelTributarioLRSheet ||
-    typeof window.PainelTributarioLRSheet.syncRevenueFromPainelTributarioSheets !== "function"
+    typeof window.PainelTributarioSheet.exportRevenueMirrorSheets !== "function"
   ) {
     return;
   }
@@ -1082,7 +1096,20 @@ function syncPainelTributarioRevenueToLR(force = false) {
   }
 
   lastPainelTributarioRevenueToLRSignature = signature;
-  window.PainelTributarioLRSheet.syncRevenueFromPainelTributarioSheets(sourceSheets);
+
+  if (
+    window.PainelTributarioLRSheet &&
+    typeof window.PainelTributarioLRSheet.syncRevenueFromPainelTributarioSheets === "function"
+  ) {
+    window.PainelTributarioLRSheet.syncRevenueFromPainelTributarioSheets(sourceSheets);
+  }
+
+  if (
+    window.PainelTributarioLRASheet &&
+    typeof window.PainelTributarioLRASheet.syncRevenueFromPainelTributarioSheets === "function"
+  ) {
+    window.PainelTributarioLRASheet.syncRevenueFromPainelTributarioSheets(sourceSheets);
+  }
 }
 
 /* ===========================
@@ -5179,6 +5206,10 @@ document.addEventListener("DOMContentLoaded", async () => {
     await window.PainelTributarioLRSheet.init();
   }
 
+  if (window.PainelTributarioLRASheet && typeof window.PainelTributarioLRASheet.init === "function") {
+    await window.PainelTributarioLRASheet.init();
+  }
+
   syncPainelTributarioFromContFlow(true);
   syncPainelTributarioRevenueToLR(true);
   window.addEventListener("painel-tributario:revenue-sync", (event) => {
@@ -5352,6 +5383,12 @@ document.addEventListener("DOMContentLoaded", async () => {
         typeof window.PainelTributarioLRSheet.closeModal === "function"
       ) {
         window.PainelTributarioLRSheet.closeModal();
+      }
+      if (
+        window.PainelTributarioLRASheet &&
+        typeof window.PainelTributarioLRASheet.closeModal === "function"
+      ) {
+        window.PainelTributarioLRASheet.closeModal();
       }
       if (findUI) findUI.style.display = "none";
     }

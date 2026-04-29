@@ -8,7 +8,7 @@
       content="ContAnalytics reúne indicadores, métricas e análises gerenciais do ContHub para acompanhamento da operação contábil."
     />
     <title>ContHub • ContAnalytics</title>
-    <link rel="stylesheet" href="./contanalytics.css?v=20260427-06" />
+    <link rel="stylesheet" href="./contanalytics.css?v=20260429-03" />
   </head>
 
   <body>
@@ -181,6 +181,48 @@
           </div>
         </header>
 
+        <section class="tax-bi-shell glass" aria-label="BI tributário">
+          <div class="tax-bi-hero">
+            <div>
+              <div class="analytics-eyebrow">BI Tributário</div>
+              <h2 class="analytics-title">BI por tópicos tributários</h2>
+              <p class="analytics-subtitle">
+                Cada aba cruza as empresas do ContFlow pela tributação correta e organiza a
+                leitura em panorama, valores, empresas, períodos e diagnóstico.
+              </p>
+            </div>
+
+            <div class="tax-bi-actions">
+              <span class="analytics-chip analytics-chip--brand" id="taxBiUpdatedAt">
+                Atualizando BI tributário...
+              </span>
+              <button class="btn btn--ghost" type="button" id="btnTaxBiRefresh">
+                Atualizar tributário
+              </button>
+            </div>
+          </div>
+
+          <nav class="tax-bi-tabs" aria-label="Páginas do BI tributário">
+            <button class="tax-bi-tab is-active" type="button" data-tax-bi-page="lp">
+              BI - LP
+            </button>
+            <button class="tax-bi-tab" type="button" data-tax-bi-page="lrt">
+              BI - LRT
+            </button>
+            <button class="tax-bi-tab" type="button" data-tax-bi-page="lra">
+              BI - LRA
+            </button>
+            <button class="tax-bi-tab" type="button" data-tax-bi-page="complete">
+              BI - Completo
+            </button>
+          </nav>
+
+          <section class="tax-bi-page is-active" data-tax-bi-panel="lp"></section>
+          <section class="tax-bi-page" data-tax-bi-panel="lrt"></section>
+          <section class="tax-bi-page" data-tax-bi-panel="lra"></section>
+          <section class="tax-bi-page" data-tax-bi-panel="complete"></section>
+        </section>
+
         <section class="analytics-shell">
           <section class="analytics-hero glass">
             <div class="analytics-hero__copy">
@@ -215,55 +257,55 @@
           </section>
 
           <section class="analytics-kpis" id="analyticsKpis">
-            <article class="metric-card glass">
+            <article class="metric-card glass" data-analytics-drill="quota" data-quota-scope="complete" data-drill-title="Ciclo completo de quotas">
               <span class="metric-card__label">Ciclo completo de quotas</span>
               <strong class="metric-card__value" id="metricQuotaComplete">--</strong>
               <span class="metric-card__hint" id="metricQuotaCompleteHint">Clientes com 3 quotas entregues.</span>
             </article>
 
-            <article class="metric-card glass">
+            <article class="metric-card glass" data-analytics-drill="quota" data-quota-scope="coverage" data-drill-title="Cobertura de quotas">
               <span class="metric-card__label">Cobertura de quotas</span>
               <strong class="metric-card__value" id="metricQuotaCoverage">--</strong>
               <span class="metric-card__hint" id="metricQuotaCoverageHint">Preenchimento médio entre 1ª, 2ª e 3ª quota.</span>
             </article>
 
-            <article class="metric-card glass">
+            <article class="metric-card glass" data-analytics-drill="quota" data-quota-scope="pending" data-drill-title="Pendência de quotas">
               <span class="metric-card__label">Pendência de quotas</span>
               <strong class="metric-card__value" id="metricQuotaPending">--</strong>
               <span class="metric-card__hint" id="metricQuotaPendingHint">Clientes sem fechar o ciclo de quotas.</span>
             </article>
 
-            <article class="metric-card glass">
+            <article class="metric-card glass" data-analytics-drill="radar" data-drill-key="all" data-drill-title="Carteira total">
               <span class="metric-card__label">Carteira total</span>
               <strong class="metric-card__value" id="metricTotal">--</strong>
               <span class="metric-card__hint" id="metricTotalHint">Linhas válidas na base.</span>
             </article>
 
-            <article class="metric-card glass">
+            <article class="metric-card glass" data-analytics-drill="radar" data-drill-key="active" data-drill-title="Status ativos">
               <span class="metric-card__label">Status ativos</span>
               <strong class="metric-card__value" id="metricActive">--</strong>
               <span class="metric-card__hint" id="metricActiveHint">Clientes operando hoje.</span>
             </article>
 
-            <article class="metric-card glass">
+            <article class="metric-card glass" data-analytics-drill="radar" data-drill-key="no-resp1" data-drill-title="Sem Resp.1">
               <span class="metric-card__label">Sem Resp.1</span>
               <strong class="metric-card__value" id="metricNoResp1">--</strong>
               <span class="metric-card__hint" id="metricNoResp1Hint">Base sem dono primário.</span>
             </article>
 
-            <article class="metric-card glass">
+            <article class="metric-card glass" data-analytics-drill="radar" data-drill-key="mit-pending" data-drill-title="MIT pendente">
               <span class="metric-card__label">MIT pendente</span>
               <strong class="metric-card__value" id="metricMit">--</strong>
               <span class="metric-card__hint" id="metricMitHint">Leitura do MIT/Controle MIT.</span>
             </article>
 
-            <article class="metric-card glass">
+            <article class="metric-card glass" data-analytics-drill="radar" data-drill-key="athenas" data-drill-title="Inconsistências">
               <span class="metric-card__label">Inconsistências</span>
               <strong class="metric-card__value" id="metricAthenas">--</strong>
               <span class="metric-card__hint" id="metricAthenasHint">Athenas com apontamento.</span>
             </article>
 
-            <article class="metric-card glass">
+            <article class="metric-card glass" data-analytics-drill="radar" data-drill-key="disconnect" data-drill-title="Desligamentos">
               <span class="metric-card__label">Desligamentos</span>
               <strong class="metric-card__value" id="metricDesligamento">--</strong>
               <span class="metric-card__hint" id="metricDesligamentoHint">Campos de data preenchidos.</span>
@@ -472,9 +514,13 @@
               <div class="panel-card__header">
                 <div>
                   <h3 class="panel-card__title">Radar operacional</h3>
-                  <p class="panel-card__subtitle">Leitura automática dos principais sinais da carteira.</p>
+                  <p class="panel-card__subtitle">Gráfico dinâmico dos principais sinais da carteira.</p>
                 </div>
                 <span class="analytics-pill" id="analyticsHealthPill">Em leitura</span>
+              </div>
+              <div class="operational-radar">
+                <svg class="operational-radar__svg" id="operationalRadarChart" viewBox="0 0 520 260" preserveAspectRatio="xMidYMid meet"></svg>
+                <div class="operational-radar__summary" id="operationalRadarSummary"></div>
               </div>
               <div class="insight-list" id="analyticsInsights"></div>
             </article>
@@ -507,24 +553,17 @@
               <div class="bar-list" id="statusDistribution"></div>
             </article>
 
-            <article class="panel-card glass">
+            <article class="panel-card panel-card--wide glass">
               <div class="panel-card__header">
                 <div>
                   <h3 class="panel-card__title">Grupos</h3>
-                  <p class="panel-card__subtitle">Carteira agrupada por operação.</p>
+                  <p class="panel-card__subtitle">Gráfico dinâmico da carteira agrupada por operação.</p>
                 </div>
+              </div>
+              <div class="group-dynamic-chart">
+                <svg class="group-dynamic-chart__svg" id="groupDynamicChart" viewBox="0 0 620 280" preserveAspectRatio="none"></svg>
               </div>
               <div class="bar-list" id="grupoDistribution"></div>
-            </article>
-
-            <article class="panel-card glass">
-              <div class="panel-card__header">
-                <div>
-                  <h3 class="panel-card__title">Classes</h3>
-                  <p class="panel-card__subtitle">Carteira por classificação operacional.</p>
-                </div>
-              </div>
-              <div class="bar-list" id="classDistribution"></div>
             </article>
           </section>
 
@@ -626,37 +665,25 @@
               </div>
             </article>
 
-            <article class="panel-card panel-card--full glass">
-              <div class="panel-card__header panel-card__header--spreadsheet">
-                <div>
-                  <h3 class="panel-card__title">Planilha integrada do ContFlow</h3>
-                  <p class="panel-card__subtitle">
-                    Espelho analítico da base inteira, com busca rápida e todas as colunas atuais do ContFlow.
-                  </p>
-                </div>
-                <div class="spreadsheet-toolbar">
-                  <input
-                    class="spreadsheet-search"
-                    type="search"
-                    id="analyticsSheetSearch"
-                    placeholder="Buscar em toda a planilha..."
-                  />
-                  <span class="analytics-chip" id="analyticsSheetMeta">0 linha(s)</span>
-                </div>
-              </div>
-              <div class="table-shell table-shell--spreadsheet">
-                <table class="analytics-table analytics-table--spreadsheet">
-                  <thead id="analyticsSheetHead"></thead>
-                  <tbody id="analyticsSheetBody"></tbody>
-                </table>
-              </div>
-            </article>
           </section>
         </section>
       </main>
     </div>
 
+    <div class="analytics-detail-backdrop" id="analyticsDetailBackdrop" hidden></div>
+    <aside class="analytics-detail-panel" id="analyticsDetailPanel" aria-hidden="true" aria-label="Detalhe do BI">
+      <div class="analytics-detail-panel__head">
+        <div>
+          <span class="analytics-detail-panel__eyebrow">Detalhe dinâmico</span>
+          <h2 id="analyticsDetailTitle">Recorte</h2>
+          <p id="analyticsDetailSubtitle">Clique em qualquer indicador para ver o detalhe.</p>
+        </div>
+        <button class="iconbtn" type="button" id="analyticsDetailClose" aria-label="Fechar detalhe">×</button>
+      </div>
+      <div class="analytics-detail-panel__body" id="analyticsDetailBody"></div>
+    </aside>
+
     <script src="/libs/xlsx.full.min.js"></script>
-    <script src="./contanalytics.js?v=20260427-06"></script>
+    <script src="./contanalytics.js?v=20260429-03"></script>
   </body>
 </html>

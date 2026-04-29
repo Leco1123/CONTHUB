@@ -694,6 +694,172 @@ button.btn-acao {
   color: #d7e7fb;
 }
 
+#view-painel-tributario-lra .cf-sheet-tabs {
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+#view-painel-tributario-lra .cf-sheet-tab-lr {
+  min-width: 52px;
+  white-space: nowrap;
+}
+
+#view-painel-tributario-lra .cf-sheet-tab-lr.is-active {
+  border-color: rgba(78, 204, 163, 0.32);
+  background: rgba(78, 204, 163, 0.15);
+}
+
+#view-painel-tributario-lra .cf-grid-container {
+  min-height: 0;
+  flex: 1 1 auto;
+}
+
+#view-painel-tributario-lra .table-wrapper {
+  --pt-group-row-height: 30px;
+  --pt-cols-row-top: 30px;
+}
+
+#ptlra-table thead tr.group-row th {
+  background: linear-gradient(180deg, #081523 0%, #06111d 100%);
+  color: #d7e7fb;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+#ptlra-table thead tr.group-row th.group-meta,
+#ptlra-table thead tr.group-row th.group-ir,
+#ptlra-table thead tr.group-row th.group-csll,
+#ptlra-table thead tr.cols-row th {
+  background: linear-gradient(180deg, #081523 0%, #06111d 100%);
+}
+
+#ptlra-table thead tr.cols-row th {
+  font-size: 11px;
+}
+
+#ptlra-table thead th {
+  position: sticky;
+}
+
+#ptlra-table thead tr.group-row th {
+  top: 0 !important;
+  z-index: 44;
+}
+
+#ptlra-table thead tr.cols-row th {
+  top: var(--pt-cols-row-top, 30px) !important;
+  z-index: 43;
+}
+
+#ptlra-table .cf-row-index {
+  position: sticky !important;
+  left: 0 !important;
+  background: #06111d !important;
+  color: #9ec5f0;
+  z-index: 42;
+}
+
+#ptlra-table td.cf-cell {
+  background: var(--bg-soft-2) !important;
+}
+
+#ptlra-table tbody tr:nth-child(even) td.cf-cell {
+  background: var(--bg-soft-3) !important;
+}
+
+#ptlra-table tbody tr:hover td.cf-cell {
+  background: rgba(255, 255, 255, 0.045) !important;
+}
+
+#ptlra-table .cf-input,
+#ptlra-table .cf-read {
+  width: 100%;
+  height: 24px;
+  line-height: 24px;
+  border-radius: 0;
+  font-size: 11px;
+  padding: 0 6px;
+}
+
+#ptlra-table .cf-input {
+  appearance: none;
+  -webkit-appearance: none;
+  border: 1px solid transparent !important;
+  background: transparent !important;
+  color: #f4f7fb !important;
+  box-shadow: none !important;
+}
+
+#ptlra-table .cf-input::placeholder {
+  color: rgba(230, 238, 248, 0.38);
+}
+
+#ptlra-table .cf-input:focus {
+  border-color: rgba(78, 204, 163, 0.75) !important;
+  background: rgba(255, 255, 255, 0.03) !important;
+  color: #ffffff !important;
+  box-shadow: inset 0 0 0 1px rgba(78, 204, 163, 0.18) !important;
+  outline: none;
+}
+
+#ptlra-table .cf-read,
+#ptlra-table .read-ir,
+#ptlra-table .read-csll {
+  color: #d7e7fb;
+}
+
+#ptlra-table .cf-read {
+  background: transparent !important;
+  border: 1px solid transparent !important;
+}
+
+#ptlra-table .group-row th.pt-frozen-col-last,
+#ptlra-table .cols-row th.pt-frozen-col-last,
+#ptlra-table .cf-cell.pt-frozen-col-last {
+  box-shadow:
+    inset -1px 0 0 rgba(255, 255, 255, 0.06),
+    10px 0 18px rgba(2, 6, 23, 0.22);
+}
+
+#ptlra-table .cols-row th.pt-frozen-col,
+#ptlra-table .cf-cell.pt-frozen-col {
+  position: sticky !important;
+}
+
+#ptlra-table .cols-row th.pt-frozen-col {
+  top: var(--pt-cols-row-top) !important;
+}
+
+#ptlra-table .cf-cell.pt-frozen-col {
+  --pt-cell-freeze-bg: #08182a;
+  background: var(--pt-cell-freeze-bg) !important;
+}
+
+#ptlra-table tbody tr:nth-child(even) .cf-cell.pt-frozen-col {
+  --pt-cell-freeze-bg: #091d31;
+}
+
+#ptlra-table .cf-cell.pt-frozen-col.is-selected {
+  --pt-cell-freeze-bg: #12372f;
+}
+
+#ptlra-table .cf-cell.pt-frozen-col.is-active {
+  --pt-cell-freeze-bg: #0e2b26;
+}
+
+#ptlra-table .cf-cell.pt-frozen-col .cf-input,
+#ptlra-table .cf-cell.pt-frozen-col .cf-read {
+  width: 100% !important;
+  height: 100% !important;
+}
+
+#ptlra-table .cf-cell.pt-frozen-col .cf-input:focus {
+  background: var(--pt-cell-freeze-bg) !important;
+  box-shadow: inset 0 0 0 1px rgba(78, 204, 163, 0.28) !important;
+}
+
 /* =========================================================
    GRID WRAPPER
 ========================================================= */
@@ -1133,6 +1299,85 @@ button.btn-acao {
   max-height: min(92vh, 980px);
   overflow-y: auto;
   overscroll-behavior: contain;
+}
+
+#ptlra-modal {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  width: min(520px, calc(100vw - 32px));
+  transform: translate(-50%, -50%);
+  background: linear-gradient(180deg, #071321 0%, #04111d 100%);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 16px;
+  display: none;
+  z-index: 1001;
+  box-shadow: 0 30px 60px rgba(0, 0, 0, 0.45);
+  max-height: min(92vh, 980px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+#ptlra-modal.is-open {
+  display: block;
+}
+
+#ptlra-modal header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+
+#ptlra-modal.is-quota-mode .pt-base-total-grid {
+  grid-template-columns: 1fr;
+}
+
+#ptlra-modal.is-quota-mode .pt-base-total-calc {
+  margin: 0;
+}
+
+#ptlra-modal.is-quota-mode .cf-modal-actions {
+  display: none;
+}
+
+#ptlra-modal.is-quota-mode {
+  width: min(860px, calc(100vw - 28px));
+}
+
+#ptlra-modal.is-base-total-mode {
+  width: min(900px, calc(100vw - 28px));
+  max-height: min(94vh, 1100px);
+}
+
+#ptlra-modal.is-quota-mode header {
+  margin-bottom: 10px;
+  padding-bottom: 12px;
+}
+
+#ptlra-modal.is-base-total-mode .pt-quota-panel {
+  padding: 12px;
+  background: #07111f;
+}
+
+#ptlra-modal.is-base-total-mode .pt-base-total-calc {
+  margin-top: 0;
+  padding: 24px;
+}
+
+#ptlra-modal.is-base-total-mode .pt-base-total-head {
+  margin-bottom: 18px;
+}
+
+#ptlra-modal.is-base-total-mode .pt-base-total-calc--simple {
+  padding: 18px;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+}
+
+#ptlra-modal.is-quota-mode #ptlra-modal-title {
+  font-size: 18px;
+  letter-spacing: -0.02em;
 }
 
 #cf-modal {
@@ -2329,6 +2574,19 @@ button.btn-acao {
 #cf-modal-backdrop.is-open,
 #pt-modal-backdrop.is-open,
 #ptlr-modal-backdrop.is-open {
+  display: block;
+}
+
+#ptlra-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(2, 6, 23, 0.72);
+  backdrop-filter: blur(3px);
+  display: none;
+  z-index: 1000;
+}
+
+#ptlra-modal-backdrop.is-open {
   display: block;
 }
 

@@ -10,9 +10,24 @@ document.addEventListener("DOMContentLoaded", () => {
   const API_CONTFLOW_Q4 = "/api/sheets/contflow-q4";
   const API_PAINEL_TRIBUTARIO = "/api/sheets/painel-tributario";
   const API_PAINEL_TRIBUTARIO_LR = "/api/sheets/painel-tributario-lr";
+  const API_PAINEL_TRIBUTARIO_LRA = "/api/sheets/painel-tributario-lra";
   const DONUT_COLORS = ["#31c8ff", "#4ecca3", "#ffd166", "#ff8fab", "#9b8cff", "#ff9f43", "#7bd389"];
   const ACTIVITY_DAYS = 14;
   const QUARTER_LABELS = ["1º Trimestre", "2º Trimestre", "3º Trimestre", "4º Trimestre"];
+  const MONTH_LABELS = [
+    "Janeiro",
+    "Fevereiro",
+    "Março",
+    "Abril",
+    "Maio",
+    "Junho",
+    "Julho",
+    "Agosto",
+    "Setembro",
+    "Outubro",
+    "Novembro",
+    "Dezembro",
+  ];
   const QUARTER_MONTHS = [
     ["Jan", "Fev", "Mar"],
     ["Abr", "Mai", "Jun"],
@@ -30,6 +45,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   let currentUser = null;
   let moduleStatusMap = {};
+  let analyticsDrillBound = false;
 
   const state = {
     contFlow: {
@@ -41,9 +57,13 @@ document.addEventListener("DOMContentLoaded", () => {
     contFlowSheets: [],
     painelTributario: EMPTY_DATASET,
     painelTributarioLR: EMPTY_DATASET,
+    painelTributarioLRA: EMPTY_DATASET,
     sourceChecks: [],
     filteredRows: [],
     searchTerm: "",
+    lastAnalytics: null,
+    taxBiAnalytics: {},
+    contFlowCompanyMap: new Map(),
   };
 
   const app = document.getElementById("app");
@@ -202,15 +222,33 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function toNumberBR(value) {
     if (typeof value === "number") return Number.isFinite(value) ? value : 0;
-    const raw = String(value ?? "").trim();
+    let raw = String(value ?? "").trim();
     if (!raw) return 0;
-    const cleaned = raw
+
+    raw = raw
       .replace(/\s+/g, "")
+      .replace(/\u00a0/g, "")
       .replace(/^R\$/i, "")
-      .replace(/\.(?=\d{3}(?:\D|$))/g, "")
-      .replace(",", ".")
-      .replace(/[^\d.-]/g, "");
-    const parsed = Number(cleaned);
+      .replace(/[^\d,.-]/g, "");
+
+    if (!raw || raw === "-" || raw === "," || raw === ".") return 0;
+
+    const hasComma = raw.includes(",");
+    const dotCount = (raw.match(/\./g) || []).length;
+
+    if (hasComma) {
+      raw = raw.replace(/\./g, "").replace(",", ".");
+    } else if (dotCount > 1) {
+      raw = raw.replace(/\./g, "");
+    } else if (dotCount === 1) {
+      const signless = raw.replace(/^-/, "");
+      const [intPart, fracPart = ""] = signless.split(".");
+      if (fracPart.length === 3 && intPart.length <= 3) {
+        raw = raw.replace(".", "");
+      }
+    }
+
+    const parsed = Number(raw);
     return Number.isFinite(parsed) ? parsed : 0;
   }
 
@@ -536,6 +574,16 @@ document.addEventListener("DOMContentLoaded", () => {
     return payload && Array.isArray(payload.columns) && Array.isArray(payload.data);
   }
 
+  function newestDateValue(values) {
+    return (values || []).reduce((best, value) => {
+      if (!value) return best;
+      const dt = new Date(value);
+      if (Number.isNaN(dt.getTime())) return best;
+      if (!best || dt > new Date(best)) return dt.toISOString();
+      return best;
+    }, "");
+  }
+
   function applyCanonicalRowAliases(row, columns) {
     (columns || []).forEach((col) => {
       const aliasKey = canonicalKeyFromLabel(col.label || col.key);
@@ -595,11 +643,20 @@ document.addEventListener("DOMContentLoaded", () => {
         rowMap.forEach((row) => applyCanonicalRowAliases(row, columns));
       }
 
+      const savedAt = newestDateValue([
+        payload?.savedAt,
+        payload?.sheet?.updatedAt,
+        payload?.sheet?.createdAt,
+        ...cells.map((cell) => cell.updatedAt),
+      ]);
+
       return {
         columns,
         rows: Array.from(rowMap.values()),
         cells,
-        savedAt: String(payload?.savedAt || ""),
+        savedAt,
+        version: Number(payload?.sheet?.version || payload?.version || 0),
+        sheetKey: String(payload?.sheet?.key || payload?.key || ""),
       };
     }
 
@@ -640,7 +697,14 @@ document.addEventListener("DOMContentLoaded", () => {
         columns,
         rows,
         cells,
-        savedAt: String(payload?.savedAt || ""),
+        savedAt: newestDateValue([
+          payload?.savedAt,
+          payload?.updatedAt,
+          payload?.createdAt,
+          ...cells.map((cell) => cell.updatedAt),
+        ]),
+        version: Number(payload?.version || 0),
+        sheetKey: String(payload?.key || ""),
       };
     }
 
@@ -1100,6 +1164,37 @@ document.addEventListener("DOMContentLoaded", () => {
     return (dataset?.rows || []).filter((row) => isRealClientRow(row, dataset?.columns || []));
   }
 
+  function getDatasetTime(dataset) {
+    const dt = new Date(dataset?.savedAt || "");
+    return Number.isNaN(dt.getTime()) ? 0 : dt.getTime();
+  }
+
+  function getLatestContFlowDataset(datasets = []) {
+    const candidates = datasets
+      .map((dataset, index) => ({
+        dataset: dataset || EMPTY_DATASET,
+        index,
+        rows: getValidContFlowRows(dataset || EMPTY_DATASET).length,
+        time: getDatasetTime(dataset),
+        version: Number(dataset?.version || 0),
+      }))
+      .filter((item) => item.rows > 0);
+
+    if (!candidates.length) return EMPTY_DATASET;
+
+    candidates.sort((a, b) => {
+      if (b.time !== a.time) return b.time - a.time;
+      if (b.version !== a.version) return b.version - a.version;
+      return b.index - a.index;
+    });
+
+    return {
+      ...candidates[0].dataset,
+      __sourceIndex: candidates[0].index,
+      __sourceLabel: `ContFlow ${QUARTER_LABELS[candidates[0].index] || ""}`.trim(),
+    };
+  }
+
   function sumPainelTributarioMonth(row, monthOffset) {
     return (
       toNumberBR(row?.[`fat1_m${monthOffset}`]) +
@@ -1142,6 +1237,7 @@ document.addEventListener("DOMContentLoaded", () => {
           value,
           lrValue: lrMonthValues[monthOffset],
           quarterIndex,
+          monthOffset: monthOffset + 1,
         });
       });
 
@@ -1200,25 +1296,753 @@ document.addEventListener("DOMContentLoaded", () => {
     };
   }
 
-  function buildSourceChecks(contFlowSheets, painelTributario, painelTributarioLR) {
+  function buildSourceChecks(contFlowSheets, painelTributario, painelTributarioLR, painelTributarioLRA) {
     const checks = contFlowSheets.map((dataset, index) => ({
+      key: `contflow-${index}`,
       label: `ContFlow ${QUARTER_LABELS[index]}`,
       rows: getValidContFlowRows(dataset).length,
       updatedAt: dataset?.savedAt || "",
     }));
 
     checks.push({
+      key: "pt",
       label: "Painel Tributário",
       rows: (painelTributario?.rows || []).length,
       updatedAt: painelTributario?.savedAt || "",
     });
     checks.push({
+      key: "ptlr",
       label: "Painel Tributário LR",
       rows: (painelTributarioLR?.rows || []).length,
       updatedAt: painelTributarioLR?.savedAt || "",
     });
+    checks.push({
+      key: "ptlra",
+      label: "Painel Tributário - LRA",
+      rows: (painelTributarioLRA?.rows || []).length,
+      updatedAt: painelTributarioLRA?.savedAt || "",
+    });
+
+    checks.forEach((item) => {
+      item.active = item.key === `contflow-${state.contFlow?.__sourceIndex}`;
+    });
 
     return checks;
+  }
+
+  function getTaxBiConfigs() {
+    return {
+      lp: {
+        key: "lp",
+        title: "BI - LP",
+        shortLabel: "LP",
+        tribMode: "LP",
+        dataset: state.painelTributario,
+        periodLabels: QUARTER_LABELS,
+        periodKind: "trimestre",
+        baseKey: "total_bc",
+        irKey: "ir_a_pagar",
+        csllKey: "csll_a_pagar",
+        additionalKey: "adicional",
+        retentionKeys: ["retencoes_ir", "retencoes_csll"],
+        revenue(row) {
+          const receita = toNumberBR(row?.receita_bruta);
+          if (receita) return receita;
+          return [1, 2, 3].reduce((sum, monthOffset) => sum + sumPainelTributarioMonth(row, monthOffset), 0);
+        },
+      },
+      lrt: {
+        key: "lrt",
+        title: "BI - LRT",
+        shortLabel: "LRT",
+        tribMode: "LRT",
+        dataset: state.painelTributarioLR,
+        periodLabels: QUARTER_LABELS,
+        periodKind: "trimestre",
+        baseKey: "bc",
+        irKey: "irpj_a_pagar",
+        csllKey: "csll_a_pagar",
+        additionalKey: "irpj_adicional_lrt",
+        retentionKeys: ["retencoes_incentivos_pagos", "retencoes_pagos_csll"],
+        revenue(row) {
+          return toNumberBR(row?.fat_total);
+        },
+      },
+      lra: {
+        key: "lra",
+        title: "BI - LRA",
+        shortLabel: "LRA",
+        tribMode: "LRA",
+        dataset: state.painelTributarioLRA,
+        periodLabels: MONTH_LABELS,
+        periodKind: "mês",
+        baseKey: "bc",
+        irKey: "irpj_a_pagar",
+        csllKey: "csll_a_pagar",
+        additionalKey: "irpj_adicional_lra",
+        retentionKeys: ["retencoes_incentivos_pagos", "retencoes_pagos_csll"],
+        revenue(row) {
+          return toNumberBR(row?.fat_total);
+        },
+      },
+    };
+  }
+
+  function getTaxPeriodIndex(row, max) {
+    const raw = Number(row?.sheet_index ?? row?.sheetIndex ?? 0);
+    if (Number.isInteger(raw) && raw >= 0 && raw < max) return raw;
+    return 0;
+  }
+
+  function detectTaxTribMode(value) {
+    const normalized = normalizeText(value).toUpperCase();
+    if (!normalized) return "";
+    if (normalized === "LP" || normalized.includes("PRESUMIDO")) return "LP";
+    if (normalized === "LRA" || normalized.includes("REAL ANUAL")) return "LRA";
+    if (
+      normalized === "LRT" ||
+      normalized.includes("REAL TRIMESTRAL") ||
+      normalized.includes("REAL TRIMESTRA")
+    ) {
+      return "LRT";
+    }
+    return normalized;
+  }
+
+  function getTaxCompanyKey(row) {
+    const documentKey = String(row?.cnpj_cpf || "").replace(/\D/g, "");
+    if (documentKey) return `doc:${documentKey}`;
+
+    const codeKey = String(row?.cod || "").trim();
+    if (codeKey) return `cod:${codeKey}`;
+
+    const nameKey = normalizeText(row?.razao_social);
+    return nameKey ? `nome:${nameKey}` : "sem-identificacao";
+  }
+
+  function getTaxCompanyName(row) {
+    const current = getCurrentContFlowCompany(row);
+    return String(current?.razao_social || row?.razao_social || row?.cnpj_cpf || row?.cod || "Sem identificação").trim();
+  }
+
+  function buildContFlowCompanyMap(rows) {
+    const map = new Map();
+    (rows || []).forEach((row) => {
+      const keys = [
+        String(row?.cnpj_cpf || "").replace(/\D/g, "") ? `doc:${String(row.cnpj_cpf).replace(/\D/g, "")}` : "",
+        String(row?.cod || "").trim() ? `cod:${String(row.cod).trim()}` : "",
+        normalizeText(row?.razao_social) ? `nome:${normalizeText(row.razao_social)}` : "",
+      ].filter(Boolean);
+
+      keys.forEach((key) => {
+        if (!map.has(key)) map.set(key, row);
+      });
+    });
+    return map;
+  }
+
+  function getCurrentContFlowCompany(row) {
+    const keys = [
+      String(row?.cnpj_cpf || "").replace(/\D/g, "") ? `doc:${String(row.cnpj_cpf).replace(/\D/g, "")}` : "",
+      String(row?.cod || "").trim() ? `cod:${String(row.cod).trim()}` : "",
+      normalizeText(row?.razao_social) ? `nome:${normalizeText(row.razao_social)}` : "",
+    ].filter(Boolean);
+
+    for (const key of keys) {
+      const match = state.contFlowCompanyMap.get(key);
+      if (match) return match;
+    }
+    return null;
+  }
+
+  function getTaxBaseRows(config) {
+    return getValidContFlowRows(state.contFlow).filter(
+      (row) => detectTaxTribMode(row?.trib) === config.tribMode
+    );
+  }
+
+  function isTaxDataRow(row, config) {
+    return (
+      Math.abs(config.revenue(row)) > 0 ||
+      Math.abs(toNumberBR(row?.[config.baseKey])) > 0 ||
+      Math.abs(toNumberBR(row?.[config.irKey])) > 0 ||
+      Math.abs(toNumberBR(row?.[config.csllKey])) > 0 ||
+      Math.abs(toNumberBR(row?.[config.additionalKey])) > 0 ||
+      Math.abs(sumTaxRetention(row, config)) > 0
+    );
+  }
+
+  function sumTaxRetention(row, config) {
+    return (config.retentionKeys || []).reduce((sum, key) => sum + toNumberBR(row?.[key]), 0);
+  }
+
+  function buildTaxTotals(rows, config) {
+    return rows.reduce(
+      (totals, row) => {
+        const revenue = config.revenue(row);
+        const base = toNumberBR(row?.[config.baseKey]);
+        const ir = toNumberBR(row?.[config.irKey]);
+        const csll = toNumberBR(row?.[config.csllKey]);
+        const additional = toNumberBR(row?.[config.additionalKey]);
+        const retention = sumTaxRetention(row, config);
+        totals.revenue += revenue;
+        totals.base += base;
+        totals.ir += ir;
+        totals.csll += csll;
+        totals.additional += additional;
+        totals.retention += retention;
+        totals.tax += ir + csll;
+        return totals;
+      },
+      { revenue: 0, base: 0, ir: 0, csll: 0, additional: 0, retention: 0, tax: 0 }
+    );
+  }
+
+  function buildTaxTopCompanies(rows, config, limit = 8) {
+    const map = new Map();
+    rows.forEach((row) => {
+      const key = getTaxCompanyKey(row);
+      const contFlowRow = getCurrentContFlowCompany(row);
+      const current =
+        map.get(key) || {
+          key,
+          name: getTaxCompanyName(row),
+          meta: String(contFlowRow?.trib || contFlowRow?.status || row?.trib || row?.status || "").trim(),
+          revenue: 0,
+          tax: 0,
+        };
+      current.revenue += config.revenue(row);
+      current.tax += toNumberBR(row?.[config.irKey]) + toNumberBR(row?.[config.csllKey]);
+      map.set(key, current);
+    });
+
+    return Array.from(map.values())
+      .sort((a, b) => b.tax - a.tax || b.revenue - a.revenue || a.name.localeCompare(b.name, "pt-BR"))
+      .slice(0, limit);
+  }
+
+  function buildTaxTopRevenueCompanies(rows, config, limit = 8) {
+    return buildTaxTopCompanies(rows, config, rows.length)
+      .sort((a, b) => b.revenue - a.revenue || b.tax - a.tax || a.name.localeCompare(b.name, "pt-BR"))
+      .slice(0, limit);
+  }
+
+  function buildTaxBiAnalytics(config) {
+    const baseRows = getTaxBaseRows(config);
+    const baseCompanyKeys = new Set(baseRows.map(getTaxCompanyKey));
+    const rows = (config.dataset?.rows || []).filter((row) => baseCompanyKeys.has(getTaxCompanyKey(row)));
+    const movementRows = rows.filter((row) => isTaxDataRow(row, config));
+    const movementCompanyKeys = new Set(movementRows.map(getTaxCompanyKey));
+    const totals = buildTaxTotals(movementRows, config);
+    const periods = config.periodLabels.map((label, index) => {
+      const periodRows = rows.filter((row) => getTaxPeriodIndex(row, config.periodLabels.length) === index);
+      const periodMovementRows = periodRows.filter((row) => isTaxDataRow(row, config));
+      const periodTotals = buildTaxTotals(periodMovementRows, config);
+      return {
+        key: `${config.key}-${index}`,
+        label,
+        periodIndex: index,
+        rows: periodRows.length,
+        clients: new Set(periodRows.map(getTaxCompanyKey)).size,
+        ...periodTotals,
+        effectiveRate: periodTotals.revenue ? (periodTotals.tax / periodTotals.revenue) * 100 : 0,
+      };
+    });
+    const bestPeriod = periods.reduce(
+      (best, item) => (item.tax > (best?.tax || 0) ? item : best),
+      null
+    );
+    const averageTicket = baseCompanyKeys.size ? totals.revenue / baseCompanyKeys.size : 0;
+
+    return {
+      ...config,
+      baseRows,
+      rows,
+      movementRows,
+      totals,
+      periods,
+      bestPeriod,
+      averageTicket,
+      clients: baseCompanyKeys.size,
+      activeClients: baseRows.filter(inferActiveStatus).length,
+      inactiveClients: baseRows.filter((row) => !inferActiveStatus(row)).length,
+      movementClients: movementCompanyKeys.size,
+      noMovementClients: Math.max(baseCompanyKeys.size - movementCompanyKeys.size, 0),
+      effectiveRate: totals.revenue ? (totals.tax / totals.revenue) * 100 : 0,
+      topCompanies: buildTaxTopCompanies(movementRows, config),
+      topRevenueCompanies: buildTaxTopRevenueCompanies(movementRows, config),
+      statusDist: buildDistribution(baseRows, "status", 5),
+      respDist: buildDistribution(baseRows, "resp1", 5),
+    };
+  }
+
+  function renderTaxBiBars(items, valueKey = "value", formatter = formatCurrency, options = {}) {
+    const max = Math.max(...items.map((item) => Math.abs(Number(item?.[valueKey] || 0))), 0);
+    if (!items.length) return '<div class="empty-state">Sem dados para montar o gráfico.</div>';
+
+    return `<div class="tax-bi-bars">${items
+      .map((item) => {
+        const value = Number(item?.[valueKey] || 0);
+        const width = max ? Math.max((Math.abs(value) / max) * 100, 4) : 0;
+        const attrs = typeof options.getAttrs === "function"
+          ? drillAttrs(options.getAttrs(item))
+          : options.drillType
+            ? drillAttrs({
+                "analytics-drill": options.drillType,
+                "tax-panel": options.panelKey,
+                "period-index": item.periodIndex ?? item.index ?? "",
+                "drill-value": item.label,
+                "drill-title": item.label,
+              })
+            : "";
+        return `
+          <div class="tax-bi-bar" ${attrs}>
+            <div class="tax-bi-bar__head">
+              <span>${escapeHtml(item.label)}</span>
+              <strong>${escapeHtml(formatter(value))}</strong>
+            </div>
+            <div class="tax-bi-bar__track"><span class="tax-bi-bar__fill" style="--bar: ${width.toFixed(2)}%"></span></div>
+          </div>
+        `;
+      })
+      .join("")}</div>`;
+  }
+
+  function renderTaxBiRanking(items, valueKey = "tax", panelKey = "") {
+    if (!items.length) return '<div class="empty-state">Sem empresas para ranquear ainda.</div>';
+
+    return `<div class="tax-bi-ranking">${items
+      .map((item, index) => {
+        const secondary =
+          valueKey === "revenue"
+            ? `IRPJ + CSLL ${formatCurrency(item.tax)}`
+            : `Receita ${formatCurrency(item.revenue)}`;
+        return `
+          <div class="tax-bi-rank" ${drillAttrs({
+            "analytics-drill": "tax-company",
+            "tax-panel": panelKey,
+            "company-key": item.key,
+            "drill-title": item.name,
+          })}>
+            <span class="tax-bi-rank__pos">${index + 1}</span>
+            <div>
+              <div class="tax-bi-rank__name">${escapeHtml(item.name)}</div>
+              <div class="tax-bi-rank__meta">${escapeHtml(item.meta || "Sem classificação")} • ${escapeHtml(secondary)}</div>
+            </div>
+            <strong class="tax-bi-rank__value">${escapeHtml(formatCurrency(item[valueKey]))}</strong>
+          </div>
+        `;
+      })
+      .join("")}</div>`;
+  }
+
+  function renderTaxBiTopic(kicker, title, subtitle, body, modifier = "") {
+    return `
+      <section class="tax-bi-topic ${modifier}">
+        <div class="tax-bi-topic__head">
+          <div>
+            <span class="tax-bi-topic__kicker">${escapeHtml(kicker)}</span>
+            <h3 class="tax-bi-topic__title">${escapeHtml(title)}</h3>
+            <p class="tax-bi-topic__subtitle">${escapeHtml(subtitle)}</p>
+          </div>
+        </div>
+        <div class="tax-bi-topic__body">${body}</div>
+      </section>
+    `;
+  }
+
+  function renderTaxBiCard(label, value, hint, modifier = "", attrs = {}) {
+    return `
+      <article class="tax-bi-card ${modifier}" ${drillAttrs(attrs)}>
+        <span class="tax-bi-card__label">${escapeHtml(label)}</span>
+        <strong class="tax-bi-card__value">${escapeHtml(value)}</strong>
+        <span class="tax-bi-card__hint">${escapeHtml(hint)}</span>
+      </article>
+    `;
+  }
+
+  function renderTaxBiProgress(label, current, total, hint = "") {
+    const rate = total ? (current / total) * 100 : 0;
+    return `
+      <div class="tax-bi-progress">
+        <div class="tax-bi-progress__head">
+          <span>${escapeHtml(label)}</span>
+          <strong>${formatNumber(current)} / ${formatNumber(total)} • ${formatPercent(rate)}</strong>
+        </div>
+        <div class="tax-bi-progress__track">
+          <span class="tax-bi-progress__fill" style="--bar: ${Math.min(Math.max(rate, 0), 100).toFixed(2)}%"></span>
+        </div>
+        ${hint ? `<div class="tax-bi-card__hint">${escapeHtml(hint)}</div>` : ""}
+      </div>
+    `;
+  }
+
+  function renderTaxBiValueList(items) {
+    return `<div class="tax-bi-value-list">${items
+      .map(
+        ([label, value]) => `
+          <div class="tax-bi-value-row">
+            <span>${escapeHtml(label)}</span>
+            <strong>${escapeHtml(value)}</strong>
+          </div>
+        `
+      )
+      .join("")}</div>`;
+  }
+
+  function renderTaxBiDiagnostics(analytics) {
+    const bestPeriod = analytics.bestPeriod?.label || "sem destaque";
+    const topCompany = analytics.topCompanies[0]?.name || "sem empresa ranqueada";
+    const topTax = analytics.topCompanies[0]?.tax || 0;
+    const statusLeader = analytics.statusDist[0]?.label || "sem status";
+    const movementRate = analytics.clients ? (analytics.movementClients / analytics.clients) * 100 : 0;
+
+    const items = [
+      `<strong>Período mais forte:</strong> ${escapeHtml(bestPeriod)}, com ${formatCurrency(analytics.bestPeriod?.tax || 0)} de IRPJ + CSLL.`,
+      `<strong>Maior impacto:</strong> ${escapeHtml(topCompany)}, com ${formatCurrency(topTax)} de imposto apurado.`,
+      `<strong>Cobertura de movimento:</strong> ${formatPercent(movementRate)} das empresas desse regime têm valor salvo no painel tributário.`,
+      `<strong>Status dominante:</strong> ${escapeHtml(statusLeader)}. Use isso para separar carteira ativa de bases que precisam revisão.`,
+    ];
+
+    return `<div class="tax-bi-diagnostic">${items
+      .map((item) => `<div class="tax-bi-diagnostic__item">${item}</div>`)
+      .join("")}</div>`;
+  }
+
+  function renderTaxBiPeriodTable(analytics) {
+    return `
+      <div class="table-shell">
+        <table class="tax-bi-table">
+          <thead>
+            <tr>
+              <th>${analytics.periodKind}</th>
+              <th>Empresas</th>
+              <th>Receita</th>
+              <th>BC</th>
+              <th>IRPJ</th>
+              <th>CSLL</th>
+              <th>Adicional</th>
+              <th>Carga</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${analytics.periods
+              .map(
+                (item) => `
+                  <tr ${drillAttrs({
+                    "analytics-drill": "tax-period",
+                    "tax-panel": analytics.key,
+                    "period-index": item.periodIndex,
+                    "drill-title": item.label,
+                  })}>
+                    <td>${escapeHtml(item.label)}</td>
+                    <td>${formatNumber(item.clients)}</td>
+                    <td>${formatCurrency(item.revenue)}</td>
+                    <td>${formatCurrency(item.base)}</td>
+                    <td>${formatCurrency(item.ir)}</td>
+                    <td>${formatCurrency(item.csll)}</td>
+                    <td>${formatCurrency(item.additional)}</td>
+                    <td>${formatPercent(item.effectiveRate)}</td>
+                  </tr>
+                `
+              )
+              .join("")}
+          </tbody>
+        </table>
+      </div>
+    `;
+  }
+
+  function renderSingleTaxBiPage(panelKey) {
+    const config = getTaxBiConfigs()[panelKey];
+    const panel = document.querySelector(`[data-tax-bi-panel="${panelKey}"]`);
+    if (!config || !panel) return null;
+
+    const analytics = buildTaxBiAnalytics(config);
+    state.taxBiAnalytics[panelKey] = analytics;
+    const movementRate = analytics.clients ? (analytics.movementClients / analytics.clients) * 100 : 0;
+    const valueCards = `
+      <div class="tax-bi-topic-grid tax-bi-topic-grid--four">
+        ${renderTaxBiCard("Receita", formatCurrency(analytics.totals.revenue), `Ticket médio por empresa: ${formatCurrency(analytics.averageTicket)}.`, "", { "analytics-drill": "tax-panel", "tax-panel": panelKey, "tax-scope": "metric", "tax-metric": "revenue", "drill-title": "Receita" })}
+        ${renderTaxBiCard("Base de cálculo", formatCurrency(analytics.totals.base), "Total usado para apuração no painel.", "", { "analytics-drill": "tax-panel", "tax-panel": panelKey, "tax-scope": "metric", "tax-metric": "base", "drill-title": "Base de cálculo" })}
+        ${renderTaxBiCard("IRPJ + CSLL", formatCurrency(analytics.totals.tax), `Carga efetiva: ${formatPercent(analytics.effectiveRate)}.`, "", { "analytics-drill": "tax-panel", "tax-panel": panelKey, "tax-scope": "metric", "tax-metric": "tax", "drill-title": "IRPJ + CSLL" })}
+        ${renderTaxBiCard("Retenções", formatCurrency(analytics.totals.retention), `Adicional: ${formatCurrency(analytics.totals.additional)}.`, "", { "analytics-drill": "tax-panel", "tax-panel": panelKey, "tax-scope": "metric", "tax-metric": "retention", "drill-title": "Retenções" })}
+      </div>
+      ${renderTaxBiValueList([
+        ["IRPJ", formatCurrency(analytics.totals.ir)],
+        ["CSLL", formatCurrency(analytics.totals.csll)],
+        ["Adicional", formatCurrency(analytics.totals.additional)],
+        ["Retenções", formatCurrency(analytics.totals.retention)],
+      ])}
+    `;
+
+    panel.innerHTML = `
+      <div class="tax-bi-topics">
+        <section class="tax-bi-topic tax-bi-topic--hero">
+          <div>
+            <span class="tax-bi-topic__kicker">Panorama</span>
+            <h3 class="tax-bi-topic__title">${escapeHtml(analytics.title)} conectado ao ${escapeHtml(analytics.tribMode)}</h3>
+            <p class="tax-bi-topic__subtitle">
+              Empresas vêm do ContFlow pela tributação ${escapeHtml(analytics.tribMode)}.
+              Os valores vêm somente do painel tributário correspondente e cruzam por CNPJ/código.
+            </p>
+            <div class="tax-bi-topic-grid tax-bi-topic-grid--two">
+              ${renderTaxBiCard("Empresas do regime", formatNumber(analytics.clients), `${formatNumber(analytics.activeClients)} ativa(s) e ${formatNumber(analytics.inactiveClients)} fora da operação.`, "tax-bi-card--compact", { "analytics-drill": "tax-panel", "tax-panel": panelKey, "tax-scope": "all", "drill-title": "Empresas do regime" })}
+              ${renderTaxBiCard("Com movimento", formatNumber(analytics.movementClients), `${formatNumber(analytics.noMovementClients)} empresa(s) ainda sem valores salvos.`, "tax-bi-card--compact", { "analytics-drill": "tax-panel", "tax-panel": panelKey, "tax-scope": "movement", "drill-title": "Empresas com movimento" })}
+            </div>
+          </div>
+          <article class="tax-bi-card tax-bi-card--accent" ${drillAttrs({
+            "analytics-drill": "tax-panel",
+            "tax-panel": panelKey,
+            "tax-scope": "no-movement",
+            "drill-title": "Empresas sem movimento no painel",
+          })}>
+            <span class="tax-bi-card__label">Cobertura do painel</span>
+            <strong class="tax-bi-card__value">${formatPercent(movementRate)}</strong>
+            <span class="tax-bi-card__hint">Quanto da carteira ${escapeHtml(analytics.tribMode)} já tem movimento tributário salvo.</span>
+            ${renderTaxBiProgress("Empresas com movimento", analytics.movementClients, analytics.clients)}
+          </article>
+        </section>
+
+        ${renderTaxBiTopic(
+          "Tópico 1",
+          "Valores principais",
+          "Leitura financeira do regime: receita, base, imposto, retenções e carga efetiva.",
+          valueCards
+        )}
+
+        <section class="tax-bi-topic tax-bi-topic--split">
+          <div>
+            <span class="tax-bi-topic__kicker">Tópico 2</span>
+            <h3 class="tax-bi-topic__title">Empresas que puxam o resultado</h3>
+            <p class="tax-bi-topic__subtitle">Ranking por imposto apurado e por receita, para entender concentração.</p>
+            ${renderTaxBiRanking(analytics.topCompanies, "tax", panelKey)}
+          </div>
+          <div>
+            <span class="tax-bi-topic__kicker">Tópico 3</span>
+            <h3 class="tax-bi-topic__title">Carteira e responsáveis</h3>
+            <p class="tax-bi-topic__subtitle">Distribuição operacional do mesmo grupo de empresas do regime.</p>
+            ${renderTaxBiBars(analytics.respDist, "value", (value) => `${formatNumber(value)} empresa(s)`)}
+          </div>
+        </section>
+
+        <section class="tax-bi-topic tax-bi-topic--split">
+          <div>
+            <span class="tax-bi-topic__kicker">Tópico 4</span>
+            <h3 class="tax-bi-topic__title">Períodos</h3>
+            <p class="tax-bi-topic__subtitle">Onde receita e imposto aparecem por ${escapeHtml(analytics.periodKind)}.</p>
+            ${renderTaxBiBars(analytics.periods, "tax", formatCurrency, { drillType: "tax-period", panelKey })}
+          </div>
+          <div>
+            <span class="tax-bi-topic__kicker">Tópico 5</span>
+            <h3 class="tax-bi-topic__title">Receita por empresa</h3>
+            <p class="tax-bi-topic__subtitle">Outra lente para ver quem mais movimenta o painel.</p>
+            ${renderTaxBiRanking(analytics.topRevenueCompanies, "revenue", panelKey)}
+          </div>
+        </section>
+
+        ${renderTaxBiTopic(
+          "Tópico 6",
+          "Tabela e diagnóstico",
+          "Resumo detalhado por período mais os sinais de leitura automática.",
+          `${renderTaxBiPeriodTable(analytics)}${renderTaxBiDiagnostics(analytics)}`
+        )}
+      </div>
+    `;
+
+    return analytics;
+  }
+
+  function renderTaxBiCompletePage(analyticsList) {
+    const panel = document.querySelector('[data-tax-bi-panel="complete"]');
+    if (!panel) return;
+
+    const combined = analyticsList.reduce(
+      (acc, item) => {
+        acc.rows += item.movementRows.length;
+        acc.revenue += item.totals.revenue;
+        acc.base += item.totals.base;
+        acc.ir += item.totals.ir;
+        acc.csll += item.totals.csll;
+        acc.tax += item.totals.tax;
+        acc.additional += item.totals.additional;
+        acc.retention += item.totals.retention;
+        return acc;
+      },
+      { clients: 0, rows: 0, revenue: 0, base: 0, ir: 0, csll: 0, tax: 0, additional: 0, retention: 0 }
+    );
+    combined.clients = new Set(
+      analyticsList.flatMap((item) => item.baseRows.map(getTaxCompanyKey))
+    ).size;
+    const effectiveRate = combined.revenue ? (combined.tax / combined.revenue) * 100 : 0;
+    const panelBars = analyticsList.map((item) => ({
+      panelKey: item.key,
+      label: item.shortLabel,
+      value: item.totals.tax,
+      revenue: item.totals.revenue,
+    }));
+
+    panel.innerHTML = `
+      <div class="tax-bi-topics">
+        <section class="tax-bi-topic tax-bi-topic--hero">
+          <div>
+            <span class="tax-bi-topic__kicker">Completo</span>
+            <h3 class="tax-bi-topic__title">Visão consolidada LP, LRT e LRA</h3>
+            <p class="tax-bi-topic__subtitle">
+              Esta tela soma os três regimes, mas cada bloco abaixo continua respeitando
+              a tributação original do ContFlow.
+            </p>
+            <div class="tax-bi-topic-grid tax-bi-topic-grid--two">
+              ${renderTaxBiCard("Empresas mapeadas", formatNumber(combined.clients), `${formatNumber(combined.rows)} linha(s) com movimento tributário.`, "tax-bi-card--compact", { "analytics-drill": "tax-complete", "tax-scope": "all", "drill-title": "Empresas mapeadas" })}
+              ${renderTaxBiCard("Carga efetiva", formatPercent(effectiveRate), "IRPJ + CSLL sobre a receita consolidada.", "tax-bi-card--compact", { "analytics-drill": "tax-complete", "tax-scope": "metric", "tax-metric": "tax", "drill-title": "Carga efetiva consolidada" })}
+            </div>
+          </div>
+          <article class="tax-bi-card tax-bi-card--accent" ${drillAttrs({ "analytics-drill": "tax-complete", "tax-scope": "metric", "tax-metric": "tax", "drill-title": "Total tributário" })}>
+            <span class="tax-bi-card__label">Total tributário</span>
+            <strong class="tax-bi-card__value">${formatCurrency(combined.tax)}</strong>
+            <span class="tax-bi-card__hint">IRPJ + CSLL somados entre os regimes.</span>
+            ${renderTaxBiValueList([
+              ["Receita", formatCurrency(combined.revenue)],
+              ["Base de cálculo", formatCurrency(combined.base)],
+              ["Adicional", formatCurrency(combined.additional)],
+              ["Retenções", formatCurrency(combined.retention)],
+            ])}
+          </article>
+        </section>
+
+        ${renderTaxBiTopic(
+          "Tópico 1",
+          "Comparativo por regime",
+          "Resumo lado a lado para enxergar onde estão empresas, receita, imposto e carga.",
+          `<section class="tax-bi-complete-cards">
+            ${analyticsList
+              .map(
+                (item) => `
+                  <article class="tax-bi-complete-card" ${drillAttrs({ "analytics-drill": "tax-panel", "tax-panel": item.key, "tax-scope": "all", "drill-title": item.title })}>
+                    <h3>${escapeHtml(item.title)}</h3>
+                    <dl>
+                      <div><dt>Empresas</dt><dd>${formatNumber(item.clients)}</dd></div>
+                      <div><dt>Com movimento</dt><dd>${formatNumber(item.movementClients)}</dd></div>
+                      <div><dt>Receita</dt><dd>${formatCurrency(item.totals.revenue)}</dd></div>
+                      <div><dt>IRPJ + CSLL</dt><dd>${formatCurrency(item.totals.tax)}</dd></div>
+                      <div><dt>Carga</dt><dd>${formatPercent(item.effectiveRate)}</dd></div>
+                    </dl>
+                  </article>
+                `
+              )
+              .join("")}
+          </section>`
+        )}
+
+        <section class="tax-bi-topic tax-bi-topic--split">
+          <div>
+            <span class="tax-bi-topic__kicker">Tópico 2</span>
+            <h3 class="tax-bi-topic__title">Imposto por regime</h3>
+            <p class="tax-bi-topic__subtitle">Comparativo direto de IRPJ + CSLL entre LP, LRT e LRA.</p>
+            ${renderTaxBiBars(panelBars, "value", formatCurrency, {
+              getAttrs: (item) => ({
+                "analytics-drill": "tax-panel",
+                "tax-panel": item.panelKey,
+                "tax-scope": "movement",
+                "drill-title": `Imposto ${item.label}`,
+              }),
+            })}
+          </div>
+          <div>
+            <span class="tax-bi-topic__kicker">Tópico 3</span>
+            <h3 class="tax-bi-topic__title">Receita por regime</h3>
+            <p class="tax-bi-topic__subtitle">Mostra qual aba concentra mais faturamento salvo.</p>
+            ${renderTaxBiBars(panelBars, "revenue", formatCurrency, {
+              getAttrs: (item) => ({
+                "analytics-drill": "tax-panel",
+                "tax-panel": item.panelKey,
+                "tax-scope": "movement",
+                "drill-title": `Receita ${item.label}`,
+              }),
+            })}
+          </div>
+        </section>
+
+        ${renderTaxBiTopic(
+          "Tópico 4",
+          "Diagnóstico geral",
+          "Sinais rápidos para saber se os painéis já estão alimentados da forma esperada.",
+          `<div class="tax-bi-diagnostic">
+            ${analyticsList
+              .map((item) => {
+                const rate = item.clients ? (item.movementClients / item.clients) * 100 : 0;
+                return `<div class="tax-bi-diagnostic__item"><strong>${escapeHtml(item.shortLabel)}:</strong> ${formatNumber(item.clients)} empresa(s), ${formatNumber(item.movementClients)} com movimento (${formatPercent(rate)}), imposto total de ${formatCurrency(item.totals.tax)}.</div>`;
+              })
+              .join("")}
+          </div>`
+        )}
+      </div>
+    `;
+  }
+
+  function renderTaxBi() {
+    const analyticsList = ["lp", "lrt", "lra"]
+      .map((key) => renderSingleTaxBiPage(key))
+      .filter(Boolean);
+    renderTaxBiCompletePage(analyticsList);
+
+    const updatedEl = document.getElementById("taxBiUpdatedAt");
+    const savedDates = [
+      state.painelTributario?.savedAt,
+      state.painelTributarioLR?.savedAt,
+      state.painelTributarioLRA?.savedAt,
+    ].filter(Boolean);
+    const latest = savedDates
+      .map((value) => new Date(value))
+      .filter((date) => !Number.isNaN(date.getTime()))
+      .sort((a, b) => b - a)[0];
+    if (updatedEl) {
+      updatedEl.textContent = `BI tributário: ${latest ? formatDateTime(latest.toISOString()) : "sem salvamento ainda"}`;
+    }
+  }
+
+  function renderTaxBiLoading() {
+    document.querySelectorAll(".tax-bi-page").forEach((panel) => {
+      panel.innerHTML = '<div class="empty-state">Carregando BI tributário...</div>';
+    });
+    const updatedEl = document.getElementById("taxBiUpdatedAt");
+    if (updatedEl) updatedEl.textContent = "Atualizando BI tributário...";
+  }
+
+  function renderTaxBiError(message) {
+    document.querySelectorAll(".tax-bi-page").forEach((panel) => {
+      panel.innerHTML = `<div class="empty-state">${escapeHtml(message || "O BI tributário não pôde ser carregado.")}</div>`;
+    });
+    const updatedEl = document.getElementById("taxBiUpdatedAt");
+    if (updatedEl) updatedEl.textContent = "Falha ao carregar BI tributário";
+  }
+
+  function bindTaxBiActions() {
+    document.querySelectorAll("[data-tax-bi-page]").forEach((button) => {
+      button.addEventListener("click", () => {
+        const page = button.dataset.taxBiPage;
+        document.querySelectorAll("[data-tax-bi-page]").forEach((item) => {
+          item.classList.toggle("is-active", item === button);
+        });
+        document.querySelectorAll("[data-tax-bi-panel]").forEach((panel) => {
+          panel.classList.toggle("is-active", panel.dataset.taxBiPanel === page);
+        });
+      });
+    });
+
+    const btnTaxRefresh = document.getElementById("btnTaxBiRefresh");
+    btnTaxRefresh?.addEventListener("click", async () => {
+      btnTaxRefresh.disabled = true;
+      btnTaxRefresh.textContent = "Atualizando...";
+      try {
+        await loadAnalytics();
+      } catch (err) {
+        renderAnalyticsError(err);
+      } finally {
+        btnTaxRefresh.disabled = false;
+        btnTaxRefresh.textContent = "Atualizar tributário";
+      }
+    });
   }
 
   function buildRowSignal(row) {
@@ -1282,7 +2106,6 @@ document.addEventListener("DOMContentLoaded", () => {
     const respDist = buildDistribution(validRows, "resp1");
     const resp2Dist = buildDistribution(validRows, "resp2");
     const grupoDist = buildDistribution(validRows, "grupo");
-    const classDist = buildDistribution(validRows, "class");
 
     const criticalColumns = coverage
       .filter((item) => item.rate < 75)
@@ -1319,7 +2142,6 @@ document.addEventListener("DOMContentLoaded", () => {
       respDist,
       resp2Dist,
       grupoDist,
-      classDist,
       coverage,
       activity,
       criticalColumns,
@@ -1394,6 +2216,13 @@ document.addEventListener("DOMContentLoaded", () => {
     if (hintEl && hint) hintEl.textContent = hint;
   }
 
+  function drillAttrs(attrs = {}) {
+    return Object.entries(attrs)
+      .filter(([, value]) => value != null && value !== "")
+      .map(([key, value]) => `data-${key}="${escapeHtml(value)}"`)
+      .join(" ");
+  }
+
   function renderBarList(targetId, items, options = {}) {
     const target = document.getElementById(targetId);
     if (!target) return;
@@ -1406,9 +2235,19 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const max = Math.max(...items.map((item) => item.value), 1);
     target.innerHTML = items
-      .map(
-        (item) => `
-          <div class="bar-row">
+      .map((item) => {
+        const attrs = typeof options.getAttrs === "function"
+          ? drillAttrs(options.getAttrs(item))
+          : options.drillType
+            ? drillAttrs({
+                "analytics-drill": options.drillType,
+                "drill-field": options.drillField,
+                "drill-value": item.label,
+                "drill-title": options.drillTitle || item.label,
+              })
+            : "";
+        return `
+          <div class="bar-row" ${attrs}>
             <div class="bar-row__meta">
               <span class="bar-row__label">${escapeHtml(item.label)}</span>
               <span class="bar-row__value">${valueFormatter(item.value)}</span>
@@ -1417,8 +2256,8 @@ document.addEventListener("DOMContentLoaded", () => {
               <div class="bar-row__fill" style="width:${Math.max(6, (item.value / max) * 100)}%"></div>
             </div>
           </div>
-        `
-      )
+        `;
+      })
       .join("");
   }
 
@@ -1444,9 +2283,19 @@ document.addEventListener("DOMContentLoaded", () => {
       const endDeg = currentDeg + angle;
       stops.push(`${color} ${currentDeg}deg ${endDeg}deg`);
       currentDeg = endDeg;
+      const field =
+        chartId === "tribDonutChart" ? "trib" : chartId === "statusDonutChart" ? "status" : "";
+      const attrs = field
+        ? drillAttrs({
+            "analytics-drill": "distribution",
+            "drill-field": field,
+            "drill-value": item.label,
+            "drill-title": item.label,
+          })
+        : "";
 
       legendHtml.push(`
-        <div class="legend-item">
+        <div class="legend-item" ${attrs}>
           <div class="legend-item__main">
             <span class="legend-swatch" style="background:${color}"></span>
             <span class="legend-label">${escapeHtml(item.label)}</span>
@@ -1463,6 +2312,180 @@ document.addEventListener("DOMContentLoaded", () => {
     chart.style.setProperty("--donut-gradient", `conic-gradient(${stops.join(",")})`);
     chart.dataset.center = `${centerLabel}\n${formatNumber(total)}`;
     legend.innerHTML = legendHtml.join("");
+  }
+
+  function renderOperationalRadarChart(analytics) {
+    const svg = document.getElementById("operationalRadarChart");
+    const summary = document.getElementById("operationalRadarSummary");
+    if (!svg || !summary) return;
+
+    const total = Math.max(analytics.totalRows || 0, 1);
+    const groupFilled = analytics.coverage.find((item) => item.key === "grupo")?.filled || 0;
+    const metrics = [
+      {
+        key: "active",
+        label: "Ativos",
+        value: analytics.activeRows,
+        score: (analytics.activeRows / total) * 100,
+        hint: "Carteira em operação hoje.",
+      },
+      {
+        key: "resp1",
+        label: "Resp.1",
+        value: Math.max(analytics.totalRows - analytics.noResp1, 0),
+        score: ((analytics.totalRows - analytics.noResp1) / total) * 100,
+        hint: "Empresas com responsável primário.",
+      },
+      {
+        key: "mit-ok",
+        label: "MIT OK",
+        value: Math.max(analytics.totalRows - analytics.mitPending, 0),
+        score: ((analytics.totalRows - analytics.mitPending) / total) * 100,
+        hint: "Sem sinal de pendência MIT.",
+      },
+      {
+        key: "athenas-ok",
+        label: "Athenas OK",
+        value: Math.max(analytics.totalRows - analytics.inconsistencias, 0),
+        score: ((analytics.totalRows - analytics.inconsistencias) / total) * 100,
+        hint: "Sem inconsistência apontada.",
+      },
+      {
+        key: "groups",
+        label: "Grupos",
+        value: groupFilled,
+        score: (groupFilled / total) * 100,
+        hint: "Empresas com grupo preenchido.",
+      },
+      {
+        key: "no-disconnect",
+        label: "Sem deslig.",
+        value: Math.max(analytics.totalRows - analytics.desligamentos, 0),
+        score: ((analytics.totalRows - analytics.desligamentos) / total) * 100,
+        hint: "Linhas sem desligamento informado.",
+      },
+    ].map((item) => ({ ...item, score: Math.max(0, Math.min(item.score, 100)) }));
+
+    const cx = 260;
+    const cy = 130;
+    const maxRadius = 86;
+    const angleStep = (Math.PI * 2) / metrics.length;
+
+    const pointFor = (index, score = 100) => {
+      const angle = -Math.PI / 2 + index * angleStep;
+      const radius = (Math.max(0, Math.min(score, 100)) / 100) * maxRadius;
+      return {
+        x: cx + Math.cos(angle) * radius,
+        y: cy + Math.sin(angle) * radius,
+      };
+    };
+
+    const grid = [25, 50, 75, 100]
+      .map((score) => {
+        const points = metrics.map((_, index) => pointFor(index, score));
+        return `<polygon class="operational-radar__grid" points="${points.map((p) => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(" ")}"></polygon>`;
+      })
+      .join("");
+
+    const axes = metrics
+      .map((item, index) => {
+        const end = pointFor(index, 100);
+        const label = pointFor(index, 122);
+        return `
+          <line class="operational-radar__axis" x1="${cx}" y1="${cy}" x2="${end.x.toFixed(1)}" y2="${end.y.toFixed(1)}"></line>
+          <text class="operational-radar__label" x="${label.x.toFixed(1)}" y="${label.y.toFixed(1)}" text-anchor="middle">${escapeHtml(item.label)}</text>
+        `;
+      })
+      .join("");
+
+    const shapePoints = metrics.map((item, index) => pointFor(index, item.score));
+    const dots = metrics
+      .map((item, index) => {
+        const point = shapePoints[index];
+        const attrs = drillAttrs({
+          "analytics-drill": "radar",
+          "drill-key": item.key,
+          "drill-title": item.label,
+        });
+        return `
+          <circle class="operational-radar__dot" ${attrs} cx="${point.x.toFixed(1)}" cy="${point.y.toFixed(1)}" r="5"></circle>
+          <text class="operational-radar__score" ${attrs} x="${point.x.toFixed(1)}" y="${(point.y - 10).toFixed(1)}" text-anchor="middle">${formatPercent(item.score, 0)}</text>
+        `;
+      })
+      .join("");
+
+    svg.innerHTML = `
+      ${grid}
+      ${axes}
+      <polygon class="operational-radar__shape" points="${shapePoints.map((p) => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(" ")}"></polygon>
+      ${dots}
+    `;
+
+    summary.innerHTML = metrics
+      .map(
+        (item) => `
+          <div class="operational-radar__item" ${drillAttrs({
+            "analytics-drill": "radar",
+            "drill-key": item.key,
+            "drill-title": item.label,
+          })}>
+            <strong>${formatPercent(item.score, 0)}</strong>
+            <span>${escapeHtml(item.label)}: ${formatNumber(item.value)} de ${formatNumber(analytics.totalRows)}. ${escapeHtml(item.hint)}</span>
+          </div>
+        `
+      )
+      .join("");
+  }
+
+  function renderGroupDynamicChart(items) {
+    const svg = document.getElementById("groupDynamicChart");
+    if (!svg) return;
+
+    if (!items.length) {
+      svg.innerHTML = '<text class="group-dynamic-chart__label" x="24" y="42">Sem grupos suficientes para montar o gráfico.</text>';
+      return;
+    }
+
+    const topItems = items.slice(0, 8);
+    const max = Math.max(...topItems.map((item) => item.value), 1);
+    const rowHeight = 30;
+    const top = 28;
+    const labelWidth = 170;
+    const chartWidth = 390;
+    const height = top + topItems.length * rowHeight + 22;
+    svg.setAttribute("viewBox", `0 0 620 ${height}`);
+
+    const rows = topItems
+      .map((item, index) => {
+        const y = top + index * rowHeight;
+        const width = Math.max(8, (item.value / max) * chartWidth);
+        const label = String(item.label || "Não informado");
+        const shortLabel = label.length > 24 ? `${label.slice(0, 24)}...` : label;
+        const attrs = drillAttrs({
+          "analytics-drill": "distribution",
+          "drill-field": "grupo",
+          "drill-value": label,
+          "drill-title": `Grupo: ${label}`,
+        });
+        return `
+          <line class="group-dynamic-chart__line" x1="${labelWidth}" y1="${y + 16}" x2="590" y2="${y + 16}"></line>
+          <text class="group-dynamic-chart__label" ${attrs} x="18" y="${y + 20}">${escapeHtml(shortLabel)}</text>
+          <rect class="group-dynamic-chart__track" x="${labelWidth}" y="${y + 5}" width="${chartWidth}" height="18" rx="9"></rect>
+          <rect class="group-dynamic-chart__bar" ${attrs} x="${labelWidth}" y="${y + 5}" width="${width.toFixed(1)}" height="18" rx="9"></rect>
+          <text class="group-dynamic-chart__value" ${attrs} x="${Math.min(labelWidth + width + 10, 570).toFixed(1)}" y="${y + 19}">${formatNumber(item.value)}</text>
+        `;
+      })
+      .join("");
+
+    svg.innerHTML = `
+      <defs>
+        <linearGradient id="groupGradient" x1="0%" x2="100%" y1="0%" y2="0%">
+          <stop offset="0%" stop-color="#31c8ff"></stop>
+          <stop offset="100%" stop-color="#4ecca3"></stop>
+        </linearGradient>
+      </defs>
+      ${rows}
+    `;
   }
 
   function renderInsights(analytics) {
@@ -1562,69 +2585,76 @@ document.addEventListener("DOMContentLoaded", () => {
     const coverageTone = quota.coverage < 40 ? "danger" : quota.coverage < 75 ? "warn" : "ok";
 
     target.innerHTML = `
-      <article class="quota-card" data-tone="ok">
+      <article class="quota-card" data-tone="ok" ${drillAttrs({ "analytics-drill": "quota", "quota-scope": "stage", "quota-stage": "quota1", "drill-title": "1ª quota entregue" })}>
         <div class="quota-card__label">1ª quota entregue</div>
         <div class="quota-card__value">${formatNumber(quota.quota1)}</div>
         <div class="quota-card__hint">Clientes com a primeira quota preenchida.</div>
       </article>
-      <article class="quota-card" data-tone="ok">
+      <article class="quota-card" data-tone="ok" ${drillAttrs({ "analytics-drill": "quota", "quota-scope": "stage", "quota-stage": "quota2", "drill-title": "2ª quota entregue" })}>
         <div class="quota-card__label">2ª quota entregue</div>
         <div class="quota-card__value">${formatNumber(quota.quota2)}</div>
         <div class="quota-card__hint">Clientes com segunda quota registrada.</div>
       </article>
-      <article class="quota-card" data-tone="ok">
+      <article class="quota-card" data-tone="ok" ${drillAttrs({ "analytics-drill": "quota", "quota-scope": "stage", "quota-stage": "quota3", "drill-title": "3ª quota entregue" })}>
         <div class="quota-card__label">3ª quota entregue</div>
         <div class="quota-card__value">${formatNumber(quota.quota3)}</div>
         <div class="quota-card__hint">Clientes com terceira quota concluída.</div>
       </article>
-      <article class="quota-card" data-tone="ok">
+      <article class="quota-card" data-tone="ok" ${drillAttrs({ "analytics-drill": "quota", "quota-scope": "complete", "drill-title": "Ciclo esperado completo" })}>
         <div class="quota-card__label">Ciclo esperado completo</div>
         <div class="quota-card__value">${formatNumber(quota.clientsCompleteExpected)}</div>
         <div class="quota-card__hint">Clientes que entregaram tudo o que o campo Num Quotas pede.</div>
       </article>
-      <article class="quota-card" data-tone="${coverageTone}">
+      <article class="quota-card" data-tone="${coverageTone}" ${drillAttrs({ "analytics-drill": "quota", "quota-scope": "coverage", "drill-title": "Cobertura total de quotas" })}>
         <div class="quota-card__label">Cobertura total</div>
         <div class="quota-card__value">${formatPercent(quota.coverage)}</div>
         <div class="quota-card__hint">${formatNumber(quota.totalDelivered)} entregas registradas de um total esperado de ${formatNumber(quota.totalPossible)}.</div>
       </article>
-      <article class="quota-card" data-tone="${pendingTone}">
+      <article class="quota-card" data-tone="${pendingTone}" ${drillAttrs({ "analytics-drill": "quota", "quota-scope": "pending", "drill-title": "Pendência de ciclo" })}>
         <div class="quota-card__label">Pendência de ciclo</div>
         <div class="quota-card__value">${formatNumber(quota.clientsPendingExpected)}</div>
         <div class="quota-card__hint">Clientes que ainda não fecharam a quantidade esperada de quotas.</div>
       </article>
-      <article class="quota-card" data-tone="${quota.missingNumQuotas ? "warn" : "ok"}">
+      <article class="quota-card" data-tone="${quota.missingNumQuotas ? "warn" : "ok"}" ${drillAttrs({ "analytics-drill": "quota", "quota-scope": "missing-num", "drill-title": "Sem Num Quotas" })}>
         <div class="quota-card__label">Sem Num Quotas</div>
         <div class="quota-card__value">${formatNumber(quota.missingNumQuotas)}</div>
         <div class="quota-card__hint">Linhas que ficaram sem quantidade declarada de quotas.</div>
       </article>
-      <article class="quota-card" data-tone="${quota.sequenceIssues ? "danger" : "ok"}">
+      <article class="quota-card" data-tone="${quota.sequenceIssues ? "danger" : "ok"}" ${drillAttrs({ "analytics-drill": "quota", "quota-scope": "sequence", "drill-title": "Sequência inconsistente" })}>
         <div class="quota-card__label">Sequência inconsistente</div>
         <div class="quota-card__value">${formatNumber(quota.sequenceIssues)}</div>
         <div class="quota-card__hint">Há 2ª/3ª quota sem a etapa anterior preenchida.</div>
       </article>
-      <article class="quota-card" data-tone="${quota.invalidDateRows ? "warn" : "ok"}">
+      <article class="quota-card" data-tone="${quota.invalidDateRows ? "warn" : "ok"}" ${drillAttrs({ "analytics-drill": "quota", "quota-scope": "invalid-date", "drill-title": "Datas inválidas" })}>
         <div class="quota-card__label">Datas inválidas</div>
         <div class="quota-card__value">${formatNumber(quota.invalidDateRows)}</div>
         <div class="quota-card__hint">Campos de quota preenchidos, mas com data fora do padrão reconhecido.</div>
       </article>
-      <article class="quota-card" data-tone="${quota.dispensadas ? "warn" : "ok"}">
+      <article class="quota-card" data-tone="${quota.dispensadas ? "warn" : "ok"}" ${drillAttrs({ "analytics-drill": "quota", "quota-scope": "dispensada", "drill-title": "Quotas dispensadas" })}>
         <div class="quota-card__label">Dispensadas</div>
         <div class="quota-card__value">${formatNumber(quota.dispensadas)}</div>
         <div class="quota-card__hint">Quantidade de quotas marcadas como dispensadas.</div>
       </article>
-      <article class="quota-card" data-tone="${quota.semMovimento ? "warn" : "ok"}">
+      <article class="quota-card" data-tone="${quota.semMovimento ? "warn" : "ok"}" ${drillAttrs({ "analytics-drill": "quota", "quota-scope": "sem-movimento", "drill-title": "Quotas S/M" })}>
         <div class="quota-card__label">S/M</div>
         <div class="quota-card__value">${formatNumber(quota.semMovimento)}</div>
         <div class="quota-card__hint">Quantidade de quotas marcadas como sem movimento.</div>
       </article>
-      <article class="quota-card" data-tone="${quota.withActor ? "ok" : "warn"}">
+      <article class="quota-card" data-tone="${quota.withActor ? "ok" : "warn"}" ${drillAttrs({ "analytics-drill": "quota", "quota-scope": "with-actor", "drill-title": "Com autor identificado" })}>
         <div class="quota-card__label">Com autor identificado</div>
         <div class="quota-card__value">${formatNumber(quota.withActor)}</div>
         <div class="quota-card__hint">Linhas de quota em que foi possível identificar quem fez.</div>
       </article>
     `;
 
-    renderBarList("quotaTimeline", quota.timeline);
+    renderBarList("quotaTimeline", quota.timeline, {
+      getAttrs: (item) => ({
+        "analytics-drill": "quota",
+        "quota-scope": "timeline",
+        "quota-period": item.key,
+        "drill-title": `Quotas em ${item.label}`,
+      }),
+    });
   }
 
   function renderQuotaStageCoverage(analytics) {
@@ -1633,20 +2663,50 @@ document.addEventListener("DOMContentLoaded", () => {
     const items = (analytics.quotaAnalytics.stageCoverage || []).map((item) => ({
       label: `${item.label} · ${formatNumber(item.filled)}/${formatNumber(item.expectedRows)}`,
       value: item.rate,
+      stage: item.id,
     }));
-    renderBarList("quotaStageCoverage", items, { valueFormatter: (value) => formatPercent(value) });
+    renderBarList("quotaStageCoverage", items, {
+      valueFormatter: (value) => formatPercent(value),
+      getAttrs: (item) => ({
+        "analytics-drill": "quota",
+        "quota-scope": "stage-expected",
+        "quota-stage": item.stage,
+        "drill-title": item.label,
+      }),
+    });
   }
 
   function renderQuotaExpectedDistribution(analytics) {
-    renderBarList("quotaExpectedDistribution", analytics.quotaAnalytics.expectedDistribution || []);
+    renderBarList("quotaExpectedDistribution", analytics.quotaAnalytics.expectedDistribution || [], {
+      getAttrs: (item) => ({
+        "analytics-drill": "quota",
+        "quota-scope": "expected",
+        "quota-value": item.label,
+        "drill-title": item.label,
+      }),
+    });
   }
 
   function renderQuotaPendingByResp(analytics) {
-    renderBarList("quotaPendingByResp", analytics.quotaAnalytics.pendingByResp || []);
+    renderBarList("quotaPendingByResp", analytics.quotaAnalytics.pendingByResp || [], {
+      getAttrs: (item) => ({
+        "analytics-drill": "quota",
+        "quota-scope": "pending-resp",
+        "quota-value": item.label,
+        "drill-title": `Pendências de ${item.label}`,
+      }),
+    });
   }
 
   function renderQuotaActors(analytics) {
-    renderBarList("quotaActorDistribution", analytics.quotaAnalytics.actorDistribution || []);
+    renderBarList("quotaActorDistribution", analytics.quotaAnalytics.actorDistribution || [], {
+      getAttrs: (item) => ({
+        "analytics-drill": "quota",
+        "quota-scope": "actor",
+        "quota-value": item.label,
+        "drill-title": `Quotas feitas por ${item.label}`,
+      }),
+    });
   }
 
   function renderQuotaStageTimelines(analytics) {
@@ -1666,7 +2726,13 @@ document.addEventListener("DOMContentLoaded", () => {
             <div class="bar-list">${group.items.length ? group.items
               .map(
                 (item) => `
-                  <div class="bar-row">
+                  <div class="bar-row" ${drillAttrs({
+                    "analytics-drill": "quota",
+                    "quota-scope": "timeline",
+                    "quota-stage": group.id,
+                    "quota-period": item.key,
+                    "drill-title": `${group.label} · ${item.label}`,
+                  })}>
                     <div class="bar-row__meta">
                       <span class="bar-row__label">${escapeHtml(item.label)}</span>
                       <span class="bar-row__value">${formatNumber(item.value)}</span>
@@ -1720,22 +2786,32 @@ document.addEventListener("DOMContentLoaded", () => {
     if (monthlyKpis) {
       const time = analytics.timeAnalytics;
       monthlyKpis.innerHTML = `
-        <article class="summary-kpi">
+        <article class="summary-kpi" ${drillAttrs({ "analytics-drill": "month", "month-scope": "all", "drill-title": "Faturamento anual PT" })}>
           <span class="summary-kpi__label">Faturamento anual PT</span>
           <strong class="summary-kpi__value">${formatCurrency(time.annualRevenue)}</strong>
           <span class="summary-kpi__hint">Soma dos 12 meses do Painel Tributário.</span>
         </article>
-        <article class="summary-kpi">
+        <article class="summary-kpi" ${drillAttrs({ "analytics-drill": "month", "month-scope": "all", "drill-title": "Média mensal" })}>
           <span class="summary-kpi__label">Média mensal</span>
           <strong class="summary-kpi__value">${formatCurrency(time.averageMonthlyRevenue)}</strong>
           <span class="summary-kpi__hint">Média mensal consolidada no ano.</span>
         </article>
-        <article class="summary-kpi">
+        <article class="summary-kpi" ${drillAttrs({
+          "analytics-drill": "month",
+          "month-scope": "single",
+          "quarter-index": time.bestMonth?.quarterIndex ?? "",
+          "month-offset": time.bestMonth?.monthOffset ?? "",
+          "drill-title": time.bestMonth ? `Maior mês: ${time.bestMonth.label}` : "Maior mês",
+        })}>
           <span class="summary-kpi__label">Maior mês</span>
           <strong class="summary-kpi__value">${time.bestMonth ? escapeHtml(time.bestMonth.label) : "--"}</strong>
           <span class="summary-kpi__hint">${time.bestMonth ? formatCurrency(time.bestMonth.value) : "Sem dados mensais."}</span>
         </article>
-        <article class="summary-kpi">
+        <article class="summary-kpi" ${drillAttrs({
+          "analytics-drill": "quarter",
+          "quarter-index": time.bestQuarter?.quarterIndex ?? "",
+          "drill-title": time.bestQuarter ? `Maior trimestre: ${time.bestQuarter.label}` : "Maior trimestre",
+        })}>
           <span class="summary-kpi__label">Maior trimestre</span>
           <strong class="summary-kpi__value">${time.bestQuarter ? escapeHtml(time.bestQuarter.label) : "--"}</strong>
           <span class="summary-kpi__hint">${time.bestQuarter ? formatCurrency(time.bestQuarter.ptRevenue) : "Sem dados trimestrais."}</span>
@@ -1745,6 +2821,13 @@ document.addEventListener("DOMContentLoaded", () => {
 
     renderBarList("monthlyRevenueBars", analytics.timeAnalytics.monthlyRevenue, {
       valueFormatter: formatCurrency,
+      getAttrs: (item) => ({
+        "analytics-drill": "month",
+        "month-scope": "single",
+        "quarter-index": item.quarterIndex,
+        "month-offset": item.monthOffset,
+        "drill-title": item.label,
+      }),
     });
   }
 
@@ -1762,7 +2845,7 @@ document.addEventListener("DOMContentLoaded", () => {
     tbody.innerHTML = rows
       .map(
         (item) => `
-          <tr>
+          <tr data-analytics-drill="quarter" data-quarter-index="${item.quarterIndex}" data-drill-title="${escapeHtml(item.label)}">
             <td><span class="row-name">${escapeHtml(item.label)}</span><div class="row-note">${escapeHtml(item.monthsLabel)}</div></td>
             <td>${formatNumber(item.clients)}</td>
             <td>${formatNumber(item.quotaComplete)}</td>
@@ -1791,9 +2874,13 @@ document.addEventListener("DOMContentLoaded", () => {
     target.innerHTML = checks
       .map(
         (item) => `
-          <article class="source-check">
+          <article class="source-check ${item.active ? "source-check--active" : ""}" ${drillAttrs({
+            "analytics-drill": "source",
+            "source-key": item.key,
+            "drill-title": item.label,
+          })}>
             <div class="source-check__head">
-              <strong>${escapeHtml(item.label)}</strong>
+              <strong>${escapeHtml(item.active ? `${item.label} • usado no BI` : item.label)}</strong>
               <span>${formatNumber(item.rows)} registro(s)</span>
             </div>
             <div class="source-check__meta">${escapeHtml(formatDateTime(item.updatedAt))}</div>
@@ -1815,7 +2902,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     tbody.innerHTML = items
       .map(({ row, signal }) => `
-        <tr>
+        <tr data-analytics-drill="row" data-row-id="${escapeHtml(row.__rowId)}" data-row-code="${escapeHtml(row.cod)}" data-drill-title="${escapeHtml(row.razao_social || row.cod || "Empresa")}">
           <td><span class="row-code">${escapeHtml(row.cod || "-")}</span></td>
           <td>
             <div class="row-name">${escapeHtml(row.razao_social || "Sem razão social")}</div>
@@ -1845,7 +2932,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     tbody.innerHTML = coverage
       .map((item) => `
-        <tr>
+        <tr data-analytics-drill="coverage-empty" data-drill-field="${escapeHtml(item.key)}" data-drill-title="Campo vazio: ${escapeHtml(item.label)}">
           <td><span class="row-name">${escapeHtml(item.label)}</span><div class="row-note">${escapeHtml(item.key)}</div></td>
           <td>${formatNumber(item.filled)}</td>
           <td>${formatNumber(item.empty)}</td>
@@ -1902,7 +2989,11 @@ document.addEventListener("DOMContentLoaded", () => {
       .join("");
 
     const dots = points
-      .map((point) => `<circle class="activity-chart__dot" cx="${point.x}" cy="${point.y}" r="4"></circle>`)
+      .map((point) => `<circle class="activity-chart__dot" ${drillAttrs({
+        "analytics-drill": "activity",
+        "activity-date": point.key,
+        "drill-title": `Atividade em ${point.label}`,
+      })} cx="${point.x}" cy="${point.y}" r="4"></circle>`)
       .join("");
 
     const labels = points
@@ -1926,15 +3017,19 @@ document.addEventListener("DOMContentLoaded", () => {
     const activeDays = series.filter((item) => item.value > 0).length;
 
     summary.innerHTML = `
-      <div class="activity-summary__card">
+      <div class="activity-summary__card" ${drillAttrs({ "analytics-drill": "activity", "activity-scope": "all", "drill-title": "Alterações no período" })}>
         <div class="activity-summary__label">Alterações no período</div>
         <div class="activity-summary__value">${formatNumber(total)}</div>
       </div>
-      <div class="activity-summary__card">
+      <div class="activity-summary__card" ${drillAttrs({
+        "analytics-drill": "activity",
+        "activity-date": series.find((item) => item.value === max)?.key || "",
+        "drill-title": "Pico diário",
+      })}>
         <div class="activity-summary__label">Pico diário</div>
         <div class="activity-summary__value">${formatNumber(max)}</div>
       </div>
-      <div class="activity-summary__card">
+      <div class="activity-summary__card" ${drillAttrs({ "analytics-drill": "activity", "activity-scope": "active", "drill-title": "Dias com movimento" })}>
         <div class="activity-summary__label">Dias com movimento</div>
         <div class="activity-summary__value">${formatNumber(activeDays)}</div>
       </div>
@@ -1954,45 +3049,13 @@ document.addEventListener("DOMContentLoaded", () => {
     );
   }
 
-  function renderSpreadsheet() {
-    const head = document.getElementById("analyticsSheetHead");
-    const body = document.getElementById("analyticsSheetBody");
-    const meta = document.getElementById("analyticsSheetMeta");
-    if (!head || !body || !meta) return;
-
-    const columns = state.contFlow.columns;
-    const rows = state.filteredRows;
-
-    if (!columns.length) {
-      head.innerHTML = "";
-      body.innerHTML = '<tr><td><div class="empty-state">Sem colunas disponíveis na planilha integrada.</div></td></tr>';
-      meta.textContent = "0 linha(s)";
-      return;
-    }
-
-    head.innerHTML = `<tr>${columns.map((col) => `<th>${escapeHtml(col.label)}</th>`).join("")}</tr>`;
-
-    if (!rows.length) {
-      body.innerHTML = `<tr><td colspan="${columns.length}"><div class="empty-state">Nenhuma linha encontrada para o filtro atual.</div></td></tr>`;
-      meta.textContent = "0 linha(s)";
-      return;
-    }
-
-    body.innerHTML = rows
-      .map(
-        (row) => `<tr>${columns.map((col) => `<td>${escapeHtml(row[col.key] || "")}</td>`).join("")}</tr>`
-      )
-      .join("");
-
-    meta.textContent = `${formatNumber(rows.length)} linha(s)`;
-  }
-
   function renderAnalytics() {
     const analytics = computeAnalytics(state.contFlow, {
       contFlowSheets: state.contFlowSheets,
       painelTributario: state.painelTributario,
       painelTributarioLR: state.painelTributarioLR,
     });
+    state.lastAnalytics = analytics;
     const updatedEl = document.getElementById("analyticsUpdatedAt");
     const sourceChip = document.getElementById("analyticsSourceChip");
 
@@ -2009,12 +3072,13 @@ document.addEventListener("DOMContentLoaded", () => {
     setMetric("metricCoverage", analytics.averageCoverage, "Média de preenchimento entre todas as colunas.", (value) => formatPercent(value));
 
     renderInsights(analytics);
-    renderBarList("tribDistribution", analytics.triDist);
-    renderBarList("statusDistribution", analytics.statusDist);
-    renderBarList("responsavelDistribution", analytics.respDist);
-    renderBarList("resp2Distribution", analytics.resp2Dist);
-    renderBarList("grupoDistribution", analytics.grupoDist);
-    renderBarList("classDistribution", analytics.classDist);
+    renderBarList("tribDistribution", analytics.triDist, { drillType: "distribution", drillField: "trib", drillTitle: "Tributação" });
+    renderBarList("statusDistribution", analytics.statusDist, { drillType: "distribution", drillField: "status", drillTitle: "Status" });
+    renderBarList("responsavelDistribution", analytics.respDist, { drillType: "distribution", drillField: "resp1", drillTitle: "Resp.1" });
+    renderBarList("resp2Distribution", analytics.resp2Dist, { drillType: "distribution", drillField: "resp2", drillTitle: "Resp.2" });
+    renderBarList("grupoDistribution", analytics.grupoDist, { drillType: "distribution", drillField: "grupo", drillTitle: "Grupo" });
+    renderOperationalRadarChart(analytics);
+    renderGroupDynamicChart(analytics.grupoDist);
     renderQualityGrid(analytics);
     renderQuotaMetrics(analytics);
     renderQuotaStageCoverage(analytics);
@@ -2031,13 +3095,14 @@ document.addEventListener("DOMContentLoaded", () => {
     renderActivityChart(analytics.activity);
     renderDonutChart("tribDonutChart", "tribDonutLegend", analytics.triDist, "Tributação", analytics.totalRows);
     renderDonutChart("statusDonutChart", "statusDonutLegend", analytics.statusDist, "Status", analytics.totalRows);
-    renderSpreadsheet();
+    renderTaxBi();
 
     if (updatedEl) {
       updatedEl.textContent = `Última leitura: ${formatDateTime(state.contFlow.savedAt || new Date().toISOString())}`;
     }
     if (sourceChip) {
-      sourceChip.textContent = `Fonte: ContFlow + Painel Tributário + LR • ${formatNumber(analytics.totalRows)} cliente(s) • ${formatNumber(analytics.timeAnalytics.quarterSummary.length)} trimestre(s) auditado(s)`;
+      const activeSource = state.contFlow.__sourceLabel || "ContFlow mais atualizado";
+      sourceChip.textContent = `Fonte: ${activeSource} + LP + LRT + LRA • ${formatNumber(analytics.totalRows)} cliente(s)`;
     }
   }
 
@@ -2046,19 +3111,26 @@ document.addEventListener("DOMContentLoaded", () => {
     const sourceChip = document.getElementById("analyticsSourceChip");
     const insights = document.getElementById("analyticsInsights");
     const auditRows = document.getElementById("analyticsAuditRows");
-    const sheetBody = document.getElementById("analyticsSheetBody");
 
     if (updatedEl) updatedEl.textContent = "Atualizando indicadores e auditoria...";
     if (sourceChip) sourceChip.textContent = "Fonte: ContFlow";
+    renderTaxBiLoading();
     if (insights) insights.innerHTML = '<div class="empty-state">Carregando leitura gerencial da base...</div>';
     if (auditRows) {
       auditRows.innerHTML = '<tr><td colspan="6"><div class="empty-state">Montando auditoria por coluna...</div></td></tr>';
     }
-    if (sheetBody) {
-      sheetBody.innerHTML = '<tr><td><div class="empty-state">Carregando planilha integrada...</div></td></tr>';
-    }
     renderBarList("monthlyRevenueBars", []);
     renderSourceChecks([]);
+    renderOperationalRadarChart({
+      totalRows: 0,
+      activeRows: 0,
+      noResp1: 0,
+      mitPending: 0,
+      inconsistencias: 0,
+      desligamentos: 0,
+      coverage: [],
+    });
+    renderGroupDynamicChart([]);
     renderBarList("quotaStageCoverage", []);
     renderBarList("quotaExpectedDistribution", []);
     renderBarList("quotaPendingByResp", []);
@@ -2083,7 +3155,6 @@ document.addEventListener("DOMContentLoaded", () => {
     const insights = document.getElementById("analyticsInsights");
     const rows = document.getElementById("analyticsRows");
     const auditRows = document.getElementById("analyticsAuditRows");
-    const sheetBody = document.getElementById("analyticsSheetBody");
     const quotaMetrics = document.getElementById("quotaMetrics");
 
     ["metricQuotaComplete", "metricQuotaCoverage", "metricQuotaPending", "metricTotal", "metricActive", "metricNoResp1", "metricMit", "metricAthenas", "metricDesligamento", "metricColumns", "metricCoverage"].forEach((id) => {
@@ -2104,9 +3175,6 @@ document.addEventListener("DOMContentLoaded", () => {
     if (auditRows) {
       auditRows.innerHTML = '<tr><td colspan="6"><div class="empty-state">A auditoria por coluna não pôde ser calculada.</div></td></tr>';
     }
-    if (sheetBody) {
-      sheetBody.innerHTML = '<tr><td><div class="empty-state">A planilha integrada não pôde ser carregada.</div></td></tr>';
-    }
     if (quotaMetrics) {
       quotaMetrics.innerHTML = '<div class="empty-state">As métricas de quotas não puderam ser calculadas.</div>';
     }
@@ -2116,7 +3184,16 @@ document.addEventListener("DOMContentLoaded", () => {
     renderBarList("responsavelDistribution", []);
     renderBarList("resp2Distribution", []);
     renderBarList("grupoDistribution", []);
-    renderBarList("classDistribution", []);
+    renderOperationalRadarChart({
+      totalRows: 0,
+      activeRows: 0,
+      noResp1: 0,
+      mitPending: 0,
+      inconsistencias: 0,
+      desligamentos: 0,
+      coverage: [],
+    });
+    renderGroupDynamicChart([]);
     renderBarList("quotaTimeline", []);
     renderBarList("quotaStageCoverage", []);
     renderBarList("quotaExpectedDistribution", []);
@@ -2124,6 +3201,7 @@ document.addEventListener("DOMContentLoaded", () => {
     renderBarList("quotaActorDistribution", []);
     renderBarList("monthlyRevenueBars", []);
     renderSourceChecks([]);
+    renderTaxBiError(err?.message);
     renderDonutChart("tribDonutChart", "tribDonutLegend", [], "Tributação", 0);
     renderDonutChart("statusDonutChart", "statusDonutLegend", [], "Status", 0);
     renderActivityChart([]);
@@ -2150,6 +3228,7 @@ document.addEventListener("DOMContentLoaded", () => {
       { key: "cf4", url: API_CONTFLOW_Q4, extractor: extractContFlowDataset },
       { key: "pt", url: API_PAINEL_TRIBUTARIO, extractor: extractSheetDataset },
       { key: "ptlr", url: API_PAINEL_TRIBUTARIO_LR, extractor: extractSheetDataset },
+      { key: "ptlra", url: API_PAINEL_TRIBUTARIO_LRA, extractor: extractSheetDataset },
     ];
 
     const results = await Promise.allSettled(
@@ -2168,13 +3247,16 @@ document.addEventListener("DOMContentLoaded", () => {
     });
 
     state.contFlowSheets = [datasets.cf1, datasets.cf2, datasets.cf3, datasets.cf4];
-    state.contFlow = datasets.cf1 || EMPTY_DATASET;
+    state.contFlow = getLatestContFlowDataset(state.contFlowSheets);
+    state.contFlowCompanyMap = buildContFlowCompanyMap(getValidContFlowRows(state.contFlow));
     state.painelTributario = datasets.pt || EMPTY_DATASET;
     state.painelTributarioLR = datasets.ptlr || EMPTY_DATASET;
+    state.painelTributarioLRA = datasets.ptlra || EMPTY_DATASET;
     state.sourceChecks = buildSourceChecks(
       state.contFlowSheets,
       state.painelTributario,
-      state.painelTributarioLR
+      state.painelTributarioLR,
+      state.painelTributarioLRA
     );
 
     state.filteredRows = filterRowsForSheet(getSpreadsheetBaseRows(), state.contFlow.columns, state.searchTerm);
@@ -2271,10 +3353,691 @@ document.addEventListener("DOMContentLoaded", () => {
     XLSX.writeFile(wb, `contanalytics-auditoria-${new Date().toISOString().slice(0, 10)}.xlsx`);
   }
 
+  function getDetailRowsBase() {
+    return getValidContFlowRows(state.contFlow);
+  }
+
+  function getDisplayLabel(value) {
+    return String(value || "").trim() || "Não informado";
+  }
+
+  function getQuotaRowInfo(row) {
+    const expectedInfo = getExpectedQuotaInfo(row);
+    const entries = [parseQuotaEntry(row.quota1), parseQuotaEntry(row.quota2), parseQuotaEntry(row.quota3)];
+    const delivered = entries.filter((entry) => entry.isFilled).length;
+    const deliveredExpected = Math.min(delivered, expectedInfo.expected);
+    const pendingExpected = Math.max(expectedInfo.expected - deliveredExpected, 0);
+    const hasSequenceIssue = (entries[1].isFilled && !entries[0].isFilled) || (entries[2].isFilled && !entries[1].isFilled);
+    const invalidDates = entries.filter((entry) => entry.isInvalidDate).length;
+    return {
+      expectedInfo,
+      entries,
+      delivered,
+      pendingExpected,
+      completeExpected: pendingExpected === 0 && !hasSequenceIssue,
+      hasSequenceIssue,
+      invalidDates,
+      actors: entries.map((entry) => entry.actor).filter(Boolean),
+    };
+  }
+
+  function quotaEntryPeriodKey(entry) {
+    if (!entry?.date) return "";
+    return `${entry.date.getFullYear()}-${String(entry.date.getMonth() + 1).padStart(2, "0")}`;
+  }
+
+  function rowsByDistribution(field, value) {
+    const target = getDisplayLabel(value);
+    return getDetailRowsBase().filter((row) => getDisplayLabel(row?.[field]) === target);
+  }
+
+  function rowsByQuota(scope, { stage = "", value = "", period = "" } = {}) {
+    const rows = getDetailRowsBase();
+    const stageIndex = { quota1: 0, quota2: 1, quota3: 2 }[stage];
+    return rows.filter((row) => {
+      const info = getQuotaRowInfo(row);
+      const entry = Number.isInteger(stageIndex) ? info.entries[stageIndex] : null;
+      switch (scope) {
+        case "stage":
+          return Boolean(entry?.isFilled);
+        case "stage-expected":
+          return Number.isInteger(stageIndex) && getExpectedQuotaInfo(row).expected >= stageIndex + 1;
+        case "complete":
+          return info.completeExpected;
+        case "coverage":
+          return info.delivered > 0;
+        case "pending":
+          return info.pendingExpected > 0 || info.hasSequenceIssue;
+        case "missing-num":
+          return info.expectedInfo.isMissing;
+        case "sequence":
+          return info.hasSequenceIssue;
+        case "invalid-date":
+          return info.invalidDates > 0;
+        case "dispensada":
+          return info.entries.some((item) => item.isDispensada);
+        case "sem-movimento":
+          return info.entries.some((item) => item.isSemMovimento);
+        case "with-actor":
+          return info.actors.length > 0;
+        case "expected": {
+          const label = info.expectedInfo.isMissing
+            ? "Sem Num Quotas"
+            : info.expectedInfo.isInvalid
+              ? "Num Quotas inválido"
+              : `${info.expectedInfo.expected} ${info.expectedInfo.expected === 1 ? "quota" : "quotas"}`;
+          return label === value;
+        }
+        case "pending-resp":
+          return (info.pendingExpected > 0 || info.hasSequenceIssue) && getDisplayLabel(row.resp1) === value;
+        case "actor":
+          return info.actors.some((actor) => actor === value);
+        case "timeline":
+          return info.entries.some((item, index) =>
+            (!stage || index === stageIndex) && quotaEntryPeriodKey(item) === period
+          );
+        default:
+          return rows;
+      }
+    });
+  }
+
+  function rowsByRadarKey(key) {
+    const rows = getDetailRowsBase();
+    switch (key) {
+      case "all":
+        return rows;
+      case "active":
+        return rows.filter(inferActiveStatus);
+      case "no-resp1":
+        return rows.filter((row) => !isFilled(row.resp1));
+      case "resp1":
+        return rows.filter((row) => isFilled(row.resp1));
+      case "mit-pending":
+        return rows.filter(isMitPending);
+      case "mit-ok":
+        return rows.filter((row) => !isMitPending(row));
+      case "athenas":
+        return rows.filter((row) => isFilled(row.inconsistencia_athenas));
+      case "athenas-ok":
+        return rows.filter((row) => !isFilled(row.inconsistencia_athenas));
+      case "groups":
+        return rows.filter((row) => isFilled(row.grupo));
+      case "disconnect":
+        return rows.filter((row) => isFilled(row.desligamento));
+      case "no-disconnect":
+        return rows.filter((row) => !isFilled(row.desligamento));
+      default:
+        return rows;
+    }
+  }
+
+  function rowsByQuarterIndex(quarterIndex) {
+    const index = Number(quarterIndex || 0);
+    return getValidContFlowRows(state.contFlowSheets?.[index] || EMPTY_DATASET);
+  }
+
+  function rowsBySingleRow(rowId, rowCode) {
+    const target = String(rowId || "");
+    const code = String(rowCode || "");
+    return getDetailRowsBase().filter((row) =>
+      (target && String(row.__rowId || "") === target) || (code && String(row.cod || "") === code)
+    );
+  }
+
+  function rowsByEmptyCoverageField(field) {
+    const key = String(field || "").trim();
+    if (!key) return [];
+    return getDetailRowsBase().filter((row) => !isFilled(row[key]));
+  }
+
+  function rowsBySourceKey(sourceKey) {
+    const key = String(sourceKey || "");
+    if (key.startsWith("contflow-")) {
+      const index = Number(key.replace("contflow-", ""));
+      return getValidContFlowRows(state.contFlowSheets?.[index] || EMPTY_DATASET);
+    }
+    if (key === "pt") return state.painelTributario?.rows || [];
+    if (key === "ptlr") return state.painelTributarioLR?.rows || [];
+    if (key === "ptlra") return state.painelTributarioLRA?.rows || [];
+    return [];
+  }
+
+  function rowsByMonthRevenue(scope, quarterIndex, monthOffset) {
+    const allRows = state.painelTributario?.rows || [];
+    if (scope === "all") {
+      return decorateTaxRows(
+        allRows.filter((row) => [1, 2, 3].some((month) => sumPainelTributarioMonth(row, month) !== 0)),
+        "lp"
+      );
+    }
+
+    const qIndex = Number(quarterIndex || 0);
+    const month = Number(monthOffset || 1);
+    return decorateTaxRows(
+      allRows.filter((row) => {
+        if (getQuarterIndexFromRow(row) !== qIndex) return false;
+        return sumPainelTributarioMonth(row, month) !== 0;
+      }),
+      "lp"
+    );
+  }
+
+  function rowsByActivity(dateKey = "", scope = "") {
+    const cells = state.contFlow?.cells || [];
+    const validDates = new Set();
+    const rowIds = new Set();
+    cells.forEach((cell) => {
+      if (!cell.updatedAt) return;
+      const dt = new Date(cell.updatedAt);
+      if (Number.isNaN(dt.getTime())) return;
+      const key = dt.toISOString().slice(0, 10);
+      if (scope === "active") {
+        validDates.add(key);
+      } else if (scope === "all" || key === dateKey) {
+        rowIds.add(Number(cell.rowId));
+      }
+    });
+    if (scope === "active") {
+      cells.forEach((cell) => {
+        if (!cell.updatedAt) return;
+        const dt = new Date(cell.updatedAt);
+        if (Number.isNaN(dt.getTime())) return;
+        const key = dt.toISOString().slice(0, 10);
+        if (validDates.has(key)) rowIds.add(Number(cell.rowId));
+      });
+    }
+    return getDetailRowsBase().filter((row) => rowIds.has(Number(row.__rowId)));
+  }
+
+  function filterTaxRowsByMetric(rows, analytics, metric = "") {
+    if (!metric) return rows;
+    return rows.filter((row) => {
+      if (metric === "revenue") return analytics.revenue(row) !== 0;
+      if (metric === "base") return toNumberBR(row?.[analytics.baseKey]) !== 0;
+      if (metric === "tax") {
+        return toNumberBR(row?.[analytics.irKey]) + toNumberBR(row?.[analytics.csllKey]) !== 0;
+      }
+      if (metric === "retention") return sumTaxRetention(row, analytics) !== 0;
+      if (metric === "additional") return toNumberBR(row?.[analytics.additionalKey]) !== 0;
+      return true;
+    });
+  }
+
+  function decorateTaxRows(rows, panelKey) {
+    return (rows || []).map((row) => ({
+      ...row,
+      __detailPanelKey: panelKey,
+      __contFlowRow: getCurrentContFlowCompany(row),
+    }));
+  }
+
+  function getTaxCompleteRows(scope = "movement", metric = "") {
+    const panels = Object.values(state.taxBiAnalytics || {});
+    const rows = panels.flatMap((analytics) => {
+      const sourceRows = scope === "all" ? analytics.baseRows || [] : analytics.movementRows || [];
+      const filteredRows = scope === "metric" ? filterTaxRowsByMetric(sourceRows, analytics, metric) : sourceRows;
+      return decorateTaxRows(filteredRows, analytics.key);
+    });
+    const seen = new Set();
+    return rows.filter((row) => {
+      const key = `${getTaxCompanyKey(row)}::${row.__rowId || ""}::${row.sheet_index ?? row.sheetIndex ?? ""}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }
+
+  function getTaxDetailRows(panelKey, scope = "all", metric = "") {
+    const analytics = state.taxBiAnalytics?.[panelKey];
+    if (!analytics) return [];
+    if (scope === "metric") return decorateTaxRows(filterTaxRowsByMetric(analytics.movementRows || [], analytics, metric), panelKey);
+    if (scope === "movement") return decorateTaxRows(analytics.movementRows || [], panelKey);
+    if (scope === "no-movement") {
+      const movementKeys = new Set((analytics.movementRows || []).map(getTaxCompanyKey));
+      return (analytics.baseRows || []).filter((row) => !movementKeys.has(getTaxCompanyKey(row)));
+    }
+    return analytics.baseRows || [];
+  }
+
+  function getTaxPeriodRows(panelKey, periodIndex) {
+    const analytics = state.taxBiAnalytics?.[panelKey];
+    if (!analytics) return [];
+    const index = Number(periodIndex || 0);
+    return decorateTaxRows(
+      (analytics.rows || []).filter((row) => getTaxPeriodIndex(row, analytics.periodLabels.length) === index),
+      panelKey
+    );
+  }
+
+  function getTaxCompanyRows(panelKey, companyKey) {
+    const analytics = state.taxBiAnalytics?.[panelKey];
+    if (!analytics) return [];
+    return decorateTaxRows((analytics.rows || []).filter((row) => getTaxCompanyKey(row) === companyKey), panelKey);
+  }
+
+  function renderDetailKpis(items) {
+    return `<div class="analytics-detail-kpis">${items
+      .map(
+        ([label, value]) => `
+          <div class="analytics-detail-kpi">
+            <span>${escapeHtml(label)}</span>
+            <strong>${escapeHtml(value)}</strong>
+          </div>
+        `
+      )
+      .join("")}</div>`;
+  }
+
+  function getTaxDetailConfig(row, options = {}) {
+    const key = options.panelKey || row.__detailPanelKey || "lp";
+    return state.taxBiAnalytics?.[key] || getTaxBiConfigs()[key] || state.taxBiAnalytics?.lp || getTaxBiConfigs().lp;
+  }
+
+  function getTaxDetailPeriod(row, config) {
+    const index = getTaxPeriodIndex(row, config.periodLabels.length);
+    return config.periodLabels[index] || "-";
+  }
+
+  function taxDetailMoney(row, options = {}) {
+    const config = getTaxDetailConfig(row, options);
+    return {
+      config,
+      revenue: config.revenue(row),
+      base: toNumberBR(row?.[config.baseKey]),
+      ir: toNumberBR(row?.[config.irKey]),
+      csll: toNumberBR(row?.[config.csllKey]),
+      additional: toNumberBR(row?.[config.additionalKey]),
+      retention: sumTaxRetention(row, config),
+    };
+  }
+
+  function renderContFlowDetailTable(rows, options = {}) {
+    if (!rows.length) {
+      return '<div class="empty-state">Nenhum registro encontrado para este clique.</div>';
+    }
+
+    const extraColumn = options.focus || "";
+    const extraHeader =
+      extraColumn === "mit"
+        ? "<th>MIT / Controle</th>"
+        : extraColumn === "athenas"
+          ? "<th>Inconsistência</th>"
+          : extraColumn === "disconnect"
+            ? "<th>Desligamento</th>"
+            : "";
+    const extraCell = (row) => {
+      if (extraColumn === "mit") return `<td>${escapeHtml(row.mit || row.controle_mit || "-")}</td>`;
+      if (extraColumn === "athenas") return `<td>${escapeHtml(row.inconsistencia_athenas || "-")}</td>`;
+      if (extraColumn === "disconnect") return `<td>${escapeHtml(row.desligamento || "-")}</td>`;
+      return "";
+    };
+
+    return `
+      <div class="table-shell">
+        <table class="analytics-detail-table">
+          <thead>
+            <tr>
+              <th>Cód.</th>
+              <th>Razão social</th>
+              <th>Trib.</th>
+              <th>Status</th>
+              <th>Resp.1</th>
+              <th>Grupo</th>
+              ${extraHeader}
+            </tr>
+          </thead>
+          <tbody>
+            ${rows
+              .slice(0, 160)
+              .map((row) => {
+                return `
+                  <tr>
+                    <td>${escapeHtml(row.cod || "-")}</td>
+                    <td>${escapeHtml(row.razao_social || row.cnpj_cpf || "Sem razão social")}</td>
+                    <td>${escapeHtml(row.trib || "-")}</td>
+                    <td>${escapeHtml(row.status || "-")}</td>
+                    <td>${escapeHtml(row.resp1 || "-")}</td>
+                    <td>${escapeHtml(row.grupo || "-")}</td>
+                    ${extraCell(row)}
+                  </tr>
+                `;
+              })
+              .join("")}
+          </tbody>
+        </table>
+      </div>
+    `;
+  }
+
+  function renderQuotaDetailTable(rows) {
+    if (!rows.length) {
+      return '<div class="empty-state">Nenhum registro encontrado para este clique.</div>';
+    }
+
+    return `
+      <div class="table-shell">
+        <table class="analytics-detail-table">
+          <thead>
+            <tr>
+              <th>Cód.</th>
+              <th>Razão social</th>
+              <th>Resp.1</th>
+              <th>Num Quotas</th>
+              <th>Entregues</th>
+              <th>Pendentes</th>
+              <th>1ª quota</th>
+              <th>2ª quota</th>
+              <th>3ª quota</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rows
+              .slice(0, 160)
+              .map((row) => {
+                const info = getQuotaRowInfo(row);
+                return `
+                  <tr>
+                    <td>${escapeHtml(row.cod || "-")}</td>
+                    <td>${escapeHtml(row.razao_social || "Sem razão social")}</td>
+                    <td>${escapeHtml(row.resp1 || "-")}</td>
+                    <td>${escapeHtml(info.expectedInfo.raw || String(info.expectedInfo.expected))}</td>
+                    <td>${formatNumber(info.delivered)}</td>
+                    <td>${formatNumber(info.pendingExpected)}</td>
+                    <td>${escapeHtml(row.quota1 || "-")}</td>
+                    <td>${escapeHtml(row.quota2 || "-")}</td>
+                    <td>${escapeHtml(row.quota3 || "-")}</td>
+                  </tr>
+                `;
+              })
+              .join("")}
+          </tbody>
+        </table>
+      </div>
+    `;
+  }
+
+  function renderTaxDetailTable(rows, options = {}) {
+    if (!rows.length) {
+      return '<div class="empty-state">Nenhum registro encontrado para este clique.</div>';
+    }
+
+    const metric = options.metric || "";
+    const metricHeaders =
+      metric === "revenue"
+        ? "<th>Receita</th>"
+        : metric === "base"
+          ? "<th>BC</th>"
+          : metric === "tax"
+            ? "<th>IRPJ</th><th>CSLL</th><th>IRPJ + CSLL</th>"
+            : metric === "retention"
+              ? "<th>Retenções</th>"
+              : "<th>Receita</th><th>BC</th><th>IRPJ + CSLL</th>";
+
+    const metricCells = (row) => {
+      const money = taxDetailMoney(row, options);
+      if (metric === "revenue") return `<td>${formatCurrency(money.revenue)}</td>`;
+      if (metric === "base") return `<td>${formatCurrency(money.base)}</td>`;
+      if (metric === "tax") return `<td>${formatCurrency(money.ir)}</td><td>${formatCurrency(money.csll)}</td><td>${formatCurrency(money.ir + money.csll)}</td>`;
+      if (metric === "retention") return `<td>${formatCurrency(money.retention)}</td>`;
+      return `<td>${formatCurrency(money.revenue)}</td><td>${formatCurrency(money.base)}</td><td>${formatCurrency(money.ir + money.csll)}</td>`;
+    };
+
+    return `
+      <div class="table-shell">
+        <table class="analytics-detail-table">
+          <thead>
+            <tr>
+              <th>Cód.</th>
+              <th>Razão social</th>
+              <th>Painel</th>
+              <th>Período</th>
+              ${metricHeaders}
+            </tr>
+          </thead>
+          <tbody>
+            ${rows
+              .slice(0, 160)
+              .map((row) => {
+                const config = getTaxDetailConfig(row, options);
+                const current = row.__contFlowRow || getCurrentContFlowCompany(row) || row;
+                return `
+                  <tr>
+                    <td>${escapeHtml(current.cod || row.cod || "-")}</td>
+                    <td>${escapeHtml(current.razao_social || row.razao_social || row.cnpj_cpf || "Sem razão social")}</td>
+                    <td>${escapeHtml(config.shortLabel || config.title || "-")}</td>
+                    <td>${escapeHtml(getTaxDetailPeriod(row, config))}</td>
+                    ${metricCells(row)}
+                  </tr>
+                `;
+              })
+              .join("")}
+          </tbody>
+        </table>
+      </div>
+    `;
+  }
+
+  function renderMonthDetailTable(rows, options = {}) {
+    if (!rows.length) {
+      return '<div class="empty-state">Nenhum registro encontrado para este clique.</div>';
+    }
+
+    const month = Number(options.monthOffset || 0);
+    return `
+      <div class="table-shell">
+        <table class="analytics-detail-table">
+          <thead>
+            <tr>
+              <th>Cód.</th>
+              <th>Razão social</th>
+              <th>Período</th>
+              <th>Receita do botão</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rows
+              .slice(0, 160)
+              .map((row) => {
+                const period = QUARTER_LABELS[getQuarterIndexFromRow(row)] || "-";
+                const value = month
+                  ? sumPainelTributarioMonth(row, month)
+                  : [1, 2, 3].reduce((sum, item) => sum + sumPainelTributarioMonth(row, item), 0);
+                const current = row.__contFlowRow || getCurrentContFlowCompany(row) || row;
+                return `
+                  <tr>
+                    <td>${escapeHtml(current.cod || row.cod || "-")}</td>
+                    <td>${escapeHtml(current.razao_social || row.razao_social || row.cnpj_cpf || "Sem razão social")}</td>
+                    <td>${escapeHtml(period)}</td>
+                    <td>${formatCurrency(value)}</td>
+                  </tr>
+                `;
+              })
+              .join("")}
+          </tbody>
+        </table>
+      </div>
+    `;
+  }
+
+  function renderDetailTable(rows, options = {}) {
+    if (options.mode === "quota") return renderQuotaDetailTable(rows);
+    if (options.mode === "tax") return renderTaxDetailTable(rows, options);
+    if (options.mode === "month") return renderMonthDetailTable(rows, options);
+    return renderContFlowDetailTable(rows, options);
+  }
+
+  function openAnalyticsDetail(title, subtitle, rows, options = {}) {
+    const panel = document.getElementById("analyticsDetailPanel");
+    const backdrop = document.getElementById("analyticsDetailBackdrop");
+    const titleEl = document.getElementById("analyticsDetailTitle");
+    const subtitleEl = document.getElementById("analyticsDetailSubtitle");
+    const body = document.getElementById("analyticsDetailBody");
+    if (!panel || !backdrop || !titleEl || !subtitleEl || !body) return;
+
+    const mode = options.mode || "contflow";
+    const kpis = (() => {
+      if (mode === "quota") {
+        const delivered = rows.reduce((sum, row) => sum + getQuotaRowInfo(row).delivered, 0);
+        const pending = rows.reduce((sum, row) => sum + getQuotaRowInfo(row).pendingExpected, 0);
+        return [["Empresas", formatNumber(rows.length)], ["Entregues", formatNumber(delivered)], ["Pendentes", formatNumber(pending)]];
+      }
+      if (mode === "tax") {
+        const totals = rows.reduce(
+          (acc, row) => {
+            const money = taxDetailMoney(row, options);
+            acc.revenue += money.revenue;
+            acc.base += money.base;
+            acc.ir += money.ir;
+            acc.csll += money.csll;
+            acc.retention += money.retention;
+            return acc;
+          },
+          { revenue: 0, base: 0, ir: 0, csll: 0, retention: 0 }
+        );
+        if (options.metric === "revenue") return [["Registros", formatNumber(rows.length)], ["Receita", formatCurrency(totals.revenue)]];
+        if (options.metric === "base") return [["Registros", formatNumber(rows.length)], ["BC", formatCurrency(totals.base)]];
+        if (options.metric === "tax") return [["Registros", formatNumber(rows.length)], ["IRPJ", formatCurrency(totals.ir)], ["CSLL", formatCurrency(totals.csll)]];
+        if (options.metric === "retention") return [["Registros", formatNumber(rows.length)], ["Retenções", formatCurrency(totals.retention)]];
+        return [["Registros", formatNumber(rows.length)], ["Receita", formatCurrency(totals.revenue)], ["IRPJ + CSLL", formatCurrency(totals.ir + totals.csll)]];
+      }
+      if (mode === "month") {
+        const month = Number(options.monthOffset || 0);
+        const total = rows.reduce(
+          (sum, row) =>
+            sum + (month ? sumPainelTributarioMonth(row, month) : [1, 2, 3].reduce((acc, item) => acc + sumPainelTributarioMonth(row, item), 0)),
+          0
+        );
+        return [["Registros", formatNumber(rows.length)], ["Receita", formatCurrency(total)]];
+      }
+      return [
+        ["Registros", formatNumber(rows.length)],
+        ["Ativos", formatNumber(rows.filter(inferActiveStatus).length)],
+        ["Sem Resp.1", formatNumber(rows.filter((row) => !isFilled(row.resp1)).length)],
+      ];
+    })();
+
+    titleEl.textContent = title || "Detalhe";
+    subtitleEl.textContent = subtitle || "Recorte dinâmico do BI.";
+    body.innerHTML = `
+      ${renderDetailKpis(kpis)}
+      ${rows.length > 160 ? `<div class="empty-state">Mostrando os primeiros 160 de ${formatNumber(rows.length)} registro(s).</div>` : ""}
+      ${renderDetailTable(rows, options)}
+    `;
+    backdrop.hidden = false;
+    panel.classList.add("is-open");
+    panel.setAttribute("aria-hidden", "false");
+  }
+
+  function closeAnalyticsDetail() {
+    const panel = document.getElementById("analyticsDetailPanel");
+    const backdrop = document.getElementById("analyticsDetailBackdrop");
+    if (!panel || !backdrop) return;
+    panel.classList.remove("is-open");
+    panel.setAttribute("aria-hidden", "true");
+    backdrop.hidden = true;
+  }
+
+  function handleAnalyticsDrillClick(event) {
+    const trigger = event.target.closest("[data-analytics-drill]");
+    if (!trigger) return;
+
+    event.preventDefault();
+    const type = trigger.dataset.analyticsDrill;
+    const title = trigger.dataset.drillTitle || "Detalhe";
+    let rows = [];
+    let subtitle = "Clique dinâmico do ContAnalytics.";
+    let detailOptions = { mode: "contflow" };
+
+    if (type === "distribution") {
+      const field = trigger.dataset.drillField;
+      const value = trigger.dataset.drillValue;
+      rows = rowsByDistribution(field, value);
+      subtitle = `${title}: ${value || "Não informado"}`;
+    } else if (type === "quota") {
+      rows = rowsByQuota(trigger.dataset.quotaScope, {
+        stage: trigger.dataset.quotaStage,
+        value: trigger.dataset.quotaValue,
+        period: trigger.dataset.quotaPeriod,
+      });
+      subtitle = "Recorte das quotas no ContFlow.";
+      detailOptions = { mode: "quota" };
+    } else if (type === "radar") {
+      rows = rowsByRadarKey(trigger.dataset.drillKey);
+      subtitle = "Recorte do Radar Operacional.";
+      detailOptions = {
+        mode: "contflow",
+        focus: trigger.dataset.drillKey === "mit-pending" ? "mit" : trigger.dataset.drillKey === "athenas" ? "athenas" : trigger.dataset.drillKey === "disconnect" ? "disconnect" : "",
+      };
+    } else if (type === "quarter") {
+      rows = rowsByQuarterIndex(trigger.dataset.quarterIndex);
+      subtitle = "Clientes do trimestre selecionado no ContFlow.";
+    } else if (type === "row") {
+      rows = rowsBySingleRow(trigger.dataset.rowId, trigger.dataset.rowCode);
+      subtitle = "Registro selecionado na auditoria.";
+    } else if (type === "coverage-empty") {
+      rows = rowsByEmptyCoverageField(trigger.dataset.drillField);
+      subtitle = "Empresas sem preenchimento nesse campo.";
+    } else if (type === "source") {
+      rows = rowsBySourceKey(trigger.dataset.sourceKey);
+      subtitle = "Linhas lidas nessa fonte de dados.";
+      detailOptions =
+        trigger.dataset.sourceKey === "pt"
+          ? { mode: "tax", panelKey: "lp" }
+          : trigger.dataset.sourceKey === "ptlr"
+            ? { mode: "tax", panelKey: "lrt" }
+            : trigger.dataset.sourceKey === "ptlra"
+              ? { mode: "tax", panelKey: "lra" }
+              : { mode: "contflow" };
+    } else if (type === "month") {
+      rows = rowsByMonthRevenue(trigger.dataset.monthScope, trigger.dataset.quarterIndex, trigger.dataset.monthOffset);
+      subtitle = "Registros tributários ligados ao período selecionado.";
+      detailOptions = { mode: "month", monthOffset: trigger.dataset.monthOffset };
+    } else if (type === "activity") {
+      rows = rowsByActivity(trigger.dataset.activityDate, trigger.dataset.activityScope);
+      subtitle = "Clientes com alterações recentes no ContFlow.";
+    } else if (type === "tax-panel") {
+      const panelKey = trigger.dataset.taxPanel;
+      const scope = trigger.dataset.taxScope || "all";
+      const metric = trigger.dataset.taxMetric || "";
+      rows = getTaxDetailRows(panelKey, scope, metric);
+      subtitle = `BI ${String(panelKey || "").toUpperCase()} • ${title}`;
+      detailOptions = scope === "movement" || scope === "metric" ? { mode: "tax", panelKey, metric } : { mode: "contflow" };
+    } else if (type === "tax-complete") {
+      const scope = trigger.dataset.taxScope || "movement";
+      const metric = trigger.dataset.taxMetric || "";
+      rows = getTaxCompleteRows(scope, metric);
+      subtitle = "BI Completo consolidando LP, LRT e LRA.";
+      detailOptions = scope === "all" ? { mode: "contflow" } : { mode: "tax", metric };
+    } else if (type === "tax-period") {
+      const panelKey = trigger.dataset.taxPanel;
+      rows = getTaxPeriodRows(panelKey, trigger.dataset.periodIndex);
+      subtitle = `BI ${String(panelKey || "").toUpperCase()} • ${title}`;
+      detailOptions = { mode: "tax", panelKey };
+    } else if (type === "tax-company") {
+      const panelKey = trigger.dataset.taxPanel;
+      rows = getTaxCompanyRows(panelKey, trigger.dataset.companyKey);
+      subtitle = `Empresa no BI ${String(panelKey || "").toUpperCase()}`;
+      detailOptions = { mode: "tax", panelKey };
+    }
+
+    openAnalyticsDetail(title, subtitle, rows, detailOptions);
+  }
+
+  function bindInteractiveAnalyticsActions() {
+    if (analyticsDrillBound) return;
+    analyticsDrillBound = true;
+    document.addEventListener("click", handleAnalyticsDrillClick);
+    document.getElementById("analyticsDetailClose")?.addEventListener("click", closeAnalyticsDetail);
+    document.getElementById("analyticsDetailBackdrop")?.addEventListener("click", closeAnalyticsDetail);
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") closeAnalyticsDetail();
+    });
+  }
+
   function bindAnalyticsActions() {
     const btnRefresh = document.getElementById("btnAnalyticsRefresh");
     const btnExport = document.getElementById("btnAnalyticsExport");
-    const searchInput = document.getElementById("analyticsSheetSearch");
 
     btnRefresh?.addEventListener("click", async () => {
       btnRefresh.disabled = true;
@@ -2290,12 +4053,6 @@ document.addEventListener("DOMContentLoaded", () => {
     });
 
     btnExport?.addEventListener("click", exportSpreadsheet);
-
-    searchInput?.addEventListener("input", () => {
-      state.searchTerm = String(searchInput.value || "");
-      state.filteredRows = filterRowsForSheet(getSpreadsheetBaseRows(), state.contFlow.columns, state.searchTerm);
-      renderSpreadsheet();
-    });
   }
 
   function handleInitError(err) {
@@ -2307,6 +4064,8 @@ document.addEventListener("DOMContentLoaded", () => {
     markCurrentModuleActive();
     renderUserCard();
     bindAnalyticsActions();
+    bindTaxBiActions();
+    bindInteractiveAnalyticsActions();
     renderAnalyticsError(err);
   }
 
@@ -2329,6 +4088,8 @@ document.addEventListener("DOMContentLoaded", () => {
       renderUserCard();
       bindUserActions();
       bindAnalyticsActions();
+      bindTaxBiActions();
+      bindInteractiveAnalyticsActions();
       await loadAnalytics();
 
       console.log("🎉 ContAnalytics inicializado!");

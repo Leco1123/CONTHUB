@@ -109,6 +109,23 @@ window.PainelTributarioSheet = (() => {
     return String(document.querySelector(".cf-view-btn.is-active")?.dataset.view || "contflow");
   }
 
+  function normalizeTribValue(value) {
+    return String(value || "")
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .trim()
+      .toUpperCase();
+  }
+
+  function isLpTributacao(value) {
+    const normalized = normalizeTribValue(value);
+    return (
+      normalized === "LP" ||
+      normalized.includes("PRESUMIDO") ||
+      normalized.includes("LUCRO PRESUMIDO")
+    );
+  }
+
   function clamp(v, min, max) {
     return Math.max(min, Math.min(v, max));
   }
@@ -571,6 +588,7 @@ window.PainelTributarioSheet = (() => {
   function syncFromContFlowRows(sourceRows, options = {}) {
     const normalizedSource = Array.isArray(sourceRows) ? sourceRows : [];
     if (!normalizedSource.length) return;
+    const filteredSource = normalizedSource.filter((row) => isLpTributacao(row?.trib));
 
     const beforeSignature = buildCadastralMirrorSignature();
 
@@ -583,7 +601,7 @@ window.PainelTributarioSheet = (() => {
         if (key && !existingMap.has(key)) existingMap.set(key, row);
       });
 
-      return normalizedSource.map((sourceRow) => {
+      return filteredSource.map((sourceRow) => {
         const rowKey = getMirrorKey(sourceRow);
         const base = rowKey && existingMap.has(rowKey) ? existingMap.get(rowKey) : createEmptyRow();
         const nextRow = createEmptyRow();
@@ -2897,6 +2915,14 @@ window.PainelTributarioSheet = (() => {
     hasPendingChanges: () => state.dirty,
     syncFromContFlowRows,
     exportRevenueMirrorSheets: buildRevenueMirrorSheets,
+    exportBISnapshot: () => ({
+      title: "Painel Tributário - LP",
+      periodType: "quarter",
+      activeIndex: state.sheetIndex,
+      periodLabels: SHEET_TITLES.slice(),
+      sheets: deepClone(state.sheets),
+      columns: getAllColumns().map(({ key, label, type, percent }) => ({ key, label, type, percent: Boolean(percent) })),
+    }),
     notifyRevenueMirrorChange: emitRevenueMirrorChange,
   };
 })();

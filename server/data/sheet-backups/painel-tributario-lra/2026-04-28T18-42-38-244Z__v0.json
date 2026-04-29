@@ -1,0 +1,27 @@
+{
+  "backupId": "2026-04-28T18-42-38-244Z__v0",
+  "sheetKey": "painel-tributario-lra",
+  "sheetId": 5,
+  "reason": "before_update",
+  "createdAt": "2026-04-28T18:42:38.244Z",
+  "actor": {
+    "id": 0,
+    "email": "leandro.vieira@franco-rnc.com.br",
+    "role": "ti"
+  },
+  "snapshotVersion": 0,
+  "snapshot": {
+    "sheet": {
+      "id": 5,
+      "key": "painel-tributario-lra",
+      "name": "painel-tributario-lra",
+      "version": 0,
+      "active": true,
+      "createdAt": "2026-04-28T18:42:38.228Z",
+      "updatedAt": "2026-04-28T18:42:38.228Z"
+    },
+    "columns": [],
+    "rows": [],
+    "cells": []
+  }
+}

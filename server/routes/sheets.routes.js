@@ -8,7 +8,12 @@ const SHEET_BACKUP_ROOT = process.env.SHEET_BACKUP_ROOT
   ? path.resolve(process.env.SHEET_BACKUP_ROOT)
   : path.join(__dirname, "..", "data", "sheet-backups");
 const MAX_BACKUPS_PER_SHEET = 100;
-const AUTO_BACKUP_SHEET_KEYS = new Set(["contflow", "painel-tributario"]);
+const AUTO_BACKUP_SHEET_KEYS = new Set([
+  "contflow",
+  "painel-tributario",
+  "painel-tributario-lr",
+  "painel-tributario-lra",
+]);
 
 function getSheetCellsQuery(sheetId, includeDeleted = false) {
   return {

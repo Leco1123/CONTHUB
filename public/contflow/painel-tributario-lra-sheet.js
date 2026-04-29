@@ -1,13 +1,29 @@
 console.log("⚡ Painel Tributário JS carregando...");
 
-window.PainelTributarioLRSheet = (() => {
-    const STORAGE_KEY = "conthub:contflow:painel-tributario-lr:v3";
-  const API_SHEET_KEY = "painel-tributario-lr";
+window.PainelTributarioLRASheet = (() => {
+    const STORAGE_KEY = "conthub:contflow:painel-tributario-lra:v3";
+  const API_SHEET_KEY = "painel-tributario-lra";
   const API_SHEET_URL = `/api/sheets/${API_SHEET_KEY}`;
   const API_SHEET_CELLS_URL = `${API_SHEET_URL}/cells`;
   const POLL_INTERVAL_MS = 8000;
   const MAX_ROWS_START = 15;
-  const TRIB_MODE_FILTER = "LRT";
+  const TRIB_MODE_FILTER = "LRA";
+  const MONTH_TITLES = [
+    "Janeiro",
+    "Fevereiro",
+    "Março",
+    "Abril",
+    "Maio",
+    "Junho",
+    "Julho",
+    "Agosto",
+    "Setembro",
+    "Outubro",
+    "Novembro",
+    "Dezembro",
+  ];
+  const MONTH_SHORT_TITLES = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
+  const MONTH_COUNT = MONTH_TITLES.length;
 
   const BASE_META_COLUMNS = [
     { key: "cod", label: "Cód.", type: "text" },
@@ -40,9 +56,6 @@ window.PainelTributarioLRSheet = (() => {
 
   const LR_COLUMNS = [
     { key: "fat_total", label: "Receita Bruta", type: "read", readClass: "read-ir" },
-    { key: "fat_m1", label: "Fat Mês 1", type: "read", readClass: "read-ir" },
-    { key: "fat_m2", label: "Fat Mês 2", type: "read", readClass: "read-ir" },
-    { key: "fat_m3", label: "Fat Mês 3", type: "read", readClass: "read-ir" },
     { key: "resultado_antes_irpj_csll", label: "Resultado antes do IRPJ e CSLL", type: "number" },
     { key: "adicoes", label: "Adições", type: "number" },
     { key: "exclusoes", label: "Exclusoes", type: "number" },
@@ -50,7 +63,6 @@ window.PainelTributarioLRSheet = (() => {
     { key: "bc", label: "BC", type: "read", readClass: "read-ir" },
     { key: "irpj_devido_15", label: "IRPJ devido 15%", type: "read", readClass: "read-ir" },
     { key: "irpj_adicional_lra", label: "IRPJ adicional- LRA", type: "read", readClass: "read-ir" },
-    { key: "irpj_adicional_lrt", label: "IRPJ adicional- LRT", type: "read", readClass: "read-ir" },
     { key: "retencoes_incentivos_pagos", label: "Retenções e incentivos e pagos", type: "number" },
     { key: "irpj_a_pagar", label: "IRPJ a pagar", type: "read", readClass: "read-ir" },
     { key: "csll_devida", label: "CSLL devida", type: "read", readClass: "read-csll" },
@@ -58,17 +70,9 @@ window.PainelTributarioLRSheet = (() => {
     { key: "csll_a_pagar", label: "CSLL a pagar", type: "read", readClass: "read-csll" },
   ];
 
-  const SHEET_TITLES = ["1º Trimestre", "2º Trimestre", "3º Trimestre", "4º Trimestre"];
-  const QUARTER_MONTHS = [
-    ["Jan", "Fev", "Mar"],
-    ["Abr", "Maio", "Junho"],
-    ["Jul", "Ago", "Set"],
-    ["Out", "Nov", "Dez"],
-  ];
-
   const state = {
     sheetIndex: 0,
-    sheets: [[], [], [], []],
+    sheets: Array.from({ length: MONTH_COUNT }, () => []),
     activeRow: 0,
     activeCol: 0,
     selectionAnchor: null,
@@ -87,7 +91,7 @@ window.PainelTributarioLRSheet = (() => {
     let pollTimer = null;
     let clipboardTextCache = "";
 
-  const IRPJ_ADICIONAL_LIMIT = 60000;
+  const IRPJ_ADICIONAL_LIMIT = 20000;
 
   function detectTribMode(value) {
     const normalized = String(value || "")
@@ -113,7 +117,7 @@ window.PainelTributarioLRSheet = (() => {
     if (!root) return;
 
     if (root.id && root.id.startsWith("pt-")) {
-      root.id = root.id.replace(/^pt-/, "ptlr-");
+      root.id = root.id.replace(/^pt-/, "ptlra-");
     }
 
     if (root.classList?.contains("cf-sheet-tab")) {
@@ -125,7 +129,7 @@ window.PainelTributarioLRSheet = (() => {
   }
 
   function ensureLRDom() {
-    if (document.getElementById("view-painel-tributario-lr")) return;
+    if (document.getElementById("view-painel-tributario-lra")) return;
 
     const sourceView = document.getElementById("view-painel-tributario");
     const sourceBackdrop = document.getElementById("pt-modal-backdrop");
@@ -133,33 +137,40 @@ window.PainelTributarioLRSheet = (() => {
     if (!sourceView || !sourceBackdrop || !sourceModal) return;
 
     const lrView = sourceView.cloneNode(true);
-    lrView.id = "view-painel-tributario-lr";
+    lrView.id = "view-painel-tributario-lra";
     lrView.classList.remove("is-active");
     remapNodeIdentifiers(lrView);
-    lrView.querySelector('[id="ptlr-sheet-title"]')?.replaceChildren(document.createTextNode("Painel Tributário - LRT"));
-    const lrTopSave = lrView.querySelector("#ptlr-save-cells-top");
-    if (lrTopSave) lrTopSave.id = "ptlr-save-cells-top";
-    const lrBaseBtn = lrView.querySelector("#ptlr-base-btn");
+    lrView.querySelector('[id="ptlra-sheet-title"]')?.replaceChildren(document.createTextNode("Painel Tributário - LRA"));
+    const tabs = lrView.querySelector(".cf-sheet-tabs");
+    if (tabs) {
+      tabs.innerHTML = MONTH_SHORT_TITLES.map(
+        (month, index) =>
+          `<button class="cf-btn cf-sheet-tab-lr${index === 0 ? " is-active" : ""}" type="button" data-sheet="${index}">${month}</button>`
+      ).join("");
+    }
+    const lrTopSave = lrView.querySelector("#ptlra-save-cells-top");
+    if (lrTopSave) lrTopSave.id = "ptlra-save-cells-top";
+    const lrBaseBtn = lrView.querySelector("#ptlra-base-btn");
     if (lrBaseBtn) {
-      lrBaseBtn.id = "ptlr-base-btn";
+      lrBaseBtn.id = "ptlra-base-btn";
       lrBaseBtn.hidden = true;
     }
     sourceView.insertAdjacentElement("afterend", lrView);
 
     const lrBackdrop = sourceBackdrop.cloneNode(true);
-    lrBackdrop.id = "ptlr-modal-backdrop";
+    lrBackdrop.id = "ptlra-modal-backdrop";
     sourceBackdrop.insertAdjacentElement("afterend", lrBackdrop);
 
     const lrModal = sourceModal.cloneNode(true);
-    lrModal.id = "ptlr-modal";
+    lrModal.id = "ptlra-modal";
     remapNodeIdentifiers(lrModal);
-    lrModal.setAttribute("aria-label", "Base Painel Tributário - LRT");
-    const modalTitle = lrModal.querySelector("#ptlr-modal-title");
-    if (modalTitle) modalTitle.textContent = "Base Painel Tributário - LRT";
+    lrModal.setAttribute("aria-label", "Base Painel Tributário - LRA");
+    const modalTitle = lrModal.querySelector("#ptlra-modal-title");
+    if (modalTitle) modalTitle.textContent = "Base Painel Tributário - LRA";
     const modalActions = lrModal.querySelector(".cf-modal-actions");
     if (modalActions) {
       const additionalCalc = document.createElement("section");
-      additionalCalc.id = "ptlr-additional-calc";
+      additionalCalc.id = "ptlra-additional-calc";
       additionalCalc.className = "pt-base-total-calc";
       additionalCalc.hidden = true;
       additionalCalc.innerHTML = `
@@ -167,44 +178,44 @@ window.PainelTributarioLRSheet = (() => {
           <div class="pt-base-total-head-copy">
             <span>Memória de cálculo</span>
             <strong>IRPJ adicional</strong>
-            <p id="ptlr-additional-summary">Leitura automática com base na coluna Trib.</p>
+            <p id="ptlra-additional-summary">Leitura automática com base na coluna Trib.</p>
           </div>
-          <div id="ptlr-additional-chip" class="pt-base-total-tag">LRA</div>
+          <div id="ptlra-additional-chip" class="pt-base-total-tag">LRA</div>
         </div>
         <div class="pt-base-total-grid">
           <div class="pt-base-total-card">
             <span class="pt-base-total-card-label">Tributação lida</span>
-            <strong id="ptlr-additional-trib">-</strong>
-            <small id="ptlr-additional-rule">Sem regra aplicada.</small>
+            <strong id="ptlra-additional-trib">-</strong>
+            <small id="ptlra-additional-rule">Sem regra aplicada.</small>
           </div>
           <div class="pt-base-total-card">
             <span class="pt-base-total-card-label">Parcela a deduzir</span>
-            <strong id="ptlr-additional-limit">R$ 0,00</strong>
+            <strong id="ptlra-additional-limit">R$ 0,00</strong>
             <small>Faixa fixa para o adicional.</small>
           </div>
           <div class="pt-base-total-card">
             <span class="pt-base-total-card-label">Alíquota adicional</span>
-            <strong id="ptlr-additional-rate">0,00%</strong>
+            <strong id="ptlra-additional-rate">0,00%</strong>
             <small>Aplicada apenas quando a tributação combinar.</small>
           </div>
           <div class="pt-base-total-card">
             <span class="pt-base-total-card-label">Excedente tributável</span>
-            <strong id="ptlr-additional-excess">R$ 0,00</strong>
-            <small id="ptlr-additional-excess-note">BC acima da faixa de dedução.</small>
+            <strong id="ptlra-additional-excess">R$ 0,00</strong>
+            <small id="ptlra-additional-excess-note">BC acima da faixa de dedução.</small>
           </div>
         </div>
         <div class="pt-base-total-row-list">
           <div class="pt-base-total-row">
             <span>Base de cálculo (BC)</span>
-            <strong id="ptlr-additional-bc">R$ 0,00</strong>
+            <strong id="ptlra-additional-bc">R$ 0,00</strong>
           </div>
           <div class="pt-base-total-row">
             <span>Fórmula aplicada</span>
-            <strong id="ptlr-additional-formula">0</strong>
+            <strong id="ptlra-additional-formula">0</strong>
           </div>
           <div class="pt-base-total-row is-total">
             <span>IRPJ adicional apurado</span>
-            <strong id="ptlr-additional-total">R$ 0,00</strong>
+            <strong id="ptlra-additional-total">R$ 0,00</strong>
           </div>
         </div>
       `;
@@ -295,17 +306,17 @@ window.PainelTributarioLRSheet = (() => {
     return {
       version: 1,
       savedAt: new Date().toISOString(),
-      columns: [{ key: "sheet_index", label: "Trimestre" }, ...getAllColumns().map(({ key, label }) => ({ key, label }))],
+      columns: [{ key: "sheet_index", label: "Mês" }, ...getAllColumns().map(({ key, label }) => ({ key, label }))],
       data: buildFlatRowsFromState(),
     };
   }
 
   function applyFlatRowsToState(rows) {
-    const buckets = [[], [], [], []];
+    const buckets = Array.from({ length: MONTH_COUNT }, () => []);
     const cols = getAllColumns();
 
     (Array.isArray(rows) ? rows : []).forEach((source) => {
-      const sheetIndex = clamp(Number(source?.sheet_index || 0), 0, 3);
+      const sheetIndex = clamp(Number(source?.sheet_index || 0), 0, MONTH_COUNT - 1);
       const row = createEmptyRow();
       cols.forEach((col) => {
         if (source[col.key] != null) row[col.key] = source[col.key];
@@ -360,14 +371,14 @@ window.PainelTributarioLRSheet = (() => {
 
   async function loadStateFromApi() {
     if (typeof apiFetch !== "function") {
-      throw new Error("API indisponível no Painel Tributário LR.");
+      throw new Error("API indisponível no Painel Tributário - LRA.");
     }
 
     const resp = await apiFetch(API_SHEET_URL, { method: "GET" });
     const data = await resp.json().catch(() => null);
 
     if (!resp.ok) {
-      throw new Error(data?.error || "Erro ao carregar Painel Tributário LR da API.");
+      throw new Error(data?.error || "Erro ao carregar Painel Tributário - LRA da API.");
     }
 
     return data;
@@ -382,7 +393,7 @@ window.PainelTributarioLRSheet = (() => {
     const data = await resp.json().catch(() => null);
 
     if (!resp.ok) {
-      const err = new Error(data?.error || "Erro ao salvar base do Painel Tributário LR.");
+      const err = new Error(data?.error || "Erro ao salvar base do Painel Tributário - LRA.");
       err.status = Number(resp.status || 500);
       err.payload = data;
       throw err;
@@ -481,7 +492,7 @@ window.PainelTributarioLRSheet = (() => {
     const data = await resp.json().catch(() => null);
 
     if (!resp.ok) {
-      const err = new Error(data?.error || "Erro ao salvar células do Painel Tributário LR.");
+      const err = new Error(data?.error || "Erro ao salvar células do Painel Tributário - LRA.");
       err.status = Number(resp.status || 500);
       err.payload = data;
       throw err;
@@ -529,26 +540,26 @@ window.PainelTributarioLRSheet = (() => {
     state.sheets[state.sheetIndex] = rows;
   }
 
-  function getQuarterMonths() {
-    return QUARTER_MONTHS[state.sheetIndex] || ["Mês 1", "Mês 2", "Mês 3"];
+  function getMonthTitle(index = state.sheetIndex) {
+    return MONTH_TITLES[index] || `Mês ${Number(index || 0) + 1}`;
+  }
+
+  function getMonthShortTitle(index = state.sheetIndex) {
+    return MONTH_SHORT_TITLES[index] || getMonthTitle(index);
+  }
+
+  function getSourceQuarterIndex(monthIndex = state.sheetIndex) {
+    return Math.floor(Number(monthIndex || 0) / 3);
+  }
+
+  function getSourceRevenueKey(monthIndex = state.sheetIndex) {
+    return `fat_m${(Number(monthIndex || 0) % 3) + 1}`;
   }
 
   function getDynamicColumns() {
-    const [m1, m2, m3] = getQuarterMonths();
-    const quarterLabel = `${state.sheetIndex + 1}º trim`;
-
     const lrCols = LR_COLUMNS.map((col) => {
       if (col.key === "fat_total") {
-        return { ...col, label: `Receita Bruta ${quarterLabel}` };
-      }
-      if (col.key === "fat_m1") {
-        return { ...col, label: `Fat ${m1}` };
-      }
-      if (col.key === "fat_m2") {
-        return { ...col, label: `Fat ${m2}` };
-      }
-      if (col.key === "fat_m3") {
-        return { ...col, label: `Fat ${m3}` };
+        return { ...col, label: `Receita Bruta ${getMonthShortTitle()}` };
       }
       return { ...col };
     });
@@ -594,7 +605,7 @@ window.PainelTributarioLRSheet = (() => {
       .replace(/:+/g, "_")
       .replace(/^_+|_+$/g, "");
 
-    return `ptlr_${Number(sheetIndex || 0)}_${baseKey || genId()}`;
+    return `ptlra_${Number(sheetIndex || 0)}_${baseKey || genId()}`;
   }
 
   function buildRevenueMirrorSignature(sourceSheets) {
@@ -673,7 +684,7 @@ window.PainelTributarioLRSheet = (() => {
       saveState();
       renderTable();
     } catch (err) {
-      console.error("Erro ao salvar espelho do ContFlow no Painel Tributário LR:", err);
+      console.error("Erro ao salvar espelho do ContFlow no Painel Tributário - LRA:", err);
     }
   }
 
@@ -722,7 +733,7 @@ window.PainelTributarioLRSheet = (() => {
       persistSyncedContFlowMirror();
     }
     if (!lastSavedPayload || !Array.isArray(lastSavedPayload.data) || !lastSavedPayload.data.length) {
-      saveBase({ silent: true }).catch((err) => console.error("Erro ao publicar base inicial do Painel Tributário LR:", err));
+      saveBase({ silent: true }).catch((err) => console.error("Erro ao publicar base inicial do Painel Tributário - LRA:", err));
     }
   }
 
@@ -732,7 +743,9 @@ window.PainelTributarioLRSheet = (() => {
 
     state.sheets = state.sheets.map((sheetRows, sheetIndex) => {
       const rows = Array.isArray(sheetRows) ? sheetRows : [];
-      const sourceRows = Array.isArray(normalizedSheets[sheetIndex]) ? normalizedSheets[sheetIndex] : [];
+      const sourceSheetIndex = getSourceQuarterIndex(sheetIndex);
+      const sourceRows = Array.isArray(normalizedSheets[sourceSheetIndex]) ? normalizedSheets[sourceSheetIndex] : [];
+      const sourceRevenueKey = getSourceRevenueKey(sheetIndex);
       if (!rows.length || !sourceRows.length) return rows;
 
       const sourceMap = new Map();
@@ -746,23 +759,15 @@ window.PainelTributarioLRSheet = (() => {
         const sourceRow = key ? sourceMap.get(key) : null;
         if (!sourceRow) return row;
 
-        const nextFatM1 = toNumberBR(sourceRow.fat_m1);
-        const nextFatM2 = toNumberBR(sourceRow.fat_m2);
-        const nextFatM3 = toNumberBR(sourceRow.fat_m3);
-        const currentFatM1 = toNumberBR(row.fat_m1);
-        const currentFatM2 = toNumberBR(row.fat_m2);
-        const currentFatM3 = toNumberBR(row.fat_m3);
+        const nextFatTotal = toNumberBR(sourceRow[sourceRevenueKey]);
+        const currentFatTotal = toNumberBR(row.fat_total);
 
-        if (
-          currentFatM1 === nextFatM1 &&
-          currentFatM2 === nextFatM2 &&
-          currentFatM3 === nextFatM3
-        ) {
+        if (currentFatTotal === nextFatTotal) {
           return row;
         }
 
         changed = true;
-        const nextRow = { ...row, fat_m1: nextFatM1, fat_m2: nextFatM2, fat_m3: nextFatM3 };
+        const nextRow = { ...row, fat_total: nextFatTotal };
         calcRow(nextRow);
         return nextRow;
       });
@@ -848,24 +853,20 @@ window.PainelTributarioLRSheet = (() => {
   }
 
   function calcRow(row) {
-    const fatM1 = toNumberBR(row.fat_m1);
-    const fatM2 = toNumberBR(row.fat_m2);
-    const fatM3 = toNumberBR(row.fat_m3);
+    const fatTotal = toNumberBR(row.fat_total);
     const resultadoAntes = toNumberBR(row.resultado_antes_irpj_csll);
     const adicoes = toNumberBR(row.adicoes);
     const exclusoes = toNumberBR(row.exclusoes);
     const compensacaoPrej = toNumberBR(row.compensacao_prej);
 
-    const fatTotal = fatM1 + fatM2 + fatM3;
     const baseCalculo = resultadoAntes + adicoes - exclusoes - compensacaoPrej;
     const irpjDevido15 = baseCalculo * 0.15;
     const tribMode = detectTribMode(row.trib);
     const additionalBase = Math.max(baseCalculo - IRPJ_ADICIONAL_LIMIT, 0);
     const irpjAdicionalBase = additionalBase * 0.1;
     const irpjAdicionalLra = tribMode === "LRA" ? irpjAdicionalBase : 0;
-    const irpjAdicionalLrt = tribMode === "LRT" ? irpjAdicionalBase : 0;
     const retencoesIrpj = toNumberBR(row.retencoes_incentivos_pagos);
-    const irpjAPagar = irpjDevido15 + irpjAdicionalLra + irpjAdicionalLrt - retencoesIrpj;
+    const irpjAPagar = irpjDevido15 + irpjAdicionalLra - retencoesIrpj;
     const csllDevida = baseCalculo > 0 ? baseCalculo * 0.09 : 0;
     const retencoesCsll = toNumberBR(row.retencoes_pagos_csll);
     const csllAPagar = csllDevida - retencoesCsll;
@@ -874,7 +875,6 @@ window.PainelTributarioLRSheet = (() => {
     row.bc = baseCalculo;
     row.irpj_devido_15 = irpjDevido15;
     row.irpj_adicional_lra = irpjAdicionalLra;
-    row.irpj_adicional_lrt = irpjAdicionalLrt;
     row.irpj_a_pagar = irpjAPagar;
     row.csll_devida = csllDevida;
     row.csll_a_pagar = csllAPagar;
@@ -885,7 +885,7 @@ window.PainelTributarioLRSheet = (() => {
   }
 
   function getFilteredRows() {
-    const search = String(document.getElementById("ptlr-search")?.value || "")
+    const search = String(document.getElementById("ptlra-search")?.value || "")
       .trim()
       .toLowerCase();
 
@@ -910,7 +910,7 @@ window.PainelTributarioLRSheet = (() => {
   }
 
   function updateStatusBar(totalRows) {
-    const el = document.getElementById("ptlr-status-bar");
+    const el = document.getElementById("ptlra-status-bar");
     if (!el) return;
 
     const suffix = state.dirty ? " · Pendências: alterações locais" : "";
@@ -946,7 +946,7 @@ window.PainelTributarioLRSheet = (() => {
   }
 
   function applySelectionVisual() {
-    document.querySelectorAll("#ptlr-table .cf-cell").forEach((cell) => {
+    document.querySelectorAll("#ptlra-table .cf-cell").forEach((cell) => {
       cell.classList.remove("is-selected", "is-active");
 
       if (!state.lastSelectionBounds) return;
@@ -1075,7 +1075,7 @@ window.PainelTributarioLRSheet = (() => {
   }
 
   async function handleCopyEvent(e) {
-    if (activeView() !== "painel-tributario-lr") return;
+    if (activeView() !== "painel-tributario-lra") return;
     if (!state.lastSelectionBounds) return;
 
     const text = await copySelection();
@@ -1088,7 +1088,7 @@ window.PainelTributarioLRSheet = (() => {
   }
 
   async function handlePasteEvent(e) {
-    if (activeView() !== "painel-tributario-lr") return;
+    if (activeView() !== "painel-tributario-lra") return;
     if (!state.lastSelectionBounds) return;
 
     const text = e.clipboardData?.getData("text/plain");
@@ -1264,7 +1264,7 @@ window.PainelTributarioLRSheet = (() => {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `painel_tributario_planilha_${state.sheetIndex + 1}.json`;
+    a.download = `painel_tributario_lra_${getMonthShortTitle().toLowerCase()}.json`;
     a.click();
     URL.revokeObjectURL(url);
   }
@@ -1298,7 +1298,7 @@ window.PainelTributarioLRSheet = (() => {
     ]);
 
     const aoa = [
-      [`Painel Tributário LR - ${SHEET_TITLES[state.sheetIndex]} (${getQuarterMonths().join(", ")})`],
+      [`Painel Tributário - LRA - ${getMonthTitle()}`],
       [],
       header,
       ...body,
@@ -1310,10 +1310,10 @@ window.PainelTributarioLRSheet = (() => {
     }));
 
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Painel Tributario LR");
+    XLSX.utils.book_append_sheet(wb, ws, "Painel Tributario LRA");
 
     const stamp = new Date().toISOString().slice(0, 10);
-    XLSX.writeFile(wb, `painel_tributario_lr_${state.sheetIndex + 1}_trimestre_${stamp}.xlsx`);
+    XLSX.writeFile(wb, `painel_tributario_lra_${getMonthShortTitle().toLowerCase()}_${stamp}.xlsx`);
   }
 
   function importJson(file) {
@@ -1355,8 +1355,8 @@ window.PainelTributarioLRSheet = (() => {
 
   function renderHeaders() {
     const cols = getDynamicColumns();
-    const thead = document.getElementById("ptlr-thead");
-    const table = document.getElementById("ptlr-table");
+    const thead = document.getElementById("ptlra-thead");
+    const table = document.getElementById("ptlra-table");
     if (!thead) return;
 
     const widthMap = {
@@ -1371,9 +1371,6 @@ window.PainelTributarioLRSheet = (() => {
       resp1: 120,
       resp2: 120,
       fat_total: 110,
-      fat_m1: 110,
-      fat_m2: 110,
-      fat_m3: 110,
       resultado_antes_irpj_csll: 210,
       adicoes: 120,
       exclusoes: 120,
@@ -1381,7 +1378,6 @@ window.PainelTributarioLRSheet = (() => {
       bc: 90,
       irpj_devido_15: 130,
       irpj_adicional_lra: 150,
-      irpj_adicional_lrt: 150,
       retencoes_incentivos_pagos: 190,
       irpj_a_pagar: 120,
       csll_devida: 120,
@@ -1399,10 +1395,10 @@ window.PainelTributarioLRSheet = (() => {
 
     thead.innerHTML = `
       <tr class="group-row">
-        <th id="ptlr-corner-select" class="group-meta" rowspan="2">#</th>
+        <th id="ptlra-corner-select" class="group-meta" rowspan="2">#</th>
         <th class="group-meta" colspan="7">Dados cadastrais</th>
         <th class="group-meta group-meta-rest" colspan="3"></th>
-        <th class="group-ir" colspan="17">Painel Tributário LR</th>
+        <th class="group-ir" colspan="13">Painel Tributário - LRA</th>
       </tr>
       <tr class="cols-row">
         ${cols.map((col) => `<th>${col.label}</th>`).join("")}
@@ -1428,12 +1424,12 @@ window.PainelTributarioLRSheet = (() => {
   }
 
   function renderQuotaPanel() {
-    const panel = document.getElementById("ptlr-quota-panel");
-    const baseCalcEl = document.getElementById("ptlr-base-total-calc");
-    const additionalCalcEl = document.getElementById("ptlr-additional-calc");
-    const quotaSummaryEl = document.querySelector("#ptlr-modal .pt-quota-summary");
-    const quotaBlockEl = document.querySelector("#ptlr-modal .pt-quota-block");
-    const previewEl = document.getElementById("ptlr-quota-preview");
+    const panel = document.getElementById("ptlra-quota-panel");
+    const baseCalcEl = document.getElementById("ptlra-base-total-calc");
+    const additionalCalcEl = document.getElementById("ptlra-additional-calc");
+    const quotaSummaryEl = document.querySelector("#ptlra-modal .pt-quota-summary");
+    const quotaBlockEl = document.querySelector("#ptlra-modal .pt-quota-block");
+    const previewEl = document.getElementById("ptlra-quota-preview");
 
     if (panel) panel.hidden = true;
     if (baseCalcEl) baseCalcEl.hidden = true;
@@ -1444,7 +1440,7 @@ window.PainelTributarioLRSheet = (() => {
   }
 
   function renderAdditionalCalc() {
-    const section = document.getElementById("ptlr-additional-calc");
+    const section = document.getElementById("ptlra-additional-calc");
     const row = getActiveModalRow();
     if (!section) return;
 
@@ -1456,21 +1452,21 @@ window.PainelTributarioLRSheet = (() => {
     const bc = toNumberBR(row.bc);
     const excess = Math.max(bc - IRPJ_ADICIONAL_LIMIT, 0);
     const rate = 0.1;
-    const targetMode = state.modalTaxKind === "lrt" ? "LRT" : "LRA";
+    const targetMode = "LRA";
     const applies = tribMode === targetMode;
     const total = applies ? excess * rate : 0;
 
-    const summaryEl = document.getElementById("ptlr-additional-summary");
-    const chipEl = document.getElementById("ptlr-additional-chip");
-    const tribEl = document.getElementById("ptlr-additional-trib");
-    const ruleEl = document.getElementById("ptlr-additional-rule");
-    const limitEl = document.getElementById("ptlr-additional-limit");
-    const rateEl = document.getElementById("ptlr-additional-rate");
-    const excessEl = document.getElementById("ptlr-additional-excess");
-    const excessNoteEl = document.getElementById("ptlr-additional-excess-note");
-    const bcEl = document.getElementById("ptlr-additional-bc");
-    const formulaEl = document.getElementById("ptlr-additional-formula");
-    const totalEl = document.getElementById("ptlr-additional-total");
+    const summaryEl = document.getElementById("ptlra-additional-summary");
+    const chipEl = document.getElementById("ptlra-additional-chip");
+    const tribEl = document.getElementById("ptlra-additional-trib");
+    const ruleEl = document.getElementById("ptlra-additional-rule");
+    const limitEl = document.getElementById("ptlra-additional-limit");
+    const rateEl = document.getElementById("ptlra-additional-rate");
+    const excessEl = document.getElementById("ptlra-additional-excess");
+    const excessNoteEl = document.getElementById("ptlra-additional-excess-note");
+    const bcEl = document.getElementById("ptlra-additional-bc");
+    const formulaEl = document.getElementById("ptlra-additional-formula");
+    const totalEl = document.getElementById("ptlra-additional-total");
 
     if (summaryEl) {
       summaryEl.textContent = `O adicional é calculado sobre o excedente do BC acima de ${formatMoney(IRPJ_ADICIONAL_LIMIT)}.`;
@@ -1500,19 +1496,19 @@ window.PainelTributarioLRSheet = (() => {
   }
 
   function renderModalMode() {
-    const modal = document.getElementById("ptlr-modal");
-    const title = document.getElementById("ptlr-modal-title");
+    const modal = document.getElementById("ptlra-modal");
+    const title = document.getElementById("ptlra-modal-title");
     const actions = modal?.querySelector(".cf-modal-actions");
     if (!modal) return;
     const isAdditionalMode = state.modalMode === "additional";
     modal.classList.toggle("is-quota-mode", isAdditionalMode);
     modal.classList.remove("is-base-total-mode");
     if (actions) actions.style.display = isAdditionalMode ? "none" : "";
-    if (title) title.textContent = isAdditionalMode ? "Cálculo do IRPJ adicional" : "Base Painel Tributário LR";
+    if (title) title.textContent = isAdditionalMode ? "Cálculo do IRPJ adicional" : "Base Painel Tributário - LRA";
   }
 
   function isModalTriggerColumn(col) {
-    return col?.key === "irpj_adicional_lra" || col?.key === "irpj_adicional_lrt";
+    return col?.key === "irpj_adicional_lra";
   }
 
   function renderReadCell(td, col, row, rowIndex, colIndex, totalRows) {
@@ -1530,7 +1526,7 @@ window.PainelTributarioLRSheet = (() => {
       button.type = "button";
       button.className = "cf-cell-action-btn";
       button.textContent = "...";
-      const taxKind = col.key === "irpj_adicional_lrt" ? "lrt" : "lra";
+      const taxKind = "lra";
       const actionLabel = `Abrir cálculo do IRPJ adicional ${taxKind.toUpperCase()}`;
       button.setAttribute("aria-label", actionLabel);
       button.title = "Abrir modal";
@@ -1579,7 +1575,7 @@ window.PainelTributarioLRSheet = (() => {
 
   function renderBody(rows) {
     const cols = getDynamicColumns();
-    const tbody = document.getElementById("ptlr-tbody");
+    const tbody = document.getElementById("ptlra-tbody");
     if (!tbody) return;
 
     tbody.innerHTML = "";
@@ -1687,13 +1683,13 @@ window.PainelTributarioLRSheet = (() => {
   }
 
   function renderFooter() {
-    const tfoot = document.getElementById("ptlr-tfoot");
+    const tfoot = document.getElementById("ptlra-tfoot");
     if (tfoot) tfoot.innerHTML = "";
   }
 
   function updatePainelHeaderMetrics() {
-    const table = document.getElementById("ptlr-table");
-    const wrapper = document.querySelector("#view-painel-tributario-lr .table-wrapper");
+    const table = document.getElementById("ptlra-table");
+    const wrapper = document.querySelector("#view-painel-tributario-lra .table-wrapper");
     if (!table || !wrapper) return;
 
     const groupRowHeight = table.querySelector(".group-row")?.offsetHeight || 30;
@@ -1704,17 +1700,17 @@ window.PainelTributarioLRSheet = (() => {
   }
 
   function applyPainelFrozenColumns() {
-    const table = document.getElementById("ptlr-table");
+    const table = document.getElementById("ptlra-table");
     if (!table) return;
 
     updatePainelHeaderMetrics();
 
-    const wrapper = document.querySelector("#view-painel-tributario-lr .table-wrapper");
+    const wrapper = document.querySelector("#view-painel-tributario-lra .table-wrapper");
     const groupRowTop = wrapper
       ? getComputedStyle(wrapper).getPropertyValue("--pt-cols-row-top").trim() || "30px"
       : "30px";
 
-    const corner = document.getElementById("ptlr-corner-select");
+    const corner = document.getElementById("ptlra-corner-select");
     if (corner) {
       corner.style.setProperty("position", "sticky", "important");
       corner.style.setProperty("left", "0px", "important");
@@ -1808,22 +1804,25 @@ window.PainelTributarioLRSheet = (() => {
     updateStatusBar(rows.length);
     updatePainelHeaderMetrics();
 
-    const titleEl = document.getElementById("ptlr-sheet-title");
-    if (titleEl) titleEl.textContent = `${SHEET_TITLES[state.sheetIndex]} · ${getQuarterMonths().join(", ")}`;
+    const titleEl = document.getElementById("ptlra-sheet-title");
+    if (titleEl) titleEl.textContent = getMonthTitle();
+    document.querySelectorAll("#view-painel-tributario-lra .cf-sheet-tab-lr").forEach((btn) => {
+      btn.classList.toggle("is-active", Number(btn.dataset.sheet) === state.sheetIndex);
+    });
 
     applySelectionVisual();
     requestAnimationFrame(() => applyPainelFrozenColumns());
   }
 
   function getPainelStickyOffsets() {
-    const wrapper = document.querySelector("#view-painel-tributario-lr .table-wrapper");
+    const wrapper = document.querySelector("#view-painel-tributario-lra .table-wrapper");
     if (!wrapper) return { headerH: 60, leftW: 40 };
 
     const styles = getComputedStyle(wrapper);
     const headerH = Number.parseFloat(styles.getPropertyValue("--pt-header-height")) || 60;
 
     const frozenIndexes = getPainelFrozenIndexes();
-    const colEls = Array.from(document.querySelectorAll("#ptlr-table colgroup col"));
+    const colEls = Array.from(document.querySelectorAll("#ptlra-table colgroup col"));
     let leftW = 40;
 
     frozenIndexes.forEach((colIndex) => {
@@ -1836,7 +1835,7 @@ window.PainelTributarioLRSheet = (() => {
   }
 
   function scrollPainelCellIntoView(targetEl) {
-    const wrapper = document.querySelector("#view-painel-tributario-lr .table-wrapper");
+    const wrapper = document.querySelector("#view-painel-tributario-lra .table-wrapper");
     if (!wrapper || !targetEl) return;
 
     const cell = targetEl.closest("td") || targetEl;
@@ -1875,7 +1874,7 @@ window.PainelTributarioLRSheet = (() => {
 
   function focusCell(rowIndex, colIndex, preserveSelection = false) {
     const target = document.querySelector(
-      `#ptlr-table .cf-input[data-row-index="${rowIndex}"][data-col-index="${colIndex}"]`
+      `#ptlra-table .cf-input[data-row-index="${rowIndex}"][data-col-index="${colIndex}"]`
     );
 
     if (target) {
@@ -1949,7 +1948,7 @@ window.PainelTributarioLRSheet = (() => {
   }
 
   async function handleGlobalKeyDown(e) {
-    if (activeView() !== "painel-tributario-lr") return;
+    if (activeView() !== "painel-tributario-lra") return;
 
     const tag = document.activeElement?.tagName?.toLowerCase();
     const isInInput = tag === "input" || tag === "textarea";
@@ -2057,8 +2056,8 @@ window.PainelTributarioLRSheet = (() => {
       const data = JSON.parse(raw);
       if (!data || !Array.isArray(data.sheets)) return false;
 
-      state.sheetIndex = clamp(Number(data.sheetIndex || 0), 0, 3);
-      state.sheets = [0, 1, 2, 3].map((idx) => {
+      state.sheetIndex = clamp(Number(data.sheetIndex || 0), 0, MONTH_COUNT - 1);
+      state.sheets = Array.from({ length: MONTH_COUNT }, (_, idx) => {
         const rows = Array.isArray(data.sheets[idx]) ? data.sheets[idx] : [];
         if (!rows.length) return Array.from({ length: MAX_ROWS_START }, () => createEmptyRow());
 
@@ -2084,24 +2083,24 @@ window.PainelTributarioLRSheet = (() => {
   async function saveCells() {
     try {
       if (!state.dirty) {
-        alert("Nao da para salvar o Painel Tributario LR: nao ha alteracoes pendentes.");
+        alert("Nao da para salvar o Painel Tributario LRA: nao ha alteracoes pendentes.");
         return;
       }
 
       const { changes, structural } = buildDirtyCellPayload();
       if (structural) {
-        alert("Nao da para salvar so as celulas do Painel Tributario LR: ha alteracoes estruturais. Use Salvar base.");
+        alert("Nao da para salvar so as celulas do Painel Tributario LRA: ha alteracoes estruturais. Use Salvar base.");
         return;
       }
 
       if (!changes.length) {
-        alert("Nao da para salvar o Painel Tributario LR: nao ha celulas validas pendentes.");
+        alert("Nao da para salvar o Painel Tributario LRA: nao ha celulas validas pendentes.");
         return;
       }
 
       const response = await persistDirtyCellsToApi(changes);
       if (Array.isArray(response?.invalid) && response.invalid.length) {
-        alert("Nao da para salvar o Painel Tributario LR: algumas linhas ou colunas nao foram reconhecidas pelo servidor. Use Salvar base para realinhar a planilha.");
+        alert("Nao da para salvar o Painel Tributario LRA: algumas linhas ou colunas nao foram reconhecidas pelo servidor. Use Salvar base para realinhar a planilha.");
         return;
       }
 
@@ -2109,10 +2108,10 @@ window.PainelTributarioLRSheet = (() => {
       requestPainelTributarioRevenueSync(true);
       saveState();
       renderTable();
-      alert("Pode salvar: as alteracoes do Painel Tributario LR foram sincronizadas com sucesso.");
+      alert("Pode salvar: as alteracoes do Painel Tributario LRA foram sincronizadas com sucesso.");
     } catch (err) {
-      console.error("Erro ao salvar células do Painel Tributário LR:", err);
-      alert(explainSaveFailure(err, "Painel Tributario LR"));
+      console.error("Erro ao salvar células do Painel Tributário - LRA:", err);
+      alert(explainSaveFailure(err, "Painel Tributario LRA"));
     }
   }
 
@@ -2124,12 +2123,12 @@ window.PainelTributarioLRSheet = (() => {
       requestPainelTributarioRevenueSync(true);
       saveState();
       renderTable();
-      if (!options?.silent) alert("Pode salvar: a base do Painel Tributario LR foi sincronizada com sucesso.");
+      if (!options?.silent) alert("Pode salvar: a base do Painel Tributario LRA foi sincronizada com sucesso.");
     } catch (err) {
-      console.error("Erro ao salvar base do Painel Tributário LR:", err);
+      console.error("Erro ao salvar base do Painel Tributário - LRA:", err);
       saveState();
       if (!options?.silent) {
-        alert(explainSaveFailure(err, "Painel Tributario LR"));
+        alert(explainSaveFailure(err, "Painel Tributario LRA"));
       }
     }
   }
@@ -2137,12 +2136,12 @@ window.PainelTributarioLRSheet = (() => {
   function openModal(mode = "base", rowId = "", taxKind = "irpj") {
     state.modalMode = mode;
     state.modalRowId = rowId || "";
-    state.modalTaxKind = taxKind === "lrt" ? "lrt" : "lra";
+    state.modalTaxKind = "lra";
     renderModalMode();
     renderQuotaPanel();
     renderAdditionalCalc();
-    document.getElementById("ptlr-modal")?.classList.add("is-open");
-    document.getElementById("ptlr-modal-backdrop")?.classList.add("is-open");
+    document.getElementById("ptlra-modal")?.classList.add("is-open");
+    document.getElementById("ptlra-modal-backdrop")?.classList.add("is-open");
   }
 
   function closeModal() {
@@ -2152,14 +2151,14 @@ window.PainelTributarioLRSheet = (() => {
     renderModalMode();
     renderQuotaPanel();
     renderAdditionalCalc();
-    document.getElementById("ptlr-modal")?.classList.remove("is-open");
-    document.getElementById("ptlr-modal-backdrop")?.classList.remove("is-open");
+    document.getElementById("ptlra-modal")?.classList.remove("is-open");
+    document.getElementById("ptlra-modal-backdrop")?.classList.remove("is-open");
   }
 
   function switchView(view) {
     const nextView = String(view || "contflow");
 
-    if (nextView !== "painel-tributario-lr") {
+    if (nextView !== "painel-tributario-lra") {
       closeModal();
     }
 
@@ -2174,10 +2173,9 @@ window.PainelTributarioLRSheet = (() => {
   }
 
   function initRows() {
-    state.sheets[0] = Array.from({ length: MAX_ROWS_START }, () => createEmptyRow());
-    state.sheets[1] = Array.from({ length: MAX_ROWS_START }, () => createEmptyRow());
-    state.sheets[2] = Array.from({ length: MAX_ROWS_START }, () => createEmptyRow());
-    state.sheets[3] = Array.from({ length: MAX_ROWS_START }, () => createEmptyRow());
+    state.sheets = Array.from({ length: MONTH_COUNT }, () =>
+      Array.from({ length: MAX_ROWS_START }, () => createEmptyRow())
+    );
     state.dirty = false;
   }
 
@@ -2189,20 +2187,20 @@ window.PainelTributarioLRSheet = (() => {
       btn.addEventListener("click", () => switchView(btn.dataset.view));
     });
 
-    document.querySelectorAll("#view-painel-tributario-lr .cf-sheet-tab-lr").forEach((btn) => {
+    document.querySelectorAll("#view-painel-tributario-lra .cf-sheet-tab-lr").forEach((btn) => {
       btn.addEventListener("click", () => {
-        document.querySelectorAll("#view-painel-tributario-lr .cf-sheet-tab-lr").forEach((b) => b.classList.remove("is-active"));
+        document.querySelectorAll("#view-painel-tributario-lra .cf-sheet-tab-lr").forEach((b) => b.classList.remove("is-active"));
         btn.classList.add("is-active");
         state.sheetIndex = Number(btn.dataset.sheet);
         state.lastSelectionBounds = null;
-        const search = document.getElementById("ptlr-search");
+        const search = document.getElementById("ptlra-search");
         if (search) search.value = "";
         renderTable();
         requestPainelTributarioRevenueSync(true);
       });
     });
 
-    document.getElementById("ptlr-search")?.addEventListener("input", () => {
+    document.getElementById("ptlra-search")?.addEventListener("input", () => {
       state.lastSelectionBounds = null;
       renderTable();
     });
@@ -2214,42 +2212,42 @@ window.PainelTributarioLRSheet = (() => {
       })
     );
 
-    document.getElementById("ptlr-base-btn")?.addEventListener("click", () => openModal("base"));
-    document.getElementById("ptlr-modal-close")?.addEventListener("click", closeModal);
-    document.getElementById("ptlr-modal-backdrop")?.addEventListener("click", closeModal);
+    document.getElementById("ptlra-base-btn")?.addEventListener("click", () => openModal("base"));
+    document.getElementById("ptlra-modal-close")?.addEventListener("click", closeModal);
+    document.getElementById("ptlra-modal-backdrop")?.addEventListener("click", closeModal);
 
-    document.getElementById("ptlr-add-row")?.addEventListener("click", () => {
+    document.getElementById("ptlra-add-row")?.addEventListener("click", () => {
       addRow();
       closeModal();
     });
 
-    document.getElementById("ptlr-export-json")?.addEventListener("click", () => {
+    document.getElementById("ptlra-export-json")?.addEventListener("click", () => {
       exportJson();
       closeModal();
     });
 
-    document.getElementById("ptlr-export-xlsx")?.addEventListener("click", () => {
+    document.getElementById("ptlra-export-xlsx")?.addEventListener("click", () => {
       exportXlsx();
       closeModal();
     });
 
-    document.getElementById("ptlr-export-xlsx-top")?.addEventListener("click", exportXlsx);
+    document.getElementById("ptlra-export-xlsx-top")?.addEventListener("click", exportXlsx);
 
-    document.getElementById("ptlr-import")?.addEventListener("change", (e) => {
+    document.getElementById("ptlra-import")?.addEventListener("change", (e) => {
       const file = e.target.files?.[0];
       if (file) importJson(file);
       e.target.value = "";
       closeModal();
     });
 
-    document.getElementById("ptlr-save-cells")?.addEventListener("click", saveCells);
-    document.getElementById("ptlr-save-cells-top")?.addEventListener("click", saveCells);
-    document.getElementById("ptlr-save-base")?.addEventListener("click", () => {
+    document.getElementById("ptlra-save-cells")?.addEventListener("click", saveCells);
+    document.getElementById("ptlra-save-cells-top")?.addEventListener("click", saveCells);
+    document.getElementById("ptlra-save-base")?.addEventListener("click", () => {
       saveBase();
       closeModal();
     });
 
-    document.getElementById("ptlr-delete-selected")?.addEventListener("click", () => {
+    document.getElementById("ptlra-delete-selected")?.addEventListener("click", () => {
       deleteSelectedRows();
       closeModal();
     });
@@ -2281,7 +2279,7 @@ window.PainelTributarioLRSheet = (() => {
     renderTable();
     requestPainelTributarioRevenueSync(true);
     ensurePolling();
-    console.log("✅ Painel Tributário LR pronto.");
+    console.log("✅ Painel Tributário - LRA pronto.");
   }
 
   return {
@@ -2293,15 +2291,16 @@ window.PainelTributarioLRSheet = (() => {
     syncRevenueFromPainelTributarioSheets,
     requestPainelTributarioRevenueSync,
     exportBISnapshot: () => ({
-      title: "Painel Tributário - LRT",
-      periodType: "quarter",
+      title: "Painel Tributário - LRA",
+      periodType: "month",
       activeIndex: state.sheetIndex,
-      periodLabels: SHEET_TITLES.slice(),
+      periodLabels: MONTH_TITLES.slice(),
       sheets: deepClone(state.sheets),
       columns: getAllColumns().map(({ key, label, type, percent }) => ({ key, label, type, percent: Boolean(percent) })),
     }),
   };
 })();
+
 
 
 
