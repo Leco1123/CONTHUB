@@ -9,7 +9,7 @@
     />
     <title>ContHub • Boas-vindas</title>
 
-    <link rel="stylesheet" href="./dashboard.css" />
+    <link rel="stylesheet" href="./dashboard.css?v=20260504-01" />
   </head>
 
   <body>
@@ -225,6 +225,13 @@
             </div>
 
             <div class="panel__headerActions">
+              <button
+                class="btn btn--primary"
+                type="button"
+                id="btnOpenQuotaModal"
+              >
+                Concluir quota
+              </button>
 
               <button
                 class="btn btn--ghost"
@@ -476,6 +483,113 @@
 
     </main>
 
-    <script src="./dashboard.js"></script>
+    <div
+      class="dashboardModalBackdrop is-hidden"
+      id="quotaModalBackdrop"
+      aria-hidden="true"
+    >
+      <section
+        class="dashboardModal glass"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="quotaModalTitle"
+      >
+        <div class="dashboardModal__header">
+          <div>
+            <h2 class="h2" id="quotaModalTitle">Concluir quota</h2>
+            <p class="muted">Escolha a empresa, qual quota concluir e como concluir.</p>
+          </div>
+
+          <button
+            class="btn btn--ghost"
+            type="button"
+            id="btnCloseQuotaModal"
+          >
+            Fechar
+          </button>
+        </div>
+
+        <div class="dashboardModal__body">
+          <div class="quotaModalGrid">
+            <label class="quotaModalField">
+              <span>Trimestre</span>
+              <select id="quotaModalQuarter"></select>
+            </label>
+
+            <label class="quotaModalField quotaModalField--wide">
+              <span>Buscar empresa</span>
+              <input
+                id="quotaModalCompanySearch"
+                type="text"
+                placeholder="Digite razão social, código ou CNPJ/CPF"
+              />
+            </label>
+
+            <label class="quotaModalField quotaModalField--wide">
+              <span>Empresa</span>
+              <select id="quotaModalCompanySelect" size="8"></select>
+            </label>
+
+            <div class="quotaModalPreview" id="quotaModalPreview">
+              Selecione uma empresa para ver as quotas atuais.
+            </div>
+
+            <label class="quotaModalField">
+              <span>Qual quota</span>
+              <select id="quotaModalQuotaStage">
+                <option value="quota1">1º quota</option>
+                <option value="quota2">2º quota</option>
+                <option value="quota3">3º quota</option>
+              </select>
+            </label>
+
+            <label class="quotaModalField">
+              <span>Como concluir</span>
+              <select id="quotaModalMode">
+                <option value="compensacao">Compensação</option>
+                <option value="prejuizo">Prejuízo</option>
+                <option value="sm">S/M</option>
+                <option value="data">Data</option>
+                <option value="outro">Outro valor</option>
+              </select>
+            </label>
+
+            <label class="quotaModalField quotaModalField--conditional is-hidden" id="quotaModalDateWrap">
+              <span>Data</span>
+              <input id="quotaModalDate" type="date" />
+            </label>
+
+            <label class="quotaModalField quotaModalField--conditional is-hidden" id="quotaModalTextWrap">
+              <span>Outro valor</span>
+              <input id="quotaModalText" type="text" placeholder="Digite como deseja concluir" />
+            </label>
+          </div>
+        </div>
+
+        <div class="dashboardModal__footer">
+          <div class="quotaModalStatus" id="quotaModalStatus"></div>
+
+          <div class="dashboardModal__actions">
+            <button
+              class="btn btn--ghost"
+              type="button"
+              id="btnQuotaModalCancel"
+            >
+              Cancelar
+            </button>
+
+            <button
+              class="btn btn--primary"
+              type="button"
+              id="btnQuotaModalSave"
+            >
+              Salvar conclusão
+            </button>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <script src="./dashboard.js?v=20260504-01"></script>
   </body>
 </html>

@@ -23,15 +23,16 @@ function normalizeIdentity(value) {
   return String(value || "").trim().toLowerCase();
 }
 
+const EXTRA_BASE_OWNER_EMAILS = new Set(
+  String(process.env.SHEET_BASE_OWNER_EMAILS || "")
+    .split(",")
+    .map((value) => normalizeIdentity(value))
+    .filter(Boolean)
+);
+
 function canManageSheetBase(user) {
   const email = normalizeIdentity(user?.email);
-  const name = normalizeIdentity(user?.name || user?.nome);
-
-  return (
-    BASE_OWNER_EMAILS.has(email) ||
-    (email.includes("leandro") && email.endsWith("@franco-rnc.com.br")) ||
-    name.includes("leandro")
-  );
+  return BASE_OWNER_EMAILS.has(email) || EXTRA_BASE_OWNER_EMAILS.has(email);
 }
 
 function requireSheetBaseOwner(req, res) {

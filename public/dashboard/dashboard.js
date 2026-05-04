@@ -12,7 +12,20 @@
     doc: null,
     lastSignature: "",
     pollTimer: null,
+    refreshPromise: null,
+    visibilityBound: false,
   };
+  const dashboardQuotaModalState = {
+    open: false,
+    loading: false,
+    saving: false,
+    sheetKey: "contflow",
+    sheets: new Map(),
+    filteredRows: [],
+  };
+  let nextActionsStateCache = null;
+  let contFlowSnapshotCache = null;
+  let contFlowFeedCache = null;
 
   // ----------------------------
   // CONFIG
@@ -21,6 +34,19 @@
   const API_MODULES = `${API_BASE}/api/admin/modules`;
 
   const CONTFLOW_KEY = "conthub:contflow:data";
+  const CONTFLOW_QUARTER_SHEETS = [
+    { key: "contflow", label: "1º Trimestre" },
+    { key: "contflow-q2", label: "2º Trimestre" },
+    { key: "contflow-q3", label: "3º Trimestre" },
+    { key: "contflow-q4", label: "4º Trimestre" },
+  ];
+  const QUOTA_MODAL_MODE_LABELS = {
+    compensacao: "Compensação",
+    prejuizo: "Prejuízo",
+    sm: "S/M",
+    data: "Data",
+    outro: "Outro valor",
+  };
   const TICKETS_API_SHEET_KEY = "dashboard-chamados";
   const TICKETS_API_SHEET_URL = `${API_BASE}/api/sheets/${TICKETS_API_SHEET_KEY}`;
   const TICKETS_POLL_INTERVAL_MS = 10000;
@@ -71,6 +97,24 @@
       .replaceAll(">", "&gt;")
       .replaceAll('"', "&quot;")
       .replaceAll("'", "&#039;");
+  }
+
+  function normalizeSearchText(value) {
+    return String(value || "")
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .trim()
+      .toLowerCase();
+  }
+
+  function normalizeColumnLabel(value) {
+    return normalizeSearchText(value).replace(/[^\w]+/g, " ").trim();
+  }
+
+  function formatDateInputToBR(value) {
+    const match = String(value || "").trim().match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (!match) return "";
+    return `${match[3]}/${match[2]}/${match[1]}`;
   }
 
   function goto(url) {
@@ -217,6 +261,10 @@
     }
   }
 
+  function cloneState(value) {
+    return value ? JSON.parse(JSON.stringify(value)) : value;
+  }
+
   function getSidebarCards() {
     return Array.from(
       document.querySelectorAll(".modulos-sidebar .cards-modulos[data-module-id]")
@@ -334,7 +382,11 @@
     localStorage.setItem(nextActionsStorageKeyLegacy(), JSON.stringify(state));
   }
 
-  async function getNextActionsState() {
+  async function getNextActionsState({ force = false } = {}) {
+    if (!force && nextActionsStateCache) {
+      return cloneState(nextActionsStateCache);
+    }
+
     try {
       const resp = await apiFetch("/api/dashboard/next-actions", { method: "GET" });
       if (!resp || !resp.ok) throw new Error("GET next-actions failed");
@@ -347,27 +399,39 @@
       const checks = Array.isArray(data?.checks) ? data.checks.slice(0, 6) : [...DEFAULT_CHECKS];
       while (checks.length < 6) checks.push(false);
 
-      return { manual, checks };
+      nextActionsStateCache = { manual, checks };
+      return cloneState(nextActionsStateCache);
     } catch (e) {
-      return loadNextActionsStateLegacy();
+      nextActionsStateCache = loadNextActionsStateLegacy();
+      return cloneState(nextActionsStateCache);
     }
   }
 
   async function saveNextActionsState(state) {
+    const normalized = {
+      manual: Array.isArray(state?.manual) ? state.manual.slice(0, 6) : [...DEFAULT_MANUAL],
+      checks: Array.isArray(state?.checks) ? state.checks.slice(0, 6) : [...DEFAULT_CHECKS],
+    };
+
+    while (normalized.manual.length < 6) normalized.manual.push("");
+    while (normalized.checks.length < 6) normalized.checks.push(false);
+
+    nextActionsStateCache = cloneState(normalized);
+    saveNextActionsStateLegacy(normalized);
+
     try {
       const resp = await apiFetch("/api/dashboard/next-actions", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          manual: (state.manual || []).slice(0, 6),
-          checks: (state.checks || []).slice(0, 6),
+          manual: normalized.manual.slice(0, 6),
+          checks: normalized.checks.slice(0, 6),
         }),
       });
 
       if (!resp || !resp.ok) throw new Error("PUT next-actions failed");
       return true;
     } catch (e) {
-      saveNextActionsStateLegacy(state);
       return false;
     }
   }
@@ -584,13 +648,17 @@
       const resp = await apiFetch(TICKETS_API_SHEET_URL, { method: "GET" });
       const data = await resp?.json().catch(() => null);
       if (!resp || !resp.ok) throw new Error(data?.error || "Falha ao carregar chamados.");
-      return (
+      const doc = (
         relationalSheetToTicketsDocument(data) ||
         normalizeTicketsDocument(data?.payload || data?.sheet || data)
       );
+      dashboardTicketsState.doc = doc;
+      return doc;
     } catch (err) {
       console.warn("Falha ao carregar chamados do banco, usando fallback local:", err);
-      return loadTicketsStateLegacy();
+      const doc = loadTicketsStateLegacy();
+      dashboardTicketsState.doc = doc;
+      return doc;
     }
   }
 
@@ -840,18 +908,34 @@
   }
 
   async function refreshTickets({ force = false } = {}) {
-    const doc = await loadTicketsDocument();
-    const signature = getTicketsSignature(doc);
-    const changed = force || dashboardTicketsState.lastSignature !== signature;
+    if (!force && dashboardTicketsState.refreshPromise) {
+      return dashboardTicketsState.refreshPromise;
+    }
 
-    dashboardTicketsState.doc = doc;
-    dashboardTicketsState.lastSignature = signature;
+    const run = (async () => {
+      const doc = await loadTicketsDocument();
+      const signature = getTicketsSignature(doc);
+      const changed = force || dashboardTicketsState.lastSignature !== signature;
 
-    if (changed) {
-      renderTickets();
-      renderTiTickets();
-    } else {
-      renderTiTickets();
+      dashboardTicketsState.doc = doc;
+      dashboardTicketsState.lastSignature = signature;
+
+      if (changed) {
+        renderTickets();
+        renderTiTickets();
+      } else {
+        renderTiTickets();
+      }
+    })();
+
+    dashboardTicketsState.refreshPromise = run;
+
+    try {
+      await run;
+    } finally {
+      if (dashboardTicketsState.refreshPromise === run) {
+        dashboardTicketsState.refreshPromise = null;
+      }
     }
   }
 
@@ -1041,14 +1125,18 @@
   function startTicketsSyncLoop() {
     if (dashboardTicketsState.pollTimer) clearInterval(dashboardTicketsState.pollTimer);
     dashboardTicketsState.pollTimer = setInterval(() => {
+      if (document.hidden) return;
       refreshTickets().catch((err) => console.warn("Falha ao sincronizar chamados:", err));
     }, TICKETS_POLL_INTERVAL_MS);
 
-    document.addEventListener("visibilitychange", () => {
-      if (!document.hidden) {
-        refreshTickets().catch((err) => console.warn("Falha ao sincronizar chamados:", err));
-      }
-    });
+    if (!dashboardTicketsState.visibilityBound) {
+      dashboardTicketsState.visibilityBound = true;
+      document.addEventListener("visibilitychange", () => {
+        if (!document.hidden) {
+          refreshTickets().catch((err) => console.warn("Falha ao sincronizar chamados:", err));
+        }
+      });
+    }
   }
 
   // ----------------------------
@@ -1067,6 +1155,159 @@
     if (!raw) return [];
     const data = safeJSONParse(raw, []);
     return Array.isArray(data) ? data : [];
+  }
+
+  function getContFlowQuarterSheets() {
+    return CONTFLOW_QUARTER_SHEETS.map((item) => ({ ...item }));
+  }
+
+  function findContFlowCellValue(cellsMap, rowId, keys) {
+    const rowKey = String(rowId || "").trim();
+    if (!rowKey || !cellsMap || !(cellsMap instanceof Map)) return "";
+
+    const candidateKeys = Array.isArray(keys) ? keys : [keys];
+    for (const candidate of candidateKeys) {
+      const colKey = String(candidate || "").trim();
+      if (!colKey) continue;
+      const cell = cellsMap.get(`${rowKey}::${colKey}`);
+      if (cell && cell.value != null) return String(cell.value);
+    }
+
+    return "";
+  }
+
+  function normalizeContFlowSheetPayload(payload, sheetKey) {
+    if (
+      !payload ||
+      !Array.isArray(payload.columns) ||
+      !Array.isArray(payload.rows) ||
+      !Array.isArray(payload.cells)
+    ) {
+      return null;
+    }
+
+    const columns = payload.columns
+      .map((col, index) => ({
+        id: col?.id ?? null,
+        key: String(col?.key || "").trim(),
+        label: String(col?.label || "").trim(),
+        order: Number.isFinite(Number(col?.order)) ? Number(col.order) : index,
+      }))
+      .filter((col) => col.key);
+
+    const columnAliasMap = new Map();
+    columns.forEach((col) => {
+      columnAliasMap.set(col.key, col.key);
+
+      const normalizedLabel = normalizeColumnLabel(col.label);
+      if (!normalizedLabel) return;
+
+      if (/^cod|^codigo/.test(normalizedLabel)) columnAliasMap.set("cod", col.key);
+      if (/razao social/.test(normalizedLabel)) columnAliasMap.set("razao_social", col.key);
+      if (/cnpj|cpf/.test(normalizedLabel)) columnAliasMap.set("cnpj_cpf", col.key);
+      if (/^tipo\b/.test(normalizedLabel)) columnAliasMap.set("tipo", col.key);
+      if (/quota\s*1|1 quota/.test(normalizedLabel)) columnAliasMap.set("quota1", col.key);
+      if (/quota\s*2|2 quota/.test(normalizedLabel)) columnAliasMap.set("quota2", col.key);
+      if (/quota\s*3|3 quota/.test(normalizedLabel)) columnAliasMap.set("quota3", col.key);
+    });
+
+    const cellsMap = new Map();
+    payload.cells.forEach((cell) => {
+      const rowId = String(cell?.rowId || "").trim();
+      const colKey = String(cell?.colKey || "").trim();
+      if (!rowId || !colKey) return;
+      cellsMap.set(`${rowId}::${colKey}`, {
+        value: cell?.value == null ? "" : String(cell.value),
+        updatedAt: cell?.updatedAt ? String(cell.updatedAt) : "",
+        updatedBy: cell?.updatedBy || null,
+      });
+    });
+
+    const rows = payload.rows.map((row, index) => {
+      const rowId = String(row?.id || row?.clientRowId || "").trim();
+      const resolved = {
+        __sheetKey: sheetKey,
+        __rowId: rowId,
+        __clientRowId: String(row?.clientRowId || "").trim(),
+        __order: Number.isFinite(Number(row?.order)) ? Number(row.order) : index,
+      };
+
+      columns.forEach((col) => {
+        resolved[col.key] = findContFlowCellValue(cellsMap, rowId, col.key);
+      });
+
+      resolved.cod = findContFlowCellValue(cellsMap, rowId, [
+        columnAliasMap.get("cod"),
+        "cod",
+      ]);
+      resolved.razao_social = findContFlowCellValue(cellsMap, rowId, [
+        columnAliasMap.get("razao_social"),
+        "razao_social",
+      ]);
+      resolved.cnpj_cpf = findContFlowCellValue(cellsMap, rowId, [
+        columnAliasMap.get("cnpj_cpf"),
+        "cnpj_cpf",
+      ]);
+      resolved.tipo = findContFlowCellValue(cellsMap, rowId, [
+        columnAliasMap.get("tipo"),
+        "tipo",
+      ]);
+      resolved.quota1 = findContFlowCellValue(cellsMap, rowId, [
+        columnAliasMap.get("quota1"),
+        "quota1",
+      ]);
+      resolved.quota2 = findContFlowCellValue(cellsMap, rowId, [
+        columnAliasMap.get("quota2"),
+        "quota2",
+      ]);
+      resolved.quota3 = findContFlowCellValue(cellsMap, rowId, [
+        columnAliasMap.get("quota3"),
+        "quota3",
+      ]);
+
+      resolved.__search = normalizeSearchText([
+        resolved.cod,
+        resolved.razao_social,
+        resolved.cnpj_cpf,
+        resolved.tipo,
+      ].filter(Boolean).join(" "));
+
+      return resolved;
+    });
+
+    rows.sort((a, b) => a.__order - b.__order);
+
+    return {
+      sheetKey,
+      columns,
+      rows,
+      cellsMap,
+      columnAliasMap,
+      fetchedAt: new Date().toISOString(),
+    };
+  }
+
+  async function loadContFlowSheetForQuotaModal(sheetKey, { force = false } = {}) {
+    const safeSheetKey = String(sheetKey || "contflow").trim() || "contflow";
+    if (!force && dashboardQuotaModalState.sheets.has(safeSheetKey)) {
+      return dashboardQuotaModalState.sheets.get(safeSheetKey);
+    }
+
+    const resp = await apiFetch(`${API_BASE}/api/sheets/${encodeURIComponent(safeSheetKey)}`, {
+      method: "GET",
+    });
+    const data = await resp?.json().catch(() => null);
+    if (!resp || !resp.ok) {
+      throw new Error(data?.error || `Falha ao carregar ${safeSheetKey}.`);
+    }
+
+    const normalized = normalizeContFlowSheetPayload(data, safeSheetKey);
+    if (!normalized) {
+      throw new Error("A base do ContFlow veio em formato inválido.");
+    }
+
+    dashboardQuotaModalState.sheets.set(safeSheetKey, normalized);
+    return normalized;
   }
 
   function loadContFlowSnapshotLegacy() {
@@ -1092,18 +1333,27 @@
     localStorage.setItem(contFlowFeedKeyLegacy(), JSON.stringify(feed.slice(0, 12)));
   }
 
-  async function getContFlowSnapshot() {
+  async function getContFlowSnapshot({ force = false } = {}) {
+    if (!force && contFlowSnapshotCache) {
+      return cloneState(contFlowSnapshotCache);
+    }
+
     try {
       const resp = await apiFetch("/api/dashboard/contflow-snapshot", { method: "GET" });
       if (!resp || !resp.ok) throw new Error("GET snapshot failed");
       const snap = await resp.json().catch(() => null);
-      return snap && typeof snap === "object" ? snap : null;
+      contFlowSnapshotCache = snap && typeof snap === "object" ? snap : null;
+      return cloneState(contFlowSnapshotCache);
     } catch {
-      return loadContFlowSnapshotLegacy();
+      contFlowSnapshotCache = loadContFlowSnapshotLegacy();
+      return cloneState(contFlowSnapshotCache);
     }
   }
 
   async function saveContFlowSnapshot(snapshot) {
+    contFlowSnapshotCache = snapshot && typeof snapshot === "object" ? cloneState(snapshot) : null;
+    saveContFlowSnapshotLegacy(snapshot);
+
     try {
       const resp = await apiFetch("/api/dashboard/contflow-snapshot", {
         method: "PUT",
@@ -1114,23 +1364,33 @@
       if (!resp || !resp.ok) throw new Error("PUT snapshot failed");
       return true;
     } catch {
-      saveContFlowSnapshotLegacy(snapshot);
       return false;
     }
   }
 
-  async function getContFlowFeed() {
+  async function getContFlowFeed({ force = false } = {}) {
+    if (!force && contFlowFeedCache) {
+      return cloneState(contFlowFeedCache);
+    }
+
     try {
       const resp = await apiFetch("/api/dashboard/contflow-feed", { method: "GET" });
       if (!resp || !resp.ok) throw new Error("GET feed failed");
       const feed = await resp.json().catch(() => []);
-      return Array.isArray(feed) ? feed : [];
+      contFlowFeedCache = Array.isArray(feed) ? feed : [];
+      return cloneState(contFlowFeedCache);
     } catch {
-      return loadContFlowFeedLegacy();
+      contFlowFeedCache = loadContFlowFeedLegacy();
+      return cloneState(contFlowFeedCache);
     }
   }
 
   async function pushContFlowFeedItem(item) {
+    const currentFeed = Array.isArray(contFlowFeedCache) ? contFlowFeedCache.slice() : loadContFlowFeedLegacy();
+    currentFeed.unshift(item);
+    contFlowFeedCache = currentFeed.slice(0, 12);
+    pushContFlowFeedItemLegacy(item);
+
     try {
       const resp = await apiFetch("/api/dashboard/contflow-feed", {
         method: "POST",
@@ -1141,7 +1401,6 @@
       if (!resp || !resp.ok) throw new Error("POST feed failed");
       return true;
     } catch {
-      pushContFlowFeedItemLegacy(item);
       return false;
     }
   }
@@ -1224,8 +1483,10 @@
     const elText = document.getElementById("contflowNewsText");
     const elFeed = document.getElementById("contflowNewsFeed");
 
-    const snap = await getContFlowSnapshot();
-    const feed = await getContFlowFeed();
+    const [snap, feed] = await Promise.all([
+      getContFlowSnapshot(),
+      getContFlowFeed(),
+    ]);
 
     if (elText) {
       if (!snap) {
@@ -1259,6 +1520,363 @@
           })
           .join("");
       }
+    }
+  }
+
+  function getQuotaModalElements() {
+    return {
+      backdrop: document.getElementById("quotaModalBackdrop"),
+      openBtn: document.getElementById("btnOpenQuotaModal"),
+      closeBtn: document.getElementById("btnCloseQuotaModal"),
+      cancelBtn: document.getElementById("btnQuotaModalCancel"),
+      saveBtn: document.getElementById("btnQuotaModalSave"),
+      quarter: document.getElementById("quotaModalQuarter"),
+      search: document.getElementById("quotaModalCompanySearch"),
+      company: document.getElementById("quotaModalCompanySelect"),
+      preview: document.getElementById("quotaModalPreview"),
+      stage: document.getElementById("quotaModalQuotaStage"),
+      mode: document.getElementById("quotaModalMode"),
+      dateWrap: document.getElementById("quotaModalDateWrap"),
+      date: document.getElementById("quotaModalDate"),
+      textWrap: document.getElementById("quotaModalTextWrap"),
+      text: document.getElementById("quotaModalText"),
+      status: document.getElementById("quotaModalStatus"),
+    };
+  }
+
+  function getQuotaStageLabel(stage) {
+    if (stage === "quota2") return "2º quota";
+    if (stage === "quota3") return "3º quota";
+    return "1º quota";
+  }
+
+  function buildQuotaModalCompanyLabel(row) {
+    const bits = [
+      String(row?.cod || "").trim(),
+      String(row?.razao_social || "").trim(),
+      String(row?.cnpj_cpf || "").trim(),
+    ].filter(Boolean);
+    return bits.join(" · ") || "Empresa sem identificação";
+  }
+
+  function getQuotaModalCurrentSheet() {
+    return dashboardQuotaModalState.sheets.get(dashboardQuotaModalState.sheetKey) || null;
+  }
+
+  function getQuotaModalSelectedRow() {
+    const { company } = getQuotaModalElements();
+    const selectedRowId = String(company?.value || "").trim();
+    if (!selectedRowId) return null;
+    const sheet = getQuotaModalCurrentSheet();
+    return sheet?.rows.find((row) => String(row.__rowId || "") === selectedRowId) || null;
+  }
+
+  function updateQuotaModalStatus(message, tone = "") {
+    const { status } = getQuotaModalElements();
+    if (!status) return;
+    status.textContent = String(message || "").trim();
+    status.setAttribute("data-tone", tone || "");
+  }
+
+  function syncQuotaModalConditionalFields() {
+    const { mode, dateWrap, textWrap, date, text } = getQuotaModalElements();
+    const currentMode = String(mode?.value || "").trim();
+    const showDate = currentMode === "data";
+    const showText = currentMode === "outro";
+
+    dateWrap?.classList.toggle("is-hidden", !showDate);
+    textWrap?.classList.toggle("is-hidden", !showText);
+
+    if (!showDate && date) date.value = "";
+    if (!showText && text) text.value = "";
+  }
+
+  function getQuotaModalFilteredRows(sheet, query) {
+    if (!sheet || !Array.isArray(sheet.rows)) return [];
+    const normalizedQuery = normalizeSearchText(query);
+    if (!normalizedQuery) return sheet.rows.slice(0, 200);
+    return sheet.rows
+      .filter((row) => String(row.__search || "").includes(normalizedQuery))
+      .slice(0, 200);
+  }
+
+  function renderQuotaModalCompanies() {
+    const { search, company } = getQuotaModalElements();
+    const sheet = getQuotaModalCurrentSheet();
+    const currentValue = String(company?.value || "").trim();
+    const rows = getQuotaModalFilteredRows(sheet, search?.value || "");
+    dashboardQuotaModalState.filteredRows = rows;
+
+    if (!company) return;
+    company.innerHTML = "";
+
+    rows.forEach((row) => {
+      const opt = document.createElement("option");
+      opt.value = String(row.__rowId || "");
+      opt.textContent = buildQuotaModalCompanyLabel(row);
+      company.appendChild(opt);
+    });
+
+    if (!rows.length) {
+      const opt = document.createElement("option");
+      opt.value = "";
+      opt.textContent = "Nenhuma empresa encontrada.";
+      company.appendChild(opt);
+      company.value = "";
+      return;
+    }
+
+    const preferred =
+      rows.find((row) => String(row.__rowId || "") === currentValue) ||
+      rows[0];
+    company.value = String(preferred?.__rowId || "");
+  }
+
+  function renderQuotaModalPreview() {
+    const { preview, stage, company } = getQuotaModalElements();
+    if (!preview) return;
+
+    const row = getQuotaModalSelectedRow();
+    if (!row) {
+      preview.innerHTML = "Selecione uma empresa para ver as quotas atuais.";
+      return;
+    }
+
+    const currentStage = String(stage?.value || "quota1").trim() || "quota1";
+    const values = [
+      { key: "quota1", label: "1º quota", value: String(row.quota1 || "").trim() || "—" },
+      { key: "quota2", label: "2º quota", value: String(row.quota2 || "").trim() || "—" },
+      { key: "quota3", label: "3º quota", value: String(row.quota3 || "").trim() || "—" },
+    ];
+
+    preview.innerHTML = `
+      <strong>${escapeHTML(String(row.razao_social || buildQuotaModalCompanyLabel(row)))}</strong>
+      <span>Código: ${escapeHTML(String(row.cod || "—"))} • CNPJ/CPF: ${escapeHTML(String(row.cnpj_cpf || "—"))}</span>
+      <span>Tipo: ${escapeHTML(String(row.tipo || "—"))}</span>
+      <div class="quotaModalPreview__list">
+        ${values.map((item) => `
+          <div class="quotaModalPreview__item${item.key === currentStage ? " is-active" : ""}">
+            <strong>${escapeHTML(item.label)}</strong>
+            <span>${escapeHTML(item.value)}</span>
+          </div>
+        `).join("")}
+      </div>
+    `;
+
+    if (company && !company.value) {
+      company.value = String(row.__rowId || "");
+    }
+  }
+
+  async function populateQuotaModalForSheet(sheetKey, { force = false } = {}) {
+    dashboardQuotaModalState.loading = true;
+    updateQuotaModalStatus("Carregando empresas do ContFlow...", "");
+
+    try {
+      dashboardQuotaModalState.sheetKey = String(sheetKey || "contflow").trim() || "contflow";
+      await loadContFlowSheetForQuotaModal(dashboardQuotaModalState.sheetKey, { force });
+      renderQuotaModalCompanies();
+      renderQuotaModalPreview();
+      updateQuotaModalStatus("Escolha a empresa, a quota e como deseja concluir.", "");
+    } catch (err) {
+      console.warn("Falha ao carregar base para concluir quota:", err);
+      renderQuotaModalCompanies();
+      renderQuotaModalPreview();
+      updateQuotaModalStatus(err?.message || "Não foi possível carregar a base do ContFlow.", "danger");
+    } finally {
+      dashboardQuotaModalState.loading = false;
+    }
+  }
+
+  function setQuotaModalOpen(open) {
+    const els = getQuotaModalElements();
+    if (!els.backdrop) return;
+
+    const shouldOpen = Boolean(open);
+    dashboardQuotaModalState.open = shouldOpen;
+    els.backdrop.classList.toggle("is-hidden", !shouldOpen);
+    els.backdrop.setAttribute("aria-hidden", shouldOpen ? "false" : "true");
+
+    if (shouldOpen) {
+      updateQuotaModalStatus("Preparando base do trimestre...", "");
+      syncQuotaModalConditionalFields();
+      populateQuotaModalForSheet(els.quarter?.value || dashboardQuotaModalState.sheetKey).finally(() => {
+        els.search?.focus();
+      });
+      return;
+    }
+
+    updateQuotaModalStatus("", "");
+    if (els.date) els.date.value = "";
+    if (els.text) els.text.value = "";
+    if (els.search) els.search.value = "";
+  }
+
+  function getQuotaModalCompletionValue() {
+    const { mode, date, text } = getQuotaModalElements();
+    const currentMode = String(mode?.value || "").trim();
+
+    if (currentMode === "compensacao") return "Compensação";
+    if (currentMode === "prejuizo") return "Prejuízo";
+    if (currentMode === "sm") return "S/M";
+    if (currentMode === "data") {
+      const formatted = formatDateInputToBR(date?.value || "");
+      if (!formatted) throw new Error("Escolha uma data válida para concluir a quota.");
+      return formatted;
+    }
+
+    const customValue = String(text?.value || "").trim();
+    if (!customValue) {
+      throw new Error("Digite como deseja concluir a quota.");
+    }
+    return customValue;
+  }
+
+  async function saveQuotaModalConclusion() {
+    if (dashboardQuotaModalState.saving) return;
+
+    const els = getQuotaModalElements();
+    const row = getQuotaModalSelectedRow();
+    const stage = String(els.stage?.value || "quota1").trim() || "quota1";
+
+    if (!row) {
+      updateQuotaModalStatus("Escolha uma empresa antes de salvar.", "danger");
+      return;
+    }
+
+    let value = "";
+    try {
+      value = getQuotaModalCompletionValue();
+    } catch (err) {
+      updateQuotaModalStatus(err?.message || "Revise os dados antes de salvar.", "danger");
+      return;
+    }
+
+    const sheet = getQuotaModalCurrentSheet();
+    const targetColKey = sheet?.columnAliasMap?.get(stage) || stage;
+    if (!sheet || !targetColKey) {
+      updateQuotaModalStatus("Não encontrei a coluna da quota nessa base.", "danger");
+      return;
+    }
+
+    const cellMeta = sheet.cellsMap.get(`${row.__rowId}::${targetColKey}`) || null;
+    dashboardQuotaModalState.saving = true;
+    if (els.saveBtn) els.saveBtn.disabled = true;
+    updateQuotaModalStatus(`Salvando ${getQuotaStageLabel(stage)} de ${row.razao_social || "empresa"}...`, "");
+
+    try {
+      const resp = await apiFetch(`${API_BASE}/api/sheets/${encodeURIComponent(sheet.sheetKey)}/cells`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          changes: [
+            {
+              rowId: row.__rowId,
+              colKey: targetColKey,
+              value,
+              expectedUpdatedAt: cellMeta?.updatedAt || "",
+            },
+          ],
+        }),
+      });
+      const data = await resp?.json().catch(() => null);
+      if (!resp || !resp.ok) {
+        throw new Error(data?.error || "Não foi possível salvar a conclusão da quota.");
+      }
+
+      dashboardQuotaModalState.sheets.delete(sheet.sheetKey);
+      await populateQuotaModalForSheet(sheet.sheetKey, { force: true });
+      syncQuotaModalConditionalFields();
+      updateQuotaModalStatus(
+        `${getQuotaStageLabel(stage)} concluído como ${QUOTA_MODAL_MODE_LABELS[String(els.mode?.value || "").trim()] || "valor informado"}.`,
+        "success"
+      );
+    } catch (err) {
+      console.warn("Falha ao concluir quota pelo dashboard:", err);
+      updateQuotaModalStatus(err?.message || "Não foi possível salvar a quota agora.", "danger");
+    } finally {
+      dashboardQuotaModalState.saving = false;
+      if (els.saveBtn) els.saveBtn.disabled = false;
+    }
+  }
+
+  function bindQuotaModal() {
+    const els = getQuotaModalElements();
+    if (!els.backdrop || !els.openBtn) return;
+
+    if (els.quarter && !els.quarter.__quotaBound) {
+      els.quarter.__quotaBound = true;
+      els.quarter.innerHTML = getContFlowQuarterSheets()
+        .map((item) => `<option value="${escapeHTML(item.key)}">${escapeHTML(item.label)}</option>`)
+        .join("");
+      els.quarter.value = dashboardQuotaModalState.sheetKey;
+      els.quarter.addEventListener("change", async () => {
+        await populateQuotaModalForSheet(els.quarter.value, { force: false });
+      });
+    }
+
+    if (!els.openBtn.__quotaBound) {
+      els.openBtn.__quotaBound = true;
+      els.openBtn.addEventListener("click", () => setQuotaModalOpen(true));
+    }
+
+    [els.closeBtn, els.cancelBtn].forEach((btn) => {
+      if (!btn || btn.__quotaBound) return;
+      btn.__quotaBound = true;
+      btn.addEventListener("click", () => setQuotaModalOpen(false));
+    });
+
+    if (!els.backdrop.__quotaBound) {
+      els.backdrop.__quotaBound = true;
+      els.backdrop.addEventListener("click", (event) => {
+        if (event.target === els.backdrop) setQuotaModalOpen(false);
+      });
+    }
+
+    if (els.search && !els.search.__quotaBound) {
+      els.search.__quotaBound = true;
+      els.search.addEventListener("input", () => {
+        renderQuotaModalCompanies();
+        renderQuotaModalPreview();
+      });
+    }
+
+    if (els.company && !els.company.__quotaBound) {
+      els.company.__quotaBound = true;
+      els.company.addEventListener("change", () => {
+        renderQuotaModalPreview();
+      });
+    }
+
+    if (els.stage && !els.stage.__quotaBound) {
+      els.stage.__quotaBound = true;
+      els.stage.addEventListener("change", () => {
+        renderQuotaModalPreview();
+      });
+    }
+
+    if (els.mode && !els.mode.__quotaBound) {
+      els.mode.__quotaBound = true;
+      els.mode.addEventListener("change", () => {
+        syncQuotaModalConditionalFields();
+        updateQuotaModalStatus("Revise a forma de conclusão e salve quando estiver certo.", "");
+      });
+    }
+
+    if (els.saveBtn && !els.saveBtn.__quotaBound) {
+      els.saveBtn.__quotaBound = true;
+      els.saveBtn.addEventListener("click", async () => {
+        await saveQuotaModalConclusion();
+      });
+    }
+
+    if (!document.body.__quotaModalEscBound) {
+      document.body.__quotaModalEscBound = true;
+      document.addEventListener("keydown", (event) => {
+        if (event.key === "Escape" && dashboardQuotaModalState.open) {
+          setQuotaModalOpen(false);
+        }
+      });
     }
   }
 
@@ -1660,10 +2278,9 @@
         const i = Number(delBtn.getAttribute("data-del"));
         if (!Number.isFinite(i) || i < 0 || i > 5) return;
 
-        const st = await getNextActionsState();
-        st.manual[i] = "";
-        st.checks[i] = false;
-        await saveNextActionsState(st);
+        state.manual[i] = "";
+        state.checks[i] = false;
+        await saveNextActionsState(state);
         await renderNextActions();
         return;
       }
@@ -1675,10 +2292,10 @@
         const i = Number(chk.getAttribute("data-check"));
         if (!Number.isFinite(i) || i < 0 || i > 5) return;
 
-        const st = await getNextActionsState();
-        st.checks[i] = Boolean(chk.checked);
-        await saveNextActionsState(st);
-        await renderNextActions();
+        state.checks[i] = Boolean(chk.checked);
+        await saveNextActionsState(state);
+        const row = chk.closest(".todo__row");
+        if (row) row.classList.toggle("is-done", state.checks[i]);
         return;
       }
     };
@@ -1692,10 +2309,10 @@
       });
 
       input.addEventListener("blur", async () => {
-        const st = await getNextActionsState();
-        st.manual[idx] = String(input.value || "").trim().slice(0, 220);
-        await saveNextActionsState(st);
-        input.classList.toggle("is-empty", !st.manual[idx]);
+        state.manual[idx] = String(input.value || "").trim().slice(0, 220);
+        await saveNextActionsState(state);
+        input.value = state.manual[idx];
+        input.classList.toggle("is-empty", !state.manual[idx]);
       });
 
       input.addEventListener("keydown", async (e) => {
@@ -1802,6 +2419,7 @@
     fillModulesStats();
     bindGotoButtons();
     bindTicketButtons();
+    bindQuotaModal();
 
     await computeContFlowNewsAndSaveSnapshot();
     await renderContFlowNewsBadge();

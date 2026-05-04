@@ -2,6 +2,7 @@
 const express = require("express");
 const router = express.Router();
 const db = require("../db");
+const NEXT_ACTIONS_COUNT = 6;
 
 // ===================================================
 // HELPERS
@@ -41,30 +42,30 @@ function getUserId(req) {
 // helper: normaliza arrays fixos
 function normalizeManual(arr) {
   const out = Array.isArray(arr)
-    ? arr.slice(0, 4).map((x) => String(x ?? "").slice(0, 220))
-    : ["", "", "", ""];
+    ? arr.slice(0, NEXT_ACTIONS_COUNT).map((x) => String(x ?? "").slice(0, 220))
+    : Array.from({ length: NEXT_ACTIONS_COUNT }, () => "");
 
-  while (out.length < 4) out.push("");
+  while (out.length < NEXT_ACTIONS_COUNT) out.push("");
   return out;
 }
 
 function normalizeChecks(arr) {
   const out = Array.isArray(arr)
-    ? arr.slice(0, 4).map((x) => Boolean(x))
-    : [false, false, false, false];
+    ? arr.slice(0, NEXT_ACTIONS_COUNT).map((x) => Boolean(x))
+    : Array.from({ length: NEXT_ACTIONS_COUNT }, () => false);
 
-  while (out.length < 4) out.push(false);
+  while (out.length < NEXT_ACTIONS_COUNT) out.push(false);
   return out;
 }
 
 // ===================================================
 // NEXT ACTIONS
-// GET/PUT no formato do front: { manual: [4], checks: [4] }
+// GET/PUT no formato do front: { manual: [6], checks: [6] }
 // ===================================================
 
 /**
  * GET /api/dashboard/next-actions
- * Retorna { manual: string[4], checks: boolean[4] }
+ * Retorna { manual: string[6], checks: boolean[6] }
  */
 router.get("/next-actions", async (req, res) => {
   try {
@@ -78,12 +79,12 @@ router.get("/next-actions", async (req, res) => {
       orderBy: { position: "asc" },
     });
 
-    const manual = ["", "", "", ""];
-    const checks = [false, false, false, false];
+    const manual = Array.from({ length: NEXT_ACTIONS_COUNT }, () => "");
+    const checks = Array.from({ length: NEXT_ACTIONS_COUNT }, () => false);
 
     for (const r of rows) {
       const p = Number(r.position);
-      if (p >= 0 && p <= 3) {
+      if (p >= 0 && p < NEXT_ACTIONS_COUNT) {
         manual[p] = String(r.text ?? "").slice(0, 220);
         checks[p] = Boolean(r.done);
       }
@@ -98,7 +99,7 @@ router.get("/next-actions", async (req, res) => {
 
 /**
  * PUT /api/dashboard/next-actions
- * Body: { manual: string[4], checks: boolean[4] }
+ * Body: { manual: string[6], checks: boolean[6] }
  */
 router.put("/next-actions", async (req, res) => {
   try {
@@ -111,7 +112,7 @@ router.put("/next-actions", async (req, res) => {
     const checks = normalizeChecks(req.body?.checks);
 
     const ops = [];
-    for (let position = 0; position < 4; position++) {
+    for (let position = 0; position < NEXT_ACTIONS_COUNT; position++) {
       ops.push(
         db.dashboardNextAction.upsert({
           where: { userId_position: { userId, position } },

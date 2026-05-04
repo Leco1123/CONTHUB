@@ -159,17 +159,14 @@ function pickUserSafe(u) {
   };
 }
 
-// ✅ já tinha: captura ator via headers opcionais
 function getActorFromReq(req) {
-  const idRaw = req.headers["x-user-id"];
-  const emailRaw = req.headers["x-user-email"];
+  const currentUser = req.currentUser;
+  if (!currentUser) return null;
 
-  const id = idRaw != null && String(idRaw).trim() !== "" ? Number(idRaw) : null;
-  const email =
-    emailRaw != null && String(emailRaw).trim() !== "" ? String(emailRaw).trim() : null;
-
-  if (!id && !email) return null;
-  return { id: Number.isFinite(id) ? id : null, email };
+  return {
+    id: Number.isFinite(Number(currentUser.id)) ? Number(currentUser.id) : null,
+    email: normalizeEmail(currentUser.email),
+  };
 }
 
 /* ================================
@@ -185,6 +182,14 @@ function getAuditMeta(req) {
   const requestId = req.headers["x-request-id"] ? String(req.headers["x-request-id"]) : null;
 
   return { ip, userAgent, requestId };
+}
+
+function isUniqueEmailConflict(err) {
+  return (
+    err?.code === "P2002" &&
+    Array.isArray(err?.meta?.target) &&
+    err.meta.target.includes("email")
+  );
 }
 
 // ✅ já tinha: log não-bloqueante
@@ -204,6 +209,8 @@ async function writeUserLog({ userId, action, message = null, meta = null, actor
     console.warn("⚠️ UserLog indisponível (não bloqueante):", e?.message || e);
   }
 }
+
+let legacyBackfillPromise = null;
 
 async function backfillLegacyUserMetadata() {
   const store = readUserMetaStore();
@@ -235,12 +242,23 @@ async function backfillLegacyUserMetadata() {
   }
 }
 
+function ensureLegacyUserMetadataBackfilled() {
+  if (!legacyBackfillPromise) {
+    legacyBackfillPromise = backfillLegacyUserMetadata().catch((err) => {
+      legacyBackfillPromise = null;
+      throw err;
+    });
+  }
+
+  return legacyBackfillPromise;
+}
+
 /* ================================
  * GET /api/admin/users
  * ================================ */
 router.get("/", requireContAdminAccess, async (req, res) => {
   try {
-    await backfillLegacyUserMetadata();
+    await ensureLegacyUserMetadataBackfilled();
     const rows = await db.user.findMany({
       select: {
         id: true,
@@ -295,8 +313,8 @@ router.get("/:id/logs", requireContAdminAccess, async (req, res) => {
   } catch (err) {
     const msg = String(err?.message || err);
     console.error("Erro ao buscar logs:", msg);
-    return res.status(404).json({
-      error: "Logs indisponíveis (tabela/endpoint não configurado).",
+    return res.status(500).json({
+      error: "Erro ao buscar logs do usuário.",
       detail: msg,
     });
   }
@@ -369,6 +387,10 @@ router.post("/", requireContAdminManage, async (req, res) => {
 
     return res.status(201).json({ user: pickUserSafe(created) });
   } catch (err) {
+    if (isUniqueEmailConflict(err)) {
+      return res.status(409).json({ error: "Email já cadastrado." });
+    }
+
     console.error("Erro ao criar usuário:", err);
     return res.status(500).json({ error: "Erro ao criar usuário." });
   }
@@ -431,6 +453,10 @@ router.put("/:id", requireContAdminManage, async (req, res) => {
 
     return res.json({ user: pickUserSafe(updated) });
   } catch (err) {
+    if (isUniqueEmailConflict(err)) {
+      return res.status(409).json({ error: "Email já cadastrado." });
+    }
+
     console.error("Erro ao atualizar usuário:", err);
     return res.status(500).json({ error: "Erro ao atualizar usuário." });
   }

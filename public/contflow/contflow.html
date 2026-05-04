@@ -12,7 +12,7 @@
     <!-- XLSX (import/export) -->
     <script src="/libs/xlsx.full.min.js"></script>
 
-    <link rel="stylesheet" href="./contflow.css?v=20260428-07" />
+  <link rel="stylesheet" href="./contflow.css?v=20260504-16" />
   </head>
 
   <body>
@@ -224,6 +224,7 @@
                   type="text"
                   placeholder="Buscar em tudo..."
                 />
+                <button id="cf-complete-quota-top" class="cf-btn" type="button">✅ Concluir quota</button>
                 <button id="cf-save-cells-top" class="cf-btn" type="button">🧩 Salvar células</button>
                 <button id="cf-save-base-top" class="cf-btn" type="button">💾 Salvar base</button>
                 <button id="cf-export-xlsx-top" class="cf-btn cf-btn--ghost" type="button">⬇ Exportar XLSX</button>
@@ -247,9 +248,9 @@
                     <col style="width: 140px" />
                     <col style="width: 140px" />
                     <col style="width: 80px" />
-                    <col style="width: 110px" />
-                    <col style="width: 110px" />
-                    <col style="width: 110px" />
+                    <col style="width: 180px" />
+                    <col style="width: 180px" />
+                    <col style="width: 180px" />
                     <col style="width: 110px" />
                     <col style="width: 220px" />
                     <col style="width: 120px" />
@@ -275,9 +276,10 @@
                       <th class="cf-col-header" data-col-index="13">2º quota</th>
                       <th class="cf-col-header" data-col-index="14">3º quota</th>
                       <th class="cf-col-header" data-col-index="15">Obs</th>
-                      <th class="cf-col-header" data-col-index="16">MIT</th>
-                      <th class="cf-col-header" data-col-index="17">Controle de MIT</th>
-                      <th class="cf-col-header" data-col-index="18">Inconsistência Athenas</th>
+                      <th class="cf-col-header" data-col-index="16">MIT - geração</th>
+                      <th class="cf-col-header" data-col-index="17">MIT - envio</th>
+                      <th class="cf-col-header" data-col-index="18">Acesso do cliente</th>
+                      <th class="cf-col-header" data-col-index="19">Inconsistência Athenas</th>
                     </tr>
                   </thead>
 
@@ -441,6 +443,69 @@
 
         <div id="cf-backups-list" class="cf-backups-list"></div>
       </section>
+    </div>
+
+    <div id="cf-quota-modal-backdrop"></div>
+
+    <div id="cf-quota-modal" role="dialog" aria-modal="true" aria-label="Concluir quota do ContFlow">
+      <header>
+        <strong id="cf-quota-modal-title">Concluir quota • ContFlow</strong>
+        <button id="cf-quota-modal-close" class="cf-btn cf-btn--ghost" type="button">✕</button>
+      </header>
+
+      <div class="cf-quota-modal-grid">
+        <label class="cf-quota-modal-field cf-quota-modal-field--wide">
+          <span>Empresa</span>
+          <select id="cf-quota-company" size="8"></select>
+        </label>
+
+        <label class="cf-quota-modal-field cf-quota-modal-field--wide">
+          <span>Buscar empresa</span>
+          <input id="cf-quota-search" class="cf-search" type="text" placeholder="Digite código, razão social ou CNPJ/CPF" />
+        </label>
+
+        <div id="cf-quota-preview" class="cf-quota-preview">
+          Selecione uma empresa para ver as quotas atuais.
+        </div>
+
+        <label class="cf-quota-modal-field">
+          <span>Qual quota</span>
+          <select id="cf-quota-stage">
+            <option value="quota1">1º quota</option>
+            <option value="quota2">2º quota</option>
+            <option value="quota3">3º quota</option>
+          </select>
+        </label>
+
+        <label class="cf-quota-modal-field">
+          <span>Como concluir</span>
+          <select id="cf-quota-mode">
+            <option value="compensacao">Compensação</option>
+            <option value="prejuizo">Prejuízo</option>
+            <option value="sm">S/M</option>
+            <option value="data">Data</option>
+            <option value="outro">Outro valor</option>
+          </select>
+        </label>
+
+        <label id="cf-quota-date-wrap" class="cf-quota-modal-field is-hidden">
+          <span>Data</span>
+          <input id="cf-quota-date" type="date" />
+        </label>
+
+        <label id="cf-quota-text-wrap" class="cf-quota-modal-field is-hidden">
+          <span>Outro valor</span>
+          <input id="cf-quota-text" type="text" placeholder="Digite como deseja concluir" />
+        </label>
+      </div>
+
+      <div class="cf-quota-modal-footer">
+        <div id="cf-quota-status" class="cf-quota-status"></div>
+        <div class="cf-quota-modal-actions">
+          <button id="cf-quota-cancel" class="cf-btn cf-btn--ghost" type="button">Cancelar</button>
+          <button id="cf-quota-save" class="cf-btn" type="button">Salvar conclusão</button>
+        </div>
+      </div>
     </div>
 
     <!-- MODAL PAINEL TRIBUTÁRIO -->
@@ -756,9 +821,9 @@
       </section>
     </div>
 
-    <script src="./contflow.js?v=20260428-02"></script>
+<script src="./contflow.js?v=20260504-16"></script>
     <script src="./painel-tributario-sheet.js?v=20260428-05"></script>
-    <script src="./painel-tributario-lr-sheet.js?v=20260428-05"></script>
+    <script src="./painel-tributario-lr-sheet.js?v=20260430-02"></script>
     <script src="./painel-tributario-lra-sheet.js?v=20260428-07"></script>
   </body>
 </html>

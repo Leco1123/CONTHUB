@@ -28,7 +28,6 @@ const CF_SHARED_COL_KEYS = [
   "cnpj_cpf",
   "trib",
   "grupo",
-  "class",
   "desligamento",
   "status",
   "resp1",
@@ -36,6 +35,13 @@ const CF_SHARED_COL_KEYS = [
   "tipo",
 ];
 const CF_ACTIVE_QUARTER_STORAGE_KEY = "conthub:contflow:active-quarter";
+const CF_QUOTA_MODAL_MODE_LABELS = {
+  compensacao: "Compensação",
+  prejuizo: "Prejuízo",
+  sm: "S/M",
+  data: "Data",
+  outro: "Outro valor",
+};
 
 function parseContFlowQuarterFromHash(hash = "") {
   const match = String(hash || "").trim().match(/^#cf-quarter-(\d+)$/i);
@@ -169,6 +175,15 @@ async function requireAuthOrRedirect() {
 const MAX_UNDO = 150;
 const MAX_VERSIONS = 12;
 
+function escapeHTML(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
 /* ===========================
    ESTADO
 =========================== */
@@ -178,7 +193,6 @@ let CF_COLUMNS = [
   { key: "cnpj_cpf", label: "CNPJ/CPF" },
   { key: "trib", label: "Trib." },
   { key: "grupo", label: "Grupo" },
-  { key: "class", label: "Class" },
   { key: "desligamento", label: "Desligamento" },
   { key: "status", label: "Status" },
   { key: "resp1", label: "Resp.1" },
@@ -189,8 +203,9 @@ let CF_COLUMNS = [
   { key: "quota2", label: "2º quota" },
   { key: "quota3", label: "3º quota" },
   { key: "obs", label: "Obs" },
-  { key: "mit", label: "MIT" },
-  { key: "controle_mit", label: "Controle de MIT" },
+  { key: "mit", label: "MIT - geração" },
+  { key: "controle_mit", label: "MIT - envio" },
+  { key: "acesso_cliente", label: "Acesso do cliente" },
   { key: "inconsistencia_athenas", label: "Inconsistência Athenas" },
 ];
 
@@ -213,6 +228,8 @@ let lastSelectionBounds = null;
 let autoSaveTimeout = null;
 
 let editing = null;
+let quotaEditor = null;
+let optionEditor = null;
 let suppressClickSelect = false;
 
 let undoStack = [];
@@ -236,6 +253,14 @@ let lastSavedPayload = null;
 let saveInFlight = false;
 let queuedSaveAfterFlight = false;
 let currentUser = null;
+let cfAssignableUsers = [];
+let cfAssignableUsersLoaded = false;
+let cfAssignableUsersPromise = null;
+let cfQuotaModalState = {
+  open: false,
+  saving: false,
+  filteredDataIndexes: [],
+};
 
 /* controle de pendências */
 let dirtyCells = new Set();
@@ -255,6 +280,19 @@ const STATUS_LABEL = {
 };
 
 const CF_FROZEN_COL_KEYS = ["cod", "razao_social", "cnpj_cpf", "trib", "grupo"];
+const CF_SELECT_COLUMN_KEYS = new Set([]);
+const CF_FIXED_SELECT_OPTIONS = {
+  trib: [
+    "Lucro Presumido",
+    "Lucro Real Trimestral",
+    "Lucro Real Anual",
+    "Simples Nacional",
+    "Isento",
+    "Imune",
+  ],
+  num_quotas: ["1", "2", "3"],
+};
+const REMOVED_CONTFLOW_COLUMN_LABELS = new Set(["class", "classe"]);
 
 function cloneMap(source) {
   return new Map(Array.from(source?.entries?.() || []));
@@ -280,7 +318,7 @@ function applyQuarterSnapshot(snapshot) {
   if (!snapshot) return false;
 
   if (Array.isArray(snapshot.columns) && snapshot.columns.length) {
-    CF_COLUMNS = deepClone(snapshot.columns);
+    CF_COLUMNS = ensureUniqueKeys(sanitizeContFlowColumns(deepClone(snapshot.columns)));
   }
   cfData = Array.isArray(snapshot.rows) ? deepClone(snapshot.rows) : [];
   cfCellMeta = cloneMap(snapshot.cellMeta);
@@ -533,6 +571,81 @@ function normalizeSearchText(value) {
     .trim();
 }
 
+function uniqueSortedValues(values = []) {
+  return Array.from(
+    new Set(
+      (Array.isArray(values) ? values : [])
+        .map((value) => String(value ?? "").trim())
+        .filter(Boolean)
+    )
+  ).sort((a, b) => a.localeCompare(b, "pt-BR", { numeric: true, sensitivity: "base" }));
+}
+
+function isSelectColumnKey(colKey) {
+  return CF_SELECT_COLUMN_KEYS.has(String(colKey || "").trim());
+}
+
+function collectColumnValuesFromRows(rows = [], colKey) {
+  const values = [];
+  (Array.isArray(rows) ? rows : []).forEach((row) => {
+    const value = String(row?.[colKey] ?? "").trim();
+    if (value) values.push(value);
+  });
+  return values;
+}
+
+function collectColumnValuesAcrossQuarters(colKey) {
+  const values = collectColumnValuesFromRows(cfData, colKey);
+
+  cfQuarterCache.forEach((snapshot) => {
+    if (!snapshot || !Array.isArray(snapshot.rows)) return;
+    values.push(...collectColumnValuesFromRows(snapshot.rows, colKey));
+  });
+
+  return uniqueSortedValues(values);
+}
+
+async function ensureAssignableUsersLoaded() {
+  if (cfAssignableUsersLoaded) return cfAssignableUsers;
+  if (cfAssignableUsersPromise) return cfAssignableUsersPromise;
+
+  cfAssignableUsersPromise = (async () => {
+    try {
+      const resp = await apiFetch("/api/admin/users", { method: "GET" });
+      if (!resp.ok) throw new Error("Usuários indisponíveis");
+      const data = await resp.json().catch(() => null);
+      const users = Array.isArray(data) ? data : Array.isArray(data?.users) ? data.users : [];
+      cfAssignableUsers = uniqueSortedValues(
+        users.map((user) => user?.name || user?.nome || "")
+      );
+    } catch (_) {
+      cfAssignableUsers = cfAssignableUsers.length ? cfAssignableUsers : [];
+    } finally {
+      cfAssignableUsersLoaded = true;
+      cfAssignableUsersPromise = null;
+    }
+
+    return cfAssignableUsers;
+  })();
+
+  return cfAssignableUsersPromise;
+}
+
+function getSelectOptionsForColumn(colKey, currentValue = "") {
+  const key = String(colKey || "").trim();
+  const values = [
+    ...(CF_FIXED_SELECT_OPTIONS[key] || []),
+    ...collectColumnValuesAcrossQuarters(key),
+  ];
+
+  if (key === "resp1" || key === "resp2") {
+    values.push(...cfAssignableUsers);
+  }
+
+  if (currentValue) values.push(String(currentValue).trim());
+  return uniqueSortedValues(values);
+}
+
 function canonicalContFlowLabel(label) {
   const nl = normalizeLabel(label);
 
@@ -557,11 +670,47 @@ function canonicalContFlowLabel(label) {
   if (/^(2 quota|2a quota|segunda quota)$/.test(nl)) return "2º quota";
   if (/^(3 quota|3a quota|terceira quota)$/.test(nl)) return "3º quota";
   if (/^(obs|observacao|observacoes)$/.test(nl)) return "Obs";
-  if (nl === "mit") return "MIT";
-  if (/^(controle de mit|controle mit)$/.test(nl)) return "Controle de MIT";
+  if (/^(mit|mit geracao|mit geracao|mit - geracao|mit geração|mit - geração)$/.test(nl)) {
+    return "MIT - geração";
+  }
+  if (/^(controle de mit|controle mit|mit envio|mit - envio)$/.test(nl)) return "MIT - envio";
+  if (/^(acesso do cliente|acesso cliente)$/.test(nl)) return "Acesso do cliente";
   if (/^(inconsistencia athenas|inconsistência athenas)$/.test(nl)) return "Inconsistência Athenas";
 
   return String(label ?? "").trim();
+}
+
+function isRemovedContFlowColumn(col = {}) {
+  const keyLabel = normalizeLabel(col?.label || col?.key || "");
+  return REMOVED_CONTFLOW_COLUMN_LABELS.has(keyLabel);
+}
+
+function sanitizeContFlowColumns(columns = []) {
+  return (Array.isArray(columns) ? columns : []).filter((col) => !isRemovedContFlowColumn(col));
+}
+
+function getRequiredContFlowColumns() {
+  return [
+    { key: "cod", label: "Cód." },
+    { key: "razao_social", label: "Razão Social" },
+    { key: "cnpj_cpf", label: "CNPJ/CPF" },
+    { key: "trib", label: "Trib." },
+    { key: "grupo", label: "Grupo" },
+    { key: "desligamento", label: "Desligamento" },
+    { key: "status", label: "Status" },
+    { key: "resp1", label: "Resp.1" },
+    { key: "resp2", label: "Resp.2" },
+    { key: "tipo", label: "Tipo" },
+    { key: "num_quotas", label: "Num Quotas" },
+    { key: "quota1", label: "1º quota" },
+    { key: "quota2", label: "2º quota" },
+    { key: "quota3", label: "3º quota" },
+    { key: "obs", label: "Obs" },
+    { key: "mit", label: "MIT - geração" },
+    { key: "controle_mit", label: "MIT - envio" },
+    { key: "acesso_cliente", label: "Acesso do cliente" },
+    { key: "inconsistencia_athenas", label: "Inconsistência Athenas" },
+  ];
 }
 
 function slugKeyFromLabel(label) {
@@ -751,27 +900,7 @@ async function loadCurrentContFlowSheet() {
       return;
     }
 
-    forceDefaultColumns([
-      { key: "cod", label: "Cód." },
-      { key: "razao_social", label: "Razão Social" },
-      { key: "cnpj_cpf", label: "CNPJ/CPF" },
-      { key: "trib", label: "Trib." },
-      { key: "grupo", label: "Grupo" },
-      { key: "class", label: "Class" },
-      { key: "desligamento", label: "Desligamento" },
-      { key: "status", label: "Status" },
-      { key: "resp1", label: "Resp.1" },
-      { key: "resp2", label: "Resp.2" },
-      { key: "tipo", label: "Tipo" },
-      { key: "num_quotas", label: "Num Quotas" },
-      { key: "quota1", label: "1º quota" },
-      { key: "quota2", label: "2º quota" },
-      { key: "quota3", label: "3º quota" },
-      { key: "obs", label: "Obs" },
-      { key: "mit", label: "MIT" },
-      { key: "controle_mit", label: "Controle de MIT" },
-      { key: "inconsistencia_athenas", label: "Inconsistência Athenas" },
-    ]);
+    forceDefaultColumns(getRequiredContFlowColumns());
 
     cfData = Array.from({ length: 15 }, () => createEmptyRow());
     cfCellMeta = new Map();
@@ -795,6 +924,7 @@ async function switchContFlowSheet(nextIndex, options = {}) {
   if (!Number.isInteger(next) || next === activeContFlowSheetIndex) return;
 
   if (editing) commitEdit();
+  if (optionEditor) closeOptionEditor({ focusCell: false });
   saveLocalDraft(buildServerPayload());
 
   hideFilterDropdown();
@@ -890,7 +1020,7 @@ function getContFlowRowMirrorKey(row) {
 
 function extractRowsFromContFlowPayload(payload) {
   if (isApiRelationalPayload(payload)) {
-    const cols = Array.isArray(payload?.columns) ? payload.columns : [];
+    const cols = sanitizeContFlowColumns(Array.isArray(payload?.columns) ? payload.columns : []);
     const rows = Array.isArray(payload?.rows) ? payload.rows : [];
     const cells = Array.isArray(payload?.cells) ? payload.cells : [];
 
@@ -1285,11 +1415,11 @@ function refreshDirtyVisuals() {
 
 function forceDefaultColumns(requiredCols) {
   const currentByLabel = new Map(
-    (CF_COLUMNS || []).map((c) => [normalizeLabel(c.label), c])
+    sanitizeContFlowColumns(CF_COLUMNS || []).map((c) => [normalizeLabel(c.label), c])
   );
 
   const merged = [];
-  requiredCols.forEach((req) => {
+  sanitizeContFlowColumns(requiredCols || []).forEach((req) => {
     const existing = currentByLabel.get(normalizeLabel(req.label));
     merged.push(existing ? existing : req);
   });
@@ -1313,27 +1443,7 @@ function hydrateContFlowFromApiPayload(payload) {
       }))
     );
 
-    forceDefaultColumns([
-      { key: "cod", label: "Cód." },
-      { key: "razao_social", label: "Razão Social" },
-      { key: "cnpj_cpf", label: "CNPJ/CPF" },
-      { key: "trib", label: "Trib." },
-      { key: "grupo", label: "Grupo" },
-      { key: "class", label: "Class" },
-      { key: "desligamento", label: "Desligamento" },
-      { key: "status", label: "Status" },
-      { key: "resp1", label: "Resp.1" },
-      { key: "resp2", label: "Resp.2" },
-      { key: "tipo", label: "Tipo" },
-      { key: "num_quotas", label: "Num Quotas" },
-      { key: "quota1", label: "1º quota" },
-      { key: "quota2", label: "2º quota" },
-      { key: "quota3", label: "3º quota" },
-      { key: "obs", label: "Obs" },
-      { key: "mit", label: "MIT" },
-      { key: "controle_mit", label: "Controle de MIT" },
-      { key: "inconsistencia_athenas", label: "Inconsistência Athenas" },
-    ]);
+    forceDefaultColumns(getRequiredContFlowColumns());
 
     const rowMap = new Map();
     const rowIdToClientRowId = new Map();
@@ -1381,33 +1491,13 @@ function hydrateContFlowFromApiPayload(payload) {
   if (isApiDocumentPayload(payload)) {
     cfCellMeta = new Map();
     CF_COLUMNS = ensureUniqueKeys(
-      payload.columns.map((c) => ({
+      sanitizeContFlowColumns(payload.columns).map((c) => ({
         key: String(c.key || slugKeyFromLabel(c.label || "col")).trim(),
         label: String(c.label || c.key || "").trim() || "Coluna",
       }))
     );
 
-    forceDefaultColumns([
-      { key: "cod", label: "Cód." },
-      { key: "razao_social", label: "Razão Social" },
-      { key: "cnpj_cpf", label: "CNPJ/CPF" },
-      { key: "trib", label: "Trib." },
-      { key: "grupo", label: "Grupo" },
-      { key: "class", label: "Class" },
-      { key: "desligamento", label: "Desligamento" },
-      { key: "status", label: "Status" },
-      { key: "resp1", label: "Resp.1" },
-      { key: "resp2", label: "Resp.2" },
-      { key: "tipo", label: "Tipo" },
-      { key: "num_quotas", label: "Num Quotas" },
-      { key: "quota1", label: "1º quota" },
-      { key: "quota2", label: "2º quota" },
-      { key: "quota3", label: "3º quota" },
-      { key: "obs", label: "Obs" },
-      { key: "mit", label: "MIT" },
-      { key: "controle_mit", label: "Controle de MIT" },
-      { key: "inconsistencia_athenas", label: "Inconsistência Athenas" },
-    ]);
+    forceDefaultColumns(getRequiredContFlowColumns());
 
     cfData = coerceRowsToCurrentColumns(payload.data || []);
     sortState = payload.sort || null;
@@ -1846,6 +1936,44 @@ function getNumQuotasKey() {
   );
 }
 
+function getQuota1Key() {
+  return (
+    findColKeyByLabelRegex(/^(1|1o|1º|primeira)\b.*\bquota\b|\bquota\b.*^(1|1o|1º|primeira)\b/) ||
+    findColKeyByLabelRegex(/\b1\b.*\bquota\b|\bquota\b.*\b1\b/) ||
+    "quota1"
+  );
+}
+
+function getQuota2Key() {
+  return (
+    findColKeyByLabelRegex(/^(2|2o|2º|segunda)\b.*\bquota\b|\bquota\b.*^(2|2o|2º|segunda)\b/) ||
+    findColKeyByLabelRegex(/\b2\b.*\bquota\b|\bquota\b.*\b2\b/) ||
+    "quota2"
+  );
+}
+
+function getQuota3Key() {
+  return (
+    findColKeyByLabelRegex(/^(3|3o|3º|terceira)\b.*\bquota\b|\bquota\b.*^(3|3o|3º|terceira)\b/) ||
+    findColKeyByLabelRegex(/\b3\b.*\bquota\b|\bquota\b.*\b3\b/) ||
+    "quota3"
+  );
+}
+
+function getQuotaColumnKey(stage = "") {
+  const cleanStage = String(stage || "").trim().toLowerCase();
+  if (cleanStage === "quota2") return getQuota2Key();
+  if (cleanStage === "quota3") return getQuota3Key();
+  return getQuota1Key();
+}
+
+function getQuotaValueByStage(row, stage = "") {
+  if (!row || typeof row !== "object") return "";
+  const realKey = getQuotaColumnKey(stage);
+  if (realKey && row[realKey] != null) return row[realKey];
+  return row[stage] != null ? row[stage] : "";
+}
+
 function normalizeNumQuotas(row) {
   if (!row) return;
 
@@ -1853,11 +1981,13 @@ function normalizeNumQuotas(row) {
   const raw = String(row?.[nqKey] ?? "3").trim();
   const n = Number(raw);
   const num = Number.isFinite(n) ? clamp(n, 1, 3) : 3;
+  const quota2Key = getQuota2Key();
+  const quota3Key = getQuota3Key();
 
   row[nqKey] = String(num);
 
-  if (num < 3 && row.quota3 != null) row.quota3 = "";
-  if (num < 2 && row.quota2 != null) row.quota2 = "";
+  if (num < 3 && row[quota3Key] != null) row[quota3Key] = "";
+  if (num < 2 && row[quota2Key] != null) row[quota2Key] = "";
 }
 
 function syncQuotasByNum(row) {
@@ -1873,9 +2003,391 @@ function formatDesligamentoDate(value) {
   return `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4)}`;
 }
 
+function isQuotaColumnKey(colKey) {
+  const cleanKey = String(colKey || "").trim();
+  return cleanKey === getQuota1Key() || cleanKey === getQuota2Key() || cleanKey === getQuota3Key();
+}
+
+function isQuotaPresetColumnKey(colKey) {
+  return String(colKey || "").trim() === getQuota1Key();
+}
+
+function normalizeQuotaValue(value) {
+  const raw = String(value ?? "").trim();
+  if (!raw) return "";
+
+  const normalized = normalizeLabel(raw);
+  if (/^compensacao$/.test(normalized)) return "Compensação";
+  if (/^prejuizo$/.test(normalized)) return "Prejuízo";
+  if (/^(s m|sm|s\/m)$/.test(normalized)) return "S/M";
+
+  const isoMatch = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (isoMatch) {
+    return `${isoMatch[3]}/${isoMatch[2]}/${isoMatch[1]}`;
+  }
+
+  return formatDesligamentoDate(raw);
+}
+
+function quotaValueToDateInput(value) {
+  const raw = String(value ?? "").trim();
+  const match = raw.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (!match) return "";
+  return `${match[3]}-${match[2]}-${match[1]}`;
+}
+
+function getContFlowRowLabel(row) {
+  if (!row || typeof row !== "object") return "Empresa sem identificação";
+  return [
+    String(row.cod || "").trim(),
+    String(row.razao_social || "").trim(),
+    String(row.cnpj_cpf || "").trim(),
+  ].filter(Boolean).join(" · ") || "Empresa sem identificação";
+}
+
+function getContFlowRowSearchText(row) {
+  return normalizeLabel([
+    row?.cod,
+    row?.razao_social,
+    row?.cnpj_cpf,
+    row?.tipo,
+  ].filter(Boolean).join(" "));
+}
+
+function getQuotaModalElements() {
+  return {
+    openBtn: document.getElementById("cf-complete-quota-top"),
+    backdrop: document.getElementById("cf-quota-modal-backdrop"),
+    modal: document.getElementById("cf-quota-modal"),
+    closeBtn: document.getElementById("cf-quota-modal-close"),
+    cancelBtn: document.getElementById("cf-quota-cancel"),
+    saveBtn: document.getElementById("cf-quota-save"),
+    company: document.getElementById("cf-quota-company"),
+    search: document.getElementById("cf-quota-search"),
+    preview: document.getElementById("cf-quota-preview"),
+    stage: document.getElementById("cf-quota-stage"),
+    mode: document.getElementById("cf-quota-mode"),
+    dateWrap: document.getElementById("cf-quota-date-wrap"),
+    date: document.getElementById("cf-quota-date"),
+    textWrap: document.getElementById("cf-quota-text-wrap"),
+    text: document.getElementById("cf-quota-text"),
+    status: document.getElementById("cf-quota-status"),
+  };
+}
+
+function getQuotaStageLabel(stage) {
+  if (stage === "quota2") return "2º quota";
+  if (stage === "quota3") return "3º quota";
+  return "1º quota";
+}
+
+function updateQuotaModalStatus(message, tone = "") {
+  const { status } = getQuotaModalElements();
+  if (!status) return;
+  status.textContent = String(message || "").trim();
+  status.setAttribute("data-tone", tone || "");
+}
+
+function syncQuotaModalConditionalFields() {
+  const { mode, dateWrap, date, textWrap, text } = getQuotaModalElements();
+  const currentMode = String(mode?.value || "").trim();
+  const showDate = currentMode === "data";
+  const showText = currentMode === "outro";
+
+  dateWrap?.classList.toggle("is-hidden", !showDate);
+  textWrap?.classList.toggle("is-hidden", !showText);
+
+  if (!showDate && date) date.value = "";
+  if (!showText && text) text.value = "";
+}
+
+function getQuotaModalInitialDataIndex() {
+  const dataIndex = Number(viewMap?.[activeRow]);
+  if (Number.isInteger(dataIndex) && cfData[dataIndex]) return dataIndex;
+  return cfData.findIndex((row) => row && !isEmptyValue(row.razao_social || row.cod || row.cnpj_cpf));
+}
+
+function getQuotaModalRowById(rowId) {
+  const cleanId = String(rowId || "").trim();
+  if (!cleanId) return null;
+  const dataIndex = cfData.findIndex((row) => String(row?.__id || "").trim() === cleanId);
+  if (dataIndex < 0) return null;
+  return { dataIndex, row: cfData[dataIndex] };
+}
+
+function renderQuotaModalCompanies() {
+  const { company, search } = getQuotaModalElements();
+  if (!company) return;
+
+  const query = normalizeLabel(search?.value || "");
+  const currentValue = String(company.value || "").trim();
+
+  const matches = [];
+  cfData.forEach((row, dataIndex) => {
+    const hasIdentity = !isEmptyValue(row?.razao_social) || !isEmptyValue(row?.cod) || !isEmptyValue(row?.cnpj_cpf);
+    if (!hasIdentity) return;
+    const haystack = getContFlowRowSearchText(row);
+    if (query && !haystack.includes(query)) return;
+    matches.push({ dataIndex, row });
+  });
+
+  cfQuotaModalState.filteredDataIndexes = matches.map((item) => item.dataIndex);
+  company.innerHTML = "";
+
+  if (!matches.length) {
+    const opt = document.createElement("option");
+    opt.value = "";
+    opt.textContent = "Nenhuma empresa encontrada.";
+    company.appendChild(opt);
+    company.value = "";
+    return;
+  }
+
+  matches.forEach(({ row }) => {
+    const opt = document.createElement("option");
+    opt.value = String(row.__id || "");
+    opt.textContent = getContFlowRowLabel(row);
+    company.appendChild(opt);
+  });
+
+  const preferredValue = matches.some(({ row }) => String(row.__id || "") === currentValue)
+    ? currentValue
+    : String(matches[0].row.__id || "");
+  company.value = preferredValue;
+}
+
+function renderQuotaModalPreview() {
+  const { preview, company, stage } = getQuotaModalElements();
+  if (!preview) return;
+
+  const selected = getQuotaModalRowById(company?.value || "");
+  if (!selected?.row) {
+    preview.innerHTML = "Selecione uma empresa para ver as quotas atuais.";
+    return;
+  }
+
+  const currentStage = String(stage?.value || "quota1").trim() || "quota1";
+  const row = selected.row;
+  const quotaItems = [
+    { key: "quota1", label: "1º quota", value: String(getQuotaValueByStage(row, "quota1") || "").trim() || "—" },
+    { key: "quota2", label: "2º quota", value: String(getQuotaValueByStage(row, "quota2") || "").trim() || "—" },
+    { key: "quota3", label: "3º quota", value: String(getQuotaValueByStage(row, "quota3") || "").trim() || "—" },
+  ];
+
+  preview.innerHTML = `
+    <strong>${escapeHTML(getContFlowRowLabel(row))}</strong>
+    <span>Trimestre ativo: ${escapeHTML(getActiveContFlowSheetDef().label)}</span>
+    <div class="cf-quota-preview-list">
+      ${quotaItems.map((item) => `
+        <div class="cf-quota-preview-item${item.key === currentStage ? " is-active" : ""}">
+          <strong>${escapeHTML(item.label)}</strong>
+          <span>${escapeHTML(item.value)}</span>
+        </div>
+      `).join("")}
+    </div>
+  `;
+}
+
+function getQuotaModalCompletionValue() {
+  const { mode, date, text } = getQuotaModalElements();
+  const currentMode = String(mode?.value || "").trim();
+
+  if (currentMode === "compensacao") return "Compensação";
+  if (currentMode === "prejuizo") return "Prejuízo";
+  if (currentMode === "sm") return "S/M";
+  if (currentMode === "data") {
+    const normalized = normalizeQuotaValue(String(date?.value || "").trim());
+    if (!normalized) throw new Error("Escolha uma data válida para concluir a quota.");
+    return normalized;
+  }
+
+  const customValue = String(text?.value || "").trim();
+  if (!customValue) throw new Error("Digite como deseja concluir a quota.");
+  return normalizeQuotaValue(customValue);
+}
+
+function openQuotaCompletionModal() {
+  const els = getQuotaModalElements();
+  if (!els.backdrop || !els.modal) return;
+
+  cfQuotaModalState.open = true;
+  els.backdrop.classList.add("is-open");
+  els.modal.classList.add("is-open");
+  if (els.search) els.search.value = "";
+  if (els.date) els.date.value = "";
+  if (els.text) els.text.value = "";
+  if (els.stage) els.stage.value = "quota1";
+  if (els.mode) els.mode.value = "compensacao";
+  syncQuotaModalConditionalFields();
+  renderQuotaModalCompanies();
+
+  const initialIndex = getQuotaModalInitialDataIndex();
+  if (initialIndex >= 0 && cfData[initialIndex]) {
+    els.company.value = String(cfData[initialIndex].__id || "");
+  }
+
+  renderQuotaModalPreview();
+  updateQuotaModalStatus("Escolha a quota e a forma de conclusão para salvar nesta planilha.", "");
+  setTimeout(() => {
+    els.search?.focus();
+  }, 0);
+}
+
+function closeQuotaCompletionModal() {
+  const els = getQuotaModalElements();
+  cfQuotaModalState.open = false;
+  els.backdrop?.classList.remove("is-open");
+  els.modal?.classList.remove("is-open");
+  updateQuotaModalStatus("", "");
+}
+
+async function saveQuotaCompletionFromModal() {
+  if (cfQuotaModalState.saving) return;
+
+  const els = getQuotaModalElements();
+  const selected = getQuotaModalRowById(els.company?.value || "");
+  const stage = String(els.stage?.value || "quota1").trim() || "quota1";
+
+  if (!selected?.row) {
+    updateQuotaModalStatus("Escolha uma empresa antes de salvar.", "danger");
+    return;
+  }
+
+  let finalValue = "";
+  try {
+    finalValue = getQuotaModalCompletionValue();
+  } catch (err) {
+    updateQuotaModalStatus(err?.message || "Revise os dados antes de salvar.", "danger");
+    return;
+  }
+
+  const { dataIndex, row } = selected;
+  const rowId = String(row.__id || "").trim();
+  const stageKey = getQuotaColumnKey(stage);
+  const before = String(getQuotaValueByStage(row, stage) ?? "");
+  const after = normalizeCellValue(stageKey, finalValue);
+  const quotaColIndex = CF_COLUMNS.findIndex((col) => col.key === stageKey);
+
+  if (!rowId) {
+    updateQuotaModalStatus("A linha selecionada não tem identificador válido.", "danger");
+    return;
+  }
+
+  if (!stageKey) {
+    updateQuotaModalStatus("A coluna da quota selecionada não foi encontrada nesta base.", "danger");
+    return;
+  }
+
+  if (before === after) {
+    updateQuotaModalStatus("Essa quota já está com esse mesmo valor.", "danger");
+    return;
+  }
+
+  cfQuotaModalState.saving = true;
+  if (els.saveBtn) els.saveBtn.disabled = true;
+  updateQuotaModalStatus(`Salvando ${getQuotaStageLabel(stage)}...`, "");
+
+  try {
+    if (editing) commitEdit();
+    const currentViewRow = viewMap.findIndex((idx) => idx === dataIndex);
+
+    row[stageKey] = after;
+    if (stageKey !== stage) row[stage] = after;
+    pushUndo({ type: "cell", dataIndex, colKey: stageKey, before, after });
+    markCellDirty(dataIndex, stageKey);
+    syncPainelTributarioAfterContFlowChange([{ dataIndex, colKey: stageKey }]);
+    refreshDirtyVisuals();
+
+    cacheActiveQuarterState();
+    if (quotaColIndex >= 0 && currentViewRow >= 0) {
+      syncRenderedCellValue(currentViewRow, quotaColIndex, stageKey, after);
+    } else {
+      rebuildViewMap();
+      renderTable({ suppressCellFocus: true });
+      refreshDirtyVisuals();
+    }
+
+    const refreshedDataIndex = cfData.findIndex((item) => String(item?.__id || "").trim() === rowId);
+    const refreshedViewRow = refreshedDataIndex >= 0 ? viewMap.findIndex((idx) => idx === refreshedDataIndex) : -1;
+
+    closeQuotaCompletionModal();
+
+    if (refreshedViewRow >= 0 && quotaColIndex >= 0) {
+      setSingleActiveCell(refreshedViewRow, quotaColIndex);
+    }
+
+    await saveDirtyCells(true);
+    cacheActiveQuarterState();
+
+    const persistedDataIndex = cfData.findIndex((item) => String(item?.__id || "").trim() === rowId);
+    const persistedViewRow = persistedDataIndex >= 0 ? viewMap.findIndex((idx) => idx === persistedDataIndex) : -1;
+    if (persistedViewRow >= 0 && quotaColIndex >= 0) {
+      setSingleActiveCell(persistedViewRow, quotaColIndex);
+    }
+  } catch (err) {
+    console.error("Erro ao concluir quota pelo modal do ContFlow:", err);
+    alert(err?.message || "Não foi possível salvar a quota agora.");
+  } finally {
+    cfQuotaModalState.saving = false;
+    if (els.saveBtn) els.saveBtn.disabled = false;
+  }
+}
+
+function bindQuotaCompletionModal() {
+  const els = getQuotaModalElements();
+  if (!els.openBtn || !els.modal || !els.backdrop) return;
+
+  if (!els.openBtn.dataset.boundQuotaModal) {
+    els.openBtn.dataset.boundQuotaModal = "1";
+    els.openBtn.addEventListener("click", openQuotaCompletionModal);
+  }
+
+  [els.closeBtn, els.cancelBtn].forEach((btn) => {
+    if (!btn || btn.dataset.boundQuotaModal) return;
+    btn.dataset.boundQuotaModal = "1";
+    btn.addEventListener("click", closeQuotaCompletionModal);
+  });
+
+  if (!els.backdrop.dataset.boundQuotaModal) {
+    els.backdrop.dataset.boundQuotaModal = "1";
+    els.backdrop.addEventListener("click", closeQuotaCompletionModal);
+  }
+
+  if (els.search && !els.search.dataset.boundQuotaModal) {
+    els.search.dataset.boundQuotaModal = "1";
+    els.search.addEventListener("input", () => {
+      renderQuotaModalCompanies();
+      renderQuotaModalPreview();
+    });
+  }
+
+  if (els.company && !els.company.dataset.boundQuotaModal) {
+    els.company.dataset.boundQuotaModal = "1";
+    els.company.addEventListener("change", renderQuotaModalPreview);
+  }
+
+  if (els.stage && !els.stage.dataset.boundQuotaModal) {
+    els.stage.dataset.boundQuotaModal = "1";
+    els.stage.addEventListener("change", renderQuotaModalPreview);
+  }
+
+  if (els.mode && !els.mode.dataset.boundQuotaModal) {
+    els.mode.dataset.boundQuotaModal = "1";
+    els.mode.addEventListener("change", syncQuotaModalConditionalFields);
+  }
+
+  if (els.saveBtn && !els.saveBtn.dataset.boundQuotaModal) {
+    els.saveBtn.dataset.boundQuotaModal = "1";
+    els.saveBtn.addEventListener("click", async () => {
+      await saveQuotaCompletionFromModal();
+    });
+  }
+}
+
 function normalizeCellValue(colKey, value) {
   const raw = String(value ?? "");
   if (colKey === "desligamento") return formatDesligamentoDate(raw);
+  if (isQuotaColumnKey(colKey)) return normalizeQuotaValue(raw);
   return raw;
 }
 
@@ -2223,9 +2735,9 @@ function setDefaultWidthForCol(colKey) {
   else if (colKey === "resp2") colWidths[colKey] = 80;
   else if (colKey === "tipo") colWidths[colKey] = 110;
   else if (colKey === "num_quotas") colWidths[colKey] = 110;
-  else if (colKey === "quota1") colWidths[colKey] = 110;
-  else if (colKey === "quota2") colWidths[colKey] = 110;
-  else if (colKey === "quota3") colWidths[colKey] = 110;
+  else if (colKey === "quota1") colWidths[colKey] = 180;
+  else if (colKey === "quota2") colWidths[colKey] = 180;
+  else if (colKey === "quota3") colWidths[colKey] = 180;
   else if (colKey === "obs") colWidths[colKey] = 220;
   else if (colKey === "mit") colWidths[colKey] = 120;
   else if (colKey === "controle_mit") colWidths[colKey] = 220;
@@ -2980,6 +3492,458 @@ function getSelectedDataIndices() {
   return Array.from(set).sort((a, b) => a - b);
 }
 
+function applyCellValueChange(dataIndex, colKey, nextValue, viewRow, colIndex) {
+  const before = String(cfData?.[dataIndex]?.[colKey] ?? "");
+  let after = normalizeCellValue(colKey, nextValue ?? "");
+
+  if (colKey === "num_quotas") {
+    cfData[dataIndex][colKey] = after;
+    syncQuotasByNum(cfData[dataIndex]);
+    after = String(cfData[dataIndex][colKey] ?? "");
+    if (!after.trim()) {
+      after = "3";
+      cfData[dataIndex][colKey] = "3";
+      syncQuotasByNum(cfData[dataIndex]);
+    }
+  }
+
+  if (before === after) {
+    setSingleActiveCell(viewRow, colIndex);
+    return;
+  }
+
+  cfData[dataIndex][colKey] = after;
+  pushUndo({ type: "cell", dataIndex, colKey, before, after });
+  markCellDirty(dataIndex, colKey);
+  syncPainelTributarioAfterContFlowChange([{ dataIndex, colKey }]);
+  renderTable({ suppressCellFocus: true });
+  setSingleActiveCell(viewRow, colIndex);
+}
+
+function syncRenderedCellValue(viewRow, colIndex, colKey, nextValue) {
+  const cell = document.querySelector(
+    `.cf-cell[data-row-index="${viewRow}"][data-col-index="${colIndex}"]`
+  );
+  if (!cell) return;
+
+  const rawValue = String(nextValue ?? "").trim();
+
+  if (isQuotaPresetColumnKey(colKey)) {
+    const select = cell.querySelector(".cf-inline-quota-select");
+    if (select) {
+      const hasOption = Array.from(select.options || []).some(
+        (option) => String(option.value || "").trim() === rawValue
+      );
+      if (!hasOption && rawValue) {
+        const option = document.createElement("option");
+        option.value = rawValue;
+        option.textContent = rawValue;
+        select.insertBefore(option, select.lastElementChild || null);
+      }
+      select.value = rawValue;
+      return;
+    }
+  }
+
+  if (isQuotaColumnKey(colKey)) {
+    const trigger = cell.querySelector(".cf-quota-trigger");
+    const label = cell.querySelector(".cf-quota-trigger__label");
+    if (trigger && label) {
+      label.textContent = rawValue || "Selecionar";
+      trigger.classList.toggle("is-filled", Boolean(rawValue));
+      return;
+    }
+  }
+
+  cell.textContent = rawValue;
+}
+
+function closeQuotaEditor({ focusCell = true } = {}) {
+  if (!quotaEditor) return;
+
+  quotaEditor.cleanup?.();
+  quotaEditor.el?.remove();
+  const previousEditor = quotaEditor;
+  quotaEditor = null;
+
+  if (focusCell) {
+    setSingleActiveCell(previousEditor.viewRow, previousEditor.colIndex);
+  }
+}
+
+function getQuotaEditorPendingValue(editor = quotaEditor) {
+  const root = editor?.el;
+  if (!root) return "";
+
+  const dateInput = root.querySelector(".cf-quota-editor__date");
+  const customInput = root.querySelector(".cf-quota-editor__custom");
+
+  const dateValue = String(dateInput?.value || "").trim();
+  const customValue = String(customInput?.value || "").trim();
+
+  if (dateValue) return dateValue;
+  return customValue;
+}
+
+function closeOptionEditor({ focusCell = true } = {}) {
+  if (!optionEditor) return;
+
+  optionEditor.cleanup?.();
+  optionEditor.el?.remove();
+  const previousEditor = optionEditor;
+  optionEditor = null;
+
+  if (focusCell) {
+    setSingleActiveCell(previousEditor.viewRow, previousEditor.colIndex);
+  }
+}
+
+function openQuotaEditor(viewRow, colIndex) {
+  const dataIndex = viewMap[viewRow];
+  const col = CF_COLUMNS[colIndex];
+  const cell = document.querySelector(`.cf-cell[data-row-index="${viewRow}"][data-col-index="${colIndex}"]`);
+  if (dataIndex == null || !col || !cell) return;
+
+  injectExtraStyles();
+  if (editing) commitEdit();
+  closeQuotaEditor({ focusCell: false });
+
+  const currentValue = String(cfData[dataIndex]?.[col.key] ?? "");
+  const presetOptions = ["Compensação", "Prejuízo", "S/M"];
+  const rect = cell.getBoundingClientRect();
+  const pop = document.createElement("div");
+  pop.className = "cf-quota-editor";
+  pop.innerHTML = `
+    <div class="cf-quota-editor__head">
+      <div>
+        <div class="cf-quota-editor__eyebrow">Conclusão de quota</div>
+        <div class="cf-quota-editor__title">${col.label}</div>
+      </div>
+      <div class="cf-quota-editor__value-badge">${escapeHTML(currentValue.trim() || "Sem valor")}</div>
+    </div>
+    <div class="cf-quota-editor__subtitle">Escolha uma forma rápida de concluir ou informe a data manualmente.</div>
+    <div class="cf-quota-editor__options-label">Opções rápidas</div>
+    <div class="cf-quota-editor__options" role="listbox" aria-label="Opções de quota">
+      ${presetOptions
+        .map((option) => {
+          const activeClass =
+            normalizeSearchText(currentValue) === normalizeSearchText(option)
+              ? " is-active"
+              : "";
+          return `
+            <button type="button" class="cf-quota-editor__option${activeClass}" data-preset="${option}" aria-selected="${activeClass ? "true" : "false"}">
+              <span class="cf-quota-editor__option-title">${option}</span>
+              <span class="cf-quota-editor__option-hint">Aplicar imediatamente</span>
+            </button>
+          `;
+        })
+        .join("")}
+    </div>
+    <div class="cf-quota-editor__divider"></div>
+    <div class="cf-quota-editor__date-card">
+      <div class="cf-quota-editor__date-head">
+        <div>
+          <div class="cf-quota-editor__date-label">Data de conclusão</div>
+          <div class="cf-quota-editor__date-hint">Escolha no calendário ou use um atalho rápido.</div>
+        </div>
+        <div class="cf-quota-editor__date-preview">${escapeHTML(currentValue.trim() || "Sem data")}</div>
+      </div>
+      <label class="cf-quota-editor__field cf-quota-editor__field--date">
+        <input type="date" class="cf-quota-editor__date" value="${quotaValueToDateInput(currentValue)}" />
+      </label>
+      <div class="cf-quota-editor__date-actions">
+        <button type="button" class="cf-quota-editor__date-action" data-date-action="today">Hoje</button>
+        <button type="button" class="cf-quota-editor__date-action" data-date-action="clear">Limpar data</button>
+      </div>
+    </div>
+    <label class="cf-quota-editor__field cf-quota-editor__custom-wrap">
+      <span>Outro valor</span>
+      <input type="text" class="cf-quota-editor__custom" placeholder="Digite um status personalizado..." />
+    </label>
+    <div class="cf-quota-editor__footer">
+      <button type="button" class="cf-quota-editor__footer-btn is-ghost" data-action="clear">Limpar</button>
+      <button type="button" class="cf-quota-editor__footer-btn is-primary" data-action="apply">Aplicar</button>
+    </div>
+  `;
+
+  pop.style.position = "fixed";
+  pop.style.top = `${Math.min(rect.bottom + 10, window.innerHeight - 360)}px`;
+  pop.style.left = `${Math.min(rect.left, window.innerWidth - 340)}px`;
+  pop.style.zIndex = "2000";
+
+  const stop = (ev) => ev.stopPropagation();
+  pop.addEventListener("mousedown", stop);
+  pop.addEventListener("click", stop);
+
+  const dateInput = pop.querySelector(".cf-quota-editor__date");
+  const datePreview = pop.querySelector(".cf-quota-editor__date-preview");
+  const customInput = pop.querySelector(".cf-quota-editor__custom");
+  const optionButtons = Array.from(pop.querySelectorAll("[data-preset]"));
+  const dateActionButtons = Array.from(pop.querySelectorAll("[data-date-action]"));
+
+  const formatDatePreview = (value = "") => {
+    const clean = String(value || "").trim();
+    if (!clean) return "Sem data";
+    const match = clean.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (match) return `${match[3]}/${match[2]}/${match[1]}`;
+    return clean;
+  };
+
+  const syncDatePreview = (value = "") => {
+    if (!datePreview) return;
+    datePreview.textContent = formatDatePreview(value);
+    datePreview.classList.toggle("is-empty", !String(value || "").trim());
+  };
+
+  const setActiveQuotaOption = (value = "") => {
+    const normalizedValue = normalizeSearchText(value);
+    optionButtons.forEach((button) => {
+      const isActive =
+        normalizeSearchText(button.dataset.preset || "") === normalizedValue;
+      button.classList.toggle("is-active", isActive);
+      button.setAttribute("aria-selected", isActive ? "true" : "false");
+    });
+  };
+
+  const commitQuotaValue = (value) => {
+    closeQuotaEditor({ focusCell: false });
+    applyCellValueChange(dataIndex, col.key, value, viewRow, colIndex);
+  };
+
+  const onDocumentMouseDown = (ev) => {
+    if (!pop.contains(ev.target)) closeQuotaEditor();
+  };
+  const onWindowResize = () => closeQuotaEditor();
+  const onDocumentKeyDown = (ev) => {
+    if (!quotaEditor) return;
+    if (ev.key === "Escape") {
+      ev.preventDefault();
+      closeQuotaEditor();
+    }
+  };
+
+  dateInput?.addEventListener("change", (ev) => {
+    syncDatePreview(ev.currentTarget.value);
+    if (ev.currentTarget.value) commitQuotaValue(ev.currentTarget.value);
+  });
+
+  dateInput?.addEventListener("input", (ev) => {
+    syncDatePreview(ev.currentTarget.value);
+    setActiveQuotaOption("");
+  });
+
+  optionButtons.forEach((button) => {
+    button.addEventListener("click", () => {
+      const value = String(button.dataset.preset || "").trim();
+      if (!value) return;
+      setActiveQuotaOption(value);
+      commitQuotaValue(value);
+    });
+  });
+
+  customInput?.addEventListener("input", () => {
+    if (customInput.value) {
+      if (dateInput) dateInput.value = "";
+    }
+    syncDatePreview("");
+    setActiveQuotaOption("");
+  });
+
+  dateActionButtons.forEach((button) => {
+    button.addEventListener("click", () => {
+      const action = String(button.dataset.dateAction || "").trim();
+      if (!dateInput) return;
+      if (action === "today") {
+        const now = new Date();
+        const yyyy = now.getFullYear();
+        const mm = String(now.getMonth() + 1).padStart(2, "0");
+        const dd = String(now.getDate()).padStart(2, "0");
+        dateInput.value = `${yyyy}-${mm}-${dd}`;
+        if (customInput) customInput.value = "";
+        syncDatePreview(dateInput.value);
+        setActiveQuotaOption("");
+        return;
+      }
+      if (action === "clear") {
+        dateInput.value = "";
+        syncDatePreview("");
+      }
+    });
+  });
+
+  pop.querySelector('[data-action="clear"]')?.addEventListener("click", () => commitQuotaValue(""));
+  pop.querySelector('[data-action="apply"]')?.addEventListener("click", () =>
+    commitQuotaValue(getQuotaEditorPendingValue({ el: pop }))
+  );
+
+  if (quotaValueToDateInput(currentValue)) {
+    if (dateInput) dateInput.value = quotaValueToDateInput(currentValue);
+  } else if (currentValue) {
+    if (customInput) customInput.value = currentValue;
+  }
+  syncDatePreview(dateInput?.value || "");
+  setActiveQuotaOption(currentValue);
+
+  document.body.appendChild(pop);
+  document.addEventListener("mousedown", onDocumentMouseDown);
+  document.addEventListener("keydown", onDocumentKeyDown, true);
+  window.addEventListener("resize", onWindowResize);
+
+  quotaEditor = {
+    el: pop,
+    viewRow,
+    colIndex,
+    cleanup() {
+      document.removeEventListener("mousedown", onDocumentMouseDown);
+      document.removeEventListener("keydown", onDocumentKeyDown, true);
+      window.removeEventListener("resize", onWindowResize);
+    },
+  };
+
+  setSingleActiveCell(viewRow, colIndex);
+  customInput?.focus({ preventScroll: true });
+  customInput?.select();
+}
+
+function openOptionEditor(viewRow, colIndex, initialText = null) {
+  const dataIndex = viewMap[viewRow];
+  const col = CF_COLUMNS[colIndex];
+  const cell = document.querySelector(`.cf-cell[data-row-index="${viewRow}"][data-col-index="${colIndex}"]`);
+  if (dataIndex == null || !col || !cell) return;
+
+  injectExtraStyles();
+  if (editing) commitEdit();
+  closeQuotaEditor({ focusCell: false });
+  closeOptionEditor({ focusCell: false });
+
+  const currentValue = String(cfData[dataIndex]?.[col.key] ?? "");
+  const seededValue = initialText != null ? String(initialText) : currentValue;
+  const rect = cell.getBoundingClientRect();
+  const pop = document.createElement("div");
+  pop.className = "cf-option-editor";
+  pop.style.position = "fixed";
+  pop.style.top = `${Math.min(rect.bottom + 8, window.innerHeight - 360)}px`;
+  pop.style.left = `${Math.min(rect.left, window.innerWidth - 320)}px`;
+  pop.style.zIndex = "2000";
+
+  pop.innerHTML = `
+    <div class="cf-option-editor__title">${col.label}</div>
+    <input type="text" class="cf-option-editor__input" placeholder="Pesquisar ou digitar..." />
+    <div class="cf-option-editor__list"></div>
+    <div class="cf-option-editor__footer">
+      <button type="button" data-action="clear">Limpar</button>
+      <button type="button" data-action="apply">Usar valor digitado</button>
+    </div>
+  `;
+
+  const input = pop.querySelector(".cf-option-editor__input");
+  const list = pop.querySelector(".cf-option-editor__list");
+  let options = getSelectOptionsForColumn(col.key, currentValue);
+
+  const commitOptionValue = (value) => {
+    closeOptionEditor({ focusCell: false });
+    applyCellValueChange(dataIndex, col.key, value, viewRow, colIndex);
+  };
+
+  const renderOptions = () => {
+    const query = normalizeSearchText(input?.value || "");
+    list.innerHTML = "";
+
+    const filtered = options.filter((value) => normalizeSearchText(value).includes(query));
+    const typedValue = String(input?.value || "").trim();
+    const hasTypedValue = typedValue && !filtered.some((value) => normalizeSearchText(value) === normalizeSearchText(typedValue));
+
+    if (hasTypedValue) {
+      const customBtn = document.createElement("button");
+      customBtn.type = "button";
+      customBtn.className = "cf-option-editor__item is-custom";
+      customBtn.textContent = `Usar: ${typedValue}`;
+      customBtn.addEventListener("click", () => commitOptionValue(typedValue));
+      list.appendChild(customBtn);
+    }
+
+    filtered.forEach((value) => {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = value === currentValue ? "cf-option-editor__item is-active" : "cf-option-editor__item";
+      btn.textContent = value;
+      btn.title = value;
+      btn.addEventListener("click", () => commitOptionValue(value));
+      list.appendChild(btn);
+    });
+
+    if (!hasTypedValue && !filtered.length) {
+      const empty = document.createElement("div");
+      empty.className = "cf-option-editor__empty";
+      empty.textContent = "Nenhuma opção encontrada.";
+      list.appendChild(empty);
+    }
+  };
+
+  const stop = (ev) => ev.stopPropagation();
+  pop.addEventListener("mousedown", stop);
+  pop.addEventListener("click", stop);
+
+  const onDocumentMouseDown = (ev) => {
+    if (!pop.contains(ev.target)) closeOptionEditor();
+  };
+  const onWindowResize = () => closeOptionEditor();
+  const onDocumentKeyDown = (ev) => {
+    if (!optionEditor) return;
+    if (ev.key === "Escape") {
+      ev.preventDefault();
+      closeOptionEditor();
+      return;
+    }
+    if (ev.key === "Enter") {
+      ev.preventDefault();
+      commitOptionValue(input?.value || "");
+      return;
+    }
+    if (ev.key === "Tab") {
+      ev.preventDefault();
+      commitOptionValue(input?.value || "");
+    }
+  };
+
+  input.value = seededValue;
+  input.addEventListener("input", renderOptions);
+  pop.querySelector('[data-action="clear"]')?.addEventListener("click", () => commitOptionValue(""));
+  pop.querySelector('[data-action="apply"]')?.addEventListener("click", () => commitOptionValue(input?.value || ""));
+
+  document.body.appendChild(pop);
+  document.addEventListener("mousedown", onDocumentMouseDown);
+  document.addEventListener("keydown", onDocumentKeyDown, true);
+  window.addEventListener("resize", onWindowResize);
+
+  optionEditor = {
+    el: pop,
+    viewRow,
+    colIndex,
+    renderOptions,
+    cleanup() {
+      document.removeEventListener("mousedown", onDocumentMouseDown);
+      document.removeEventListener("keydown", onDocumentKeyDown, true);
+      window.removeEventListener("resize", onWindowResize);
+    },
+  };
+
+  renderOptions();
+  setSingleActiveCell(viewRow, colIndex);
+  input.focus({ preventScroll: true });
+  input.select();
+
+  if (col.key === "resp1" || col.key === "resp2") {
+    ensureAssignableUsersLoaded()
+      .then(() => {
+        if (!optionEditor || optionEditor.viewRow !== viewRow || optionEditor.colIndex !== colIndex) return;
+        options = getSelectOptionsForColumn(col.key, currentValue);
+        optionEditor.renderOptions?.();
+      })
+      .catch(() => {});
+  }
+}
+
 /* ===========================
    EDIÇÃO
 =========================== */
@@ -2991,9 +3955,21 @@ function enterEditMode(viewRow, colIndex, initialText = null, selectAll = false)
   const col = CF_COLUMNS[colIndex];
   if (!col) return;
 
+  if (isQuotaColumnKey(col.key)) {
+    openQuotaEditor(viewRow, colIndex);
+    return;
+  }
+
+  if (isSelectColumnKey(col.key)) {
+    openOptionEditor(viewRow, colIndex, initialText);
+    return;
+  }
+
   const cell = document.querySelector(`.cf-cell[data-row-index="${viewRow}"][data-col-index="${colIndex}"]`);
   if (!cell) return;
 
+  closeQuotaEditor({ focusCell: false });
+  closeOptionEditor({ focusCell: false });
   if (editing) commitEdit();
 
   const before = String(cfData[dataIndex][col.key] ?? "");
@@ -3540,6 +4516,8 @@ function applyContFlowFrozenColumns() {
 function renderTable(options = {}) {
   const preserveFocus = options?.preserveFocus || null;
   const suppressCellFocus = Boolean(options?.suppressCellFocus);
+  if (quotaEditor) closeQuotaEditor({ focusCell: false });
+  if (optionEditor) closeOptionEditor({ focusCell: false });
   renderColgroup();
 
   function ensureTbody() {
@@ -3591,6 +4569,8 @@ function renderTable(options = {}) {
       const lbl = normalizeLabel(col.label);
       if (/(razao|social|obs|observ|controle|histor|descricao)/.test(lbl)) td.classList.add("cf-cell--obs");
       if (/(cod|cód|trib|tipo|num)/.test(lbl)) td.classList.add("cf-cell--tiny");
+      if (isQuotaColumnKey(col.key)) td.classList.add("cf-cell--quota");
+      if (isSelectColumnKey(col.key)) td.classList.add("cf-cell--select");
 
       if (isCellMarkedDirty(row, col.key)) {
         td.classList.add("is-dirty");
@@ -3598,7 +4578,44 @@ function renderTable(options = {}) {
 
       td.contentEditable = "false";
       td.tabIndex = 0;
-      td.textContent = row[col.key] ?? "";
+      const rawCellValue = String(row[col.key] ?? "");
+      if (isQuotaColumnKey(col.key)) {
+        td.title = "Abrir seletor de quota";
+        td.innerHTML = "";
+        const trigger = document.createElement("button");
+        trigger.type = "button";
+        trigger.className = rawCellValue.trim() ? "cf-quota-trigger is-filled" : "cf-quota-trigger";
+        trigger.innerHTML = `
+          <span class="cf-quota-trigger__label">${rawCellValue.trim() || "Selecionar"}</span>
+          <span class="cf-quota-trigger__icon">▾</span>
+        `;
+        trigger.addEventListener("mousedown", (ev) => ev.stopPropagation());
+        trigger.addEventListener("click", (ev) => {
+          ev.stopPropagation();
+          setSingleActiveCell(viewRowIndex, colIndex);
+          openQuotaEditor(viewRowIndex, colIndex);
+        });
+        td.appendChild(trigger);
+      } else if (isSelectColumnKey(col.key)) {
+        td.title = "Abrir lista suspensa";
+        td.innerHTML = "";
+        const trigger = document.createElement("button");
+        trigger.type = "button";
+        trigger.className = rawCellValue.trim() ? "cf-select-trigger is-filled" : "cf-select-trigger";
+        trigger.innerHTML = `
+          <span class="cf-select-trigger__label">${rawCellValue.trim() || "Selecionar"}</span>
+          <span class="cf-select-trigger__icon">▾</span>
+        `;
+        trigger.addEventListener("mousedown", (ev) => ev.stopPropagation());
+        trigger.addEventListener("click", (ev) => {
+          ev.stopPropagation();
+          setSingleActiveCell(viewRowIndex, colIndex);
+          openOptionEditor(viewRowIndex, colIndex);
+        });
+        td.appendChild(trigger);
+      } else {
+        td.textContent = rawCellValue;
+      }
 
       td.dataset.rowIndex = String(viewRowIndex);
       td.dataset.colIndex = String(colIndex);
@@ -3685,16 +4702,19 @@ function handleCellClick(e) {
 
 function handleCellMouseDown(e) {
   if (e.button !== 0) return;
-  if (editing) commitEdit();
-
-  e.preventDefault();
-  suppressClickSelect = true;
-  setTimeout(() => (suppressClickSelect = false), 0);
-
   const cell = e.currentTarget;
   const rowIndex = parseInt(cell.dataset.rowIndex, 10);
   const colIndex = parseInt(cell.dataset.colIndex, 10);
   if (Number.isNaN(rowIndex) || Number.isNaN(colIndex)) return;
+
+  if (quotaEditor) closeQuotaEditor({ focusCell: false });
+  if (optionEditor) closeOptionEditor({ focusCell: false });
+  if (editing) commitEdit();
+
+  e.preventDefault();
+  suppressClickSelect = true;
+
+  setTimeout(() => (suppressClickSelect = false), 0);
 
   mouseSelecting = true;
   selectionAnchor = { row: rowIndex, col: colIndex };
@@ -3748,6 +4768,57 @@ function clearSelectionValues() {
 
 async function handleGlobalKeyDown(e) {
   if (getActiveWorkbookView() !== "contflow") return;
+
+  if (quotaEditor) {
+    if (e.key === "Escape") {
+      e.preventDefault();
+      closeQuotaEditor();
+      return;
+    }
+    if (e.key === "Tab" || e.key === "Enter") {
+      e.preventDefault();
+      const dataIndex = viewMap[quotaEditor.viewRow];
+      const col = CF_COLUMNS[quotaEditor.colIndex];
+      const pendingValue = getQuotaEditorPendingValue(quotaEditor);
+      closeQuotaEditor({ focusCell: false });
+      if (dataIndex != null && col) {
+        applyCellValueChange(
+          dataIndex,
+          col.key,
+          pendingValue,
+          quotaEditor.viewRow,
+          quotaEditor.colIndex
+        );
+      }
+      return;
+    }
+  }
+
+  if (optionEditor) {
+    if (e.key === "Escape") {
+      e.preventDefault();
+      closeOptionEditor();
+      return;
+    }
+    if (e.key === "Enter" || e.key === "Tab") {
+      e.preventDefault();
+      const input = optionEditor.el?.querySelector(".cf-option-editor__input");
+      const dataIndex = viewMap[optionEditor.viewRow];
+      const col = CF_COLUMNS[optionEditor.colIndex];
+      closeOptionEditor({ focusCell: false });
+      if (dataIndex != null && col) {
+        applyCellValueChange(
+          dataIndex,
+          col.key,
+          String(input?.value || ""),
+          optionEditor.viewRow,
+          optionEditor.colIndex
+        );
+      }
+      return;
+    }
+    return;
+  }
 
   if ((e.ctrlKey || e.metaKey) && (e.key === "f" || e.key === "F")) {
     e.preventDefault();
@@ -4260,28 +5331,8 @@ function handleImportFile(e) {
     if (mode === "1") {
       const before = snapshotState();
 
-      CF_COLUMNS = ensureUniqueKeys(cols);
-      forceDefaultColumns([
-        { key: "cod", label: "Cód." },
-        { key: "razao_social", label: "Razão Social" },
-        { key: "cnpj_cpf", label: "CNPJ/CPF" },
-        { key: "trib", label: "Trib." },
-        { key: "grupo", label: "Grupo" },
-        { key: "class", label: "Class" },
-        { key: "desligamento", label: "Desligamento" },
-        { key: "status", label: "Status" },
-        { key: "resp1", label: "Resp.1" },
-        { key: "resp2", label: "Resp.2" },
-        { key: "tipo", label: "Tipo" },
-        { key: "num_quotas", label: "Num Quotas" },
-        { key: "quota1", label: "1º quota" },
-        { key: "quota2", label: "2º quota" },
-        { key: "quota3", label: "3º quota" },
-        { key: "obs", label: "Obs" },
-        { key: "mit", label: "MIT" },
-        { key: "controle_mit", label: "Controle de MIT" },
-        { key: "inconsistencia_athenas", label: "Inconsistência Athenas" },
-      ]);
+      CF_COLUMNS = ensureUniqueKeys(sanitizeContFlowColumns(cols));
+      forceDefaultColumns(getRequiredContFlowColumns());
 
       CF_COLUMNS.forEach((c) => setDefaultWidthForCol(c.key));
       cfData = coerceRowsToCurrentColumns(rows);
@@ -4295,28 +5346,8 @@ function handleImportFile(e) {
     } else if (mode === "2") {
       const before = snapshotState();
 
-      CF_COLUMNS = unionColumnsByLabel(CF_COLUMNS, cols);
-      forceDefaultColumns([
-        { key: "cod", label: "Cód." },
-        { key: "razao_social", label: "Razão Social" },
-        { key: "cnpj_cpf", label: "CNPJ/CPF" },
-        { key: "trib", label: "Trib." },
-        { key: "grupo", label: "Grupo" },
-        { key: "class", label: "Class" },
-        { key: "desligamento", label: "Desligamento" },
-        { key: "status", label: "Status" },
-        { key: "resp1", label: "Resp.1" },
-        { key: "resp2", label: "Resp.2" },
-        { key: "tipo", label: "Tipo" },
-        { key: "num_quotas", label: "Num Quotas" },
-        { key: "quota1", label: "1º quota" },
-        { key: "quota2", label: "2º quota" },
-        { key: "quota3", label: "3º quota" },
-        { key: "obs", label: "Obs" },
-        { key: "mit", label: "MIT" },
-        { key: "controle_mit", label: "Controle de MIT" },
-        { key: "inconsistencia_athenas", label: "Inconsistência Athenas" },
-      ]);
+      CF_COLUMNS = unionColumnsByLabel(CF_COLUMNS, sanitizeContFlowColumns(cols));
+      forceDefaultColumns(getRequiredContFlowColumns());
 
       CF_COLUMNS.forEach((c) => setDefaultWidthForCol(c.key));
 
@@ -4343,27 +5374,7 @@ function handleImportFile(e) {
     } else {
       const before = snapshotState();
       mergeImportRows(cols, rows);
-      forceDefaultColumns([
-        { key: "cod", label: "Cód." },
-        { key: "razao_social", label: "Razão Social" },
-        { key: "cnpj_cpf", label: "CNPJ/CPF" },
-        { key: "trib", label: "Trib." },
-        { key: "grupo", label: "Grupo" },
-        { key: "class", label: "Class" },
-        { key: "desligamento", label: "Desligamento" },
-        { key: "status", label: "Status" },
-        { key: "resp1", label: "Resp.1" },
-        { key: "resp2", label: "Resp.2" },
-        { key: "tipo", label: "Tipo" },
-        { key: "num_quotas", label: "Num Quotas" },
-        { key: "quota1", label: "1º quota" },
-        { key: "quota2", label: "2º quota" },
-        { key: "quota3", label: "3º quota" },
-        { key: "obs", label: "Obs" },
-        { key: "mit", label: "MIT" },
-        { key: "controle_mit", label: "Controle de MIT" },
-        { key: "inconsistencia_athenas", label: "Inconsistência Athenas" },
-      ]);
+      forceDefaultColumns(getRequiredContFlowColumns());
       const after = snapshotState();
       pushUndo({ type: "snapshot", before, after });
       markStructureDirty();
@@ -4954,6 +5965,70 @@ function injectExtraStyles() {
     .cf-cell.is-find-hit{ box-shadow: inset 0 0 0 9999px rgba(56,189,248,.12); }
     .cf-cell.is-find-current{ outline:2px solid rgba(56,189,248,.95)!important; outline-offset:-2px; }
     .cf-cell.is-dirty{ box-shadow: inset 0 0 0 9999px rgba(250,204,21,.10); border-color: rgba(250,204,21,.35)!important; }
+    .cf-cell--quota{ cursor:default; padding:4px 6px!important; }
+    .cf-cell--select{ cursor:default; padding:4px 6px!important; }
+    .cf-inline-quota-select{ width:100%; min-height:32px; border-radius:10px; border:1px solid rgba(96,165,250,.35); background:#0f2741; color:#f8fbff; padding:0 10px; font:inherit; cursor:pointer; outline:none; }
+    .cf-inline-quota-select:hover{ background:#163354; }
+    .cf-inline-quota-select option{ color:#111827; }
+    .cf-quota-trigger{ width:100%; display:flex; align-items:center; justify-content:space-between; gap:8px; height:32px; border-radius:10px; border:1px solid rgba(96,165,250,.35); background:#0f2741; color:#f8fbff; padding:0 10px; font:inherit; font-weight:700; cursor:pointer; }
+    .cf-quota-trigger:hover{ background:#163354; }
+    .cf-quota-trigger.is-filled{ background:#14304f; }
+    .cf-quota-trigger__label{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .cf-quota-trigger__icon{ color:#bfdbfe; font-size:12px; flex:0 0 auto; }
+    .cf-select-trigger{ width:100%; display:flex; align-items:center; justify-content:space-between; gap:8px; min-height:32px; border-radius:10px; border:1px solid rgba(148,163,184,.28); background:rgba(15,23,42,.92); color:#f8fbff; padding:0 10px; font:inherit; cursor:pointer; }
+    .cf-select-trigger:hover{ background:rgba(30,41,59,.96); }
+    .cf-select-trigger.is-filled{ border-color:rgba(56,189,248,.28); }
+    .cf-select-trigger__label{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; text-align:left; }
+    .cf-select-trigger__icon{ color:#bfdbfe; font-size:12px; flex:0 0 auto; }
+    .cf-quota-editor{ width:320px; padding:16px; border-radius:18px; border:1px solid rgba(96,165,250,.18); background:linear-gradient(180deg,rgba(8,15,30,.985),rgba(9,19,37,.97)); box-shadow:0 28px 70px rgba(0,0,0,.46); backdrop-filter:blur(14px); }
+    .cf-quota-editor__head{ display:flex; align-items:flex-start; justify-content:space-between; gap:12px; margin-bottom:10px; }
+    .cf-quota-editor__eyebrow{ font-size:10px; font-weight:800; letter-spacing:.12em; text-transform:uppercase; color:rgba(125,211,252,.82); margin-bottom:4px; }
+    .cf-quota-editor__title{ font-weight:800; font-size:16px; line-height:1.1; color:#f8fbff; }
+    .cf-quota-editor__value-badge{ max-width:120px; padding:7px 10px; border-radius:999px; border:1px solid rgba(255,255,255,.08); background:rgba(15,23,42,.9); color:rgba(226,232,240,.92); font-size:11px; font-weight:700; text-align:right; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .cf-quota-editor__subtitle{ font-size:12px; line-height:1.45; color:rgba(226,232,240,.72); margin-bottom:14px; }
+    .cf-quota-editor__options-label{ font-size:11px; font-weight:800; letter-spacing:.08em; text-transform:uppercase; color:rgba(191,219,254,.82); margin-bottom:8px; }
+    .cf-quota-editor__options{ display:grid; grid-template-columns:1fr; gap:8px; margin-bottom:14px; }
+    .cf-quota-editor__option{ border:1px solid rgba(148,163,184,.18); background:linear-gradient(180deg,rgba(17,24,39,.94),rgba(15,23,42,.9)); color:#e8edf6; border-radius:14px; padding:11px 12px; cursor:pointer; font:inherit; text-align:left; transition:background .15s ease,border-color .15s ease,transform .15s ease,box-shadow .15s ease; display:flex; flex-direction:column; gap:2px; }
+    .cf-quota-editor__option:hover{ background:linear-gradient(180deg,rgba(18,39,70,.98),rgba(14,30,55,.96)); border-color:rgba(56,189,248,.38); transform:translateY(-1px); box-shadow:0 8px 24px rgba(14,165,233,.12); }
+    .cf-quota-editor__option.is-active{ background:linear-gradient(180deg,rgba(18,52,86,.98),rgba(18,46,74,.98)); border-color:rgba(34,197,94,.45); box-shadow:inset 0 0 0 1px rgba(34,197,94,.18),0 10px 24px rgba(34,197,94,.08); }
+    .cf-quota-editor__option-title{ font-weight:800; font-size:14px; color:#f8fbff; }
+    .cf-quota-editor__option-hint{ font-size:11px; color:rgba(191,219,254,.74); }
+    .cf-quota-editor__divider{ height:1px; background:linear-gradient(90deg,rgba(96,165,250,.16),rgba(148,163,184,.05)); margin:4px 0 12px; }
+    .cf-quota-editor__date-card{ border:1px solid rgba(56,189,248,.18); background:linear-gradient(180deg,rgba(10,23,42,.82),rgba(9,19,37,.72)); border-radius:15px; padding:12px; margin-bottom:12px; box-shadow:inset 0 1px 0 rgba(255,255,255,.03); }
+    .cf-quota-editor__date-head{ display:flex; align-items:flex-start; justify-content:space-between; gap:10px; margin-bottom:10px; }
+    .cf-quota-editor__date-label{ font-size:13px; font-weight:800; color:#f8fbff; }
+    .cf-quota-editor__date-hint{ font-size:11px; color:rgba(191,219,254,.72); margin-top:2px; line-height:1.4; }
+    .cf-quota-editor__date-preview{ padding:7px 10px; border-radius:999px; border:1px solid rgba(148,163,184,.18); background:rgba(15,23,42,.86); color:#e2e8f0; font-size:11px; font-weight:800; white-space:nowrap; }
+    .cf-quota-editor__date-preview.is-empty{ color:rgba(148,163,184,.88); }
+    .cf-quota-editor__field--date{ margin-bottom:8px; }
+    .cf-quota-editor__date-actions{ display:flex; gap:8px; flex-wrap:wrap; }
+    .cf-quota-editor__date-action{ border:1px solid rgba(148,163,184,.18); background:rgba(15,23,42,.86); color:#e8edf6; border-radius:11px; padding:8px 10px; cursor:pointer; font:inherit; font-size:12px; font-weight:800; transition:transform .15s ease,border-color .15s ease,background .15s ease; }
+    .cf-quota-editor__date-action:hover{ transform:translateY(-1px); background:rgba(18,39,70,.94); border-color:rgba(56,189,248,.35); }
+    .cf-quota-editor__field{ display:flex; flex-direction:column; gap:6px; font-size:12px; color:rgba(232,237,246,.8); margin-bottom:10px; }
+    .cf-quota-editor__field span{ font-weight:700; color:rgba(226,232,240,.82); }
+    .cf-quota-editor__field input,
+    .cf-quota-editor__field select{ height:42px; border-radius:13px; border:1px solid rgba(148,163,184,.18); background:rgba(255,255,255,.05); color:#f8fbff; padding:0 12px; outline:none; box-shadow:inset 0 1px 0 rgba(255,255,255,.02); }
+    .cf-quota-editor__field input:focus,
+    .cf-quota-editor__field select:focus{ border-color:rgba(56,189,248,.5); box-shadow:0 0 0 3px rgba(14,165,233,.14); }
+    .cf-quota-editor__field select option{ color:#111827; }
+    .cf-quota-editor__footer{ display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:14px; }
+    .cf-quota-editor__footer-btn{ border:1px solid rgba(148,163,184,.18); color:#e8edf6; border-radius:13px; padding:11px 12px; cursor:pointer; font:inherit; font-weight:800; transition:transform .15s ease,border-color .15s ease,background .15s ease,box-shadow .15s ease; }
+    .cf-quota-editor__footer-btn:hover{ transform:translateY(-1px); }
+    .cf-quota-editor__footer-btn.is-ghost{ background:rgba(15,23,42,.86); }
+    .cf-quota-editor__footer-btn.is-ghost:hover{ background:rgba(30,41,59,.96); border-color:rgba(148,163,184,.3); }
+    .cf-quota-editor__footer-btn.is-primary{ background:linear-gradient(135deg,#0ea5e9,#2563eb); border-color:rgba(96,165,250,.38); color:#f8fbff; box-shadow:0 12px 28px rgba(37,99,235,.22); }
+    .cf-quota-editor__footer-btn.is-primary:hover{ box-shadow:0 16px 32px rgba(37,99,235,.28); }
+    .cf-option-editor{ width:300px; padding:14px; border-radius:16px; border:1px solid rgba(255,255,255,.12); background:rgba(2,6,23,.97); box-shadow:0 24px 60px rgba(0,0,0,.42); backdrop-filter:blur(12px); }
+    .cf-option-editor__title{ font-weight:700; font-size:13px; color:#e8edf6; margin-bottom:12px; }
+    .cf-option-editor__input{ width:100%; height:38px; border-radius:12px; border:1px solid rgba(255,255,255,.14); background:rgba(255,255,255,.06); color:#e8edf6; padding:0 10px; outline:none; }
+    .cf-option-editor__list{ margin-top:12px; max-height:240px; overflow:auto; display:grid; gap:8px; }
+    .cf-option-editor__item{ width:100%; text-align:left; border:1px solid rgba(255,255,255,.12); background:rgba(15,23,42,.92); color:#e8edf6; border-radius:12px; padding:10px 12px; cursor:pointer; font:inherit; }
+    .cf-option-editor__item:hover,.cf-option-editor__item.is-active{ background:rgba(30,41,59,.98); border-color:rgba(56,189,248,.35); }
+    .cf-option-editor__item.is-custom{ border-style:dashed; }
+    .cf-option-editor__empty{ color:rgba(232,237,246,.65); font-size:12px; padding:8px 4px; }
+    .cf-option-editor__footer{ display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:12px; }
+    .cf-option-editor__footer button{ border:1px solid rgba(255,255,255,.12); background:rgba(15,23,42,.92); color:#e8edf6; border-radius:12px; padding:10px 12px; cursor:pointer; font:inherit; }
+    .cf-option-editor__footer button:hover{ background:rgba(30,41,59,.96); }
     #cf-corner-select{ z-index: 40 !important; }
     .cf-row-index{ z-index: 35 !important; }
     .cf-table thead th{ z-index: 30 !important; }
@@ -5438,6 +6513,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       ) {
         window.PainelTributarioLRASheet.closeModal();
       }
+      closeQuotaCompletionModal();
       if (findUI) findUI.style.display = "none";
     }
   });
@@ -5445,6 +6521,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   document.addEventListener("keydown", handleGlobalKeyDown);
   document.addEventListener("copy", handleCopyEvent);
   document.addEventListener("paste", handlePasteEvent);
+  bindQuotaCompletionModal();
 
   window.addEventListener("mouseup", () => (mouseSelecting = false));
 

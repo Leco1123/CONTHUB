@@ -41,25 +41,30 @@ const upload = multer({
   limits: { fileSize: 30 * 1024 * 1024 },
 });
 
+function cleanupFile(file) {
+  try {
+    if (file?.path && fs.existsSync(file.path)) {
+      fs.unlinkSync(file.path);
+    }
+  } catch {}
+}
+
+function cleanupFiles(files = []) {
+  files.forEach(cleanupFile);
+}
+
 router.get("/health", (req, res) => {
   res.json({
     ok: true,
-    pythonScript: PYTHON_SCRIPT,
     pythonExists: fs.existsSync(PYTHON_SCRIPT),
-    pythonFornecedoresScript: PYTHON_FORNECEDORES_SCRIPT,
     pythonFornecedoresExists: fs.existsSync(PYTHON_FORNECEDORES_SCRIPT),
-    uploadsDir: UPLOADS_DIR,
-    reconDir: RECON_DIR,
   });
 });
 
 router.get("/fornecedores/health", (req, res) => {
   res.json({
     ok: true,
-    pythonScript: PYTHON_FORNECEDORES_SCRIPT,
     pythonExists: fs.existsSync(PYTHON_FORNECEDORES_SCRIPT),
-    uploadsDir: UPLOADS_DIR,
-    reconDir: RECON_DIR,
   });
 });
 
@@ -84,6 +89,7 @@ router.post(
 
     const outputName = `reconciliacao_${Date.now()}.xlsx`;
     const outputPath = path.join(RECON_DIR, outputName);
+    const uploadedFiles = [arquivoContabil, arquivoCliente];
 
     let stdout = "";
     let stderr = "";
@@ -112,6 +118,7 @@ router.post(
     });
 
     py.on("error", (err) => {
+      cleanupFiles(uploadedFiles);
       return res.status(500).json({
         error: "Erro ao iniciar Python",
         detail: err.message,
@@ -119,17 +126,7 @@ router.post(
     });
 
     py.on("close", (code) => {
-      try {
-        if (arquivoContabil?.path && fs.existsSync(arquivoContabil.path)) {
-          fs.unlinkSync(arquivoContabil.path);
-        }
-      } catch {}
-
-      try {
-        if (arquivoCliente?.path && fs.existsSync(arquivoCliente.path)) {
-          fs.unlinkSync(arquivoCliente.path);
-        }
-      } catch {}
+      cleanupFiles(uploadedFiles);
 
       if (code !== 0) {
         return res.status(500).json({
@@ -177,6 +174,7 @@ router.post(
 
     const outputName = `reconciliacao_fornecedores_${Date.now()}.xlsx`;
     const outputPath = path.join(RECON_DIR, outputName);
+    const uploadedFiles = [arquivoContabil, arquivoFornecedor];
 
     let stdout = "";
     let stderr = "";
@@ -208,6 +206,7 @@ router.post(
     });
 
     py.on("error", (err) => {
+      cleanupFiles(uploadedFiles);
       return res.status(500).json({
         error: "Erro ao iniciar Python",
         detail: err.message,
@@ -215,17 +214,7 @@ router.post(
     });
 
     py.on("close", (code) => {
-      try {
-        if (arquivoContabil?.path && fs.existsSync(arquivoContabil.path)) {
-          fs.unlinkSync(arquivoContabil.path);
-        }
-      } catch {}
-
-      try {
-        if (arquivoFornecedor?.path && fs.existsSync(arquivoFornecedor.path)) {
-          fs.unlinkSync(arquivoFornecedor.path);
-        }
-      } catch {}
+      cleanupFiles(uploadedFiles);
 
       if (code !== 0) {
         return res.status(500).json({

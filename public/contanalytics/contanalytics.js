@@ -56,6 +56,7 @@ document.addEventListener("DOMContentLoaded", () => {
       savedAt: "",
     },
     contFlowSheets: [],
+    contFlowMasterRows: [],
     painelTributario: EMPTY_DATASET,
     painelTributarioLR: EMPTY_DATASET,
     painelTributarioLRA: EMPTY_DATASET,
@@ -225,6 +226,25 @@ document.addEventListener("DOMContentLoaded", () => {
   function isFilled(value) {
     const normalized = normalizeText(value);
     return normalized !== "" && normalized !== "-" && normalized !== "null" && normalized !== "undefined";
+  }
+
+  function normalizeAnalyticsFieldValue(key, value) {
+    const raw = String(value ?? "").replace(/\u00a0/g, " ").trim();
+    if (!isFilled(raw)) return "";
+
+    if (["resp1", "resp2", "status", "grupo", "trib", "tipo", "obs", "mit", "controle_mit", "inconsistencia_athenas"].includes(String(key || ""))) {
+      return raw.replace(/\s+/g, " ").trim();
+    }
+
+    if (String(key || "") === "cnpj_cpf") {
+      return raw.replace(/\s+/g, "");
+    }
+
+    if (String(key || "") === "cod") {
+      return raw.replace(/\s+/g, " ").trim();
+    }
+
+    return raw;
   }
 
   function formatNumber(value) {
@@ -631,8 +651,13 @@ document.addEventListener("DOMContentLoaded", () => {
     (columns || []).forEach((col) => {
       const aliasKey = canonicalKeyFromLabel(col.label || col.key);
       if (!aliasKey) return;
-      if (isFilled(row[aliasKey])) return;
-      row[aliasKey] = String(row[col.key] ?? "");
+      const sourceValue = normalizeAnalyticsFieldValue(aliasKey, row[col.key]);
+      row[col.key] = normalizeAnalyticsFieldValue(col.key, row[col.key]);
+      if (isFilled(row[aliasKey])) {
+        row[aliasKey] = normalizeAnalyticsFieldValue(aliasKey, row[aliasKey]);
+        return;
+      }
+      row[aliasKey] = sourceValue;
     });
     return row;
   }
@@ -1468,6 +1493,71 @@ document.addEventListener("DOMContentLoaded", () => {
     return String(current?.razao_social || row?.razao_social || row?.cnpj_cpf || row?.cod || "Sem identificação").trim();
   }
 
+  function getContFlowCompanyIdentity(row) {
+    const doc = String(row?.cnpj_cpf || "").replace(/\D/g, "");
+    if (doc) return `doc:${doc}`;
+
+    const cod = String(row?.cod || "").trim();
+    if (cod) return `cod:${cod}`;
+
+    const name = normalizeText(row?.razao_social);
+    if (name) return `nome:${name}`;
+
+    return "";
+  }
+
+  function mergeContFlowCompanyRows(baseRow, nextRow) {
+    const merged = { ...(baseRow || {}) };
+    const preferred = nextRow || {};
+
+    Object.entries(preferred).forEach(([key, value]) => {
+      if (key.startsWith("__")) {
+        if (merged[key] == null || merged[key] === "") merged[key] = value;
+        return;
+      }
+
+      const normalizedValue = normalizeAnalyticsFieldValue(key, value);
+      if (!isFilled(normalizedValue)) return;
+
+      if (!isFilled(merged[key])) {
+        merged[key] = normalizedValue;
+        return;
+      }
+
+      if (["trib", "status", "grupo", "resp1", "resp2", "tipo", "desligamento", "num_quotas", "quota1", "quota2", "quota3", "obs", "mit", "controle_mit", "inconsistencia_athenas"].includes(key)) {
+        merged[key] = normalizedValue;
+      }
+    });
+
+    return merged;
+  }
+
+  function buildContFlowMasterRows(datasets = []) {
+    const grouped = new Map();
+
+    (datasets || []).forEach((dataset, sheetIndex) => {
+      getValidContFlowRows(dataset || EMPTY_DATASET).forEach((row) => {
+        const identity = getContFlowCompanyIdentity(row);
+        if (!identity) return;
+
+        const decoratedRow = {
+          ...row,
+          __sheetIndex: sheetIndex,
+          __sheetLabel: QUARTER_LABELS[sheetIndex] || "",
+        };
+
+        if (!grouped.has(identity)) {
+          grouped.set(identity, decoratedRow);
+          return;
+        }
+
+        grouped.set(identity, mergeContFlowCompanyRows(grouped.get(identity), decoratedRow));
+      });
+    });
+
+    return Array.from(grouped.values());
+  }
+
   function buildContFlowCompanyMap(rows) {
     const map = new Map();
     (rows || []).forEach((row) => {
@@ -1499,7 +1589,11 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   function getTaxBaseRows(config) {
-    return getValidContFlowRows(state.contFlow).filter(
+    const sourceRows = Array.isArray(state.contFlowMasterRows) && state.contFlowMasterRows.length
+      ? state.contFlowMasterRows
+      : getValidContFlowRows(state.contFlow);
+
+    return sourceRows.filter(
       (row) => detectTaxTribMode(row?.trib) === config.tribMode
     );
   }
@@ -2257,6 +2351,73 @@ document.addEventListener("DOMContentLoaded", () => {
     const hintEl = document.getElementById(`${id}Hint`);
     if (valueEl) valueEl.textContent = formatter(value);
     if (hintEl && hint) hintEl.textContent = hint;
+  }
+
+  function renderAnalyticsParameters(analytics) {
+    const target = document.getElementById("analyticsParams");
+    if (!target) return;
+
+    const quartersLoaded = state.contFlowSheets.filter((dataset) => getValidContFlowRows(dataset).length > 0).length;
+    const ownerCoverage = analytics.totalRows ? ((analytics.totalRows - analytics.noResp1) / analytics.totalRows) * 100 : 0;
+    const activeRows = Math.max(analytics.activeRows, 0);
+    const inactiveRows = Math.max(analytics.totalRows - analytics.activeRows, 0);
+    const totalTaxRows =
+      (state.painelTributario?.rows || []).length +
+      (state.painelTributarioLR?.rows || []).length +
+      (state.painelTributarioLRA?.rows || []).length;
+
+    const quarterPills = state.contFlowSheets
+      .map((dataset, index) => {
+        const count = getValidContFlowRows(dataset).length;
+        return `<span class="analytics-param__pill" data-tone="${count ? "ok" : "warn"}">${QUARTER_LABELS[index]}: ${formatNumber(count)}</span>`;
+      })
+      .join("");
+
+    const taxPills = [
+      { label: "LP", rows: (state.painelTributario?.rows || []).length },
+      { label: "LRT", rows: (state.painelTributarioLR?.rows || []).length },
+      { label: "LRA", rows: (state.painelTributarioLRA?.rows || []).length },
+    ]
+      .map((item) => `<span class="analytics-param__pill" data-tone="${item.rows ? "brand" : "warn"}">${item.label}: ${formatNumber(item.rows)}</span>`)
+      .join("");
+
+    target.innerHTML = `
+      <article class="analytics-param">
+        <span class="analytics-param__label">Fonte principal</span>
+        <strong class="analytics-param__value">${escapeHtml(state.contFlow.__sourceLabel || "ContFlow consolidado")}</strong>
+        <span class="analytics-param__hint">Leitura-base usada para os cards e indicadores gerenciais.</span>
+      </article>
+
+      <article class="analytics-param">
+        <span class="analytics-param__label">Universo lido</span>
+        <strong class="analytics-param__value">${formatNumber(analytics.totalRows)} clientes</strong>
+        <span class="analytics-param__hint">${formatNumber(activeRows)} ativos e ${formatNumber(inactiveRows)} fora da operação ativa.</span>
+      </article>
+
+      <article class="analytics-param">
+        <span class="analytics-param__label">Trimestres do ContFlow</span>
+        <strong class="analytics-param__value">${formatNumber(quartersLoaded)} de 4 carregados</strong>
+        <div class="analytics-param__pills">${quarterPills}</div>
+      </article>
+
+      <article class="analytics-param">
+        <span class="analytics-param__label">Cruzamento tributário</span>
+        <strong class="analytics-param__value">${formatNumber(totalTaxRows)} linhas tributárias</strong>
+        <div class="analytics-param__pills">${taxPills}</div>
+      </article>
+
+      <article class="analytics-param">
+        <span class="analytics-param__label">Período analisado</span>
+        <strong class="analytics-param__value">Mensal + trimestral</strong>
+        <span class="analytics-param__hint">${formatCurrency(analytics.timeAnalytics.annualRevenue)} no radar mensal e ${formatNumber(analytics.timeAnalytics.quarterSummary.length)} trimestres consolidados.</span>
+      </article>
+
+      <article class="analytics-param">
+        <span class="analytics-param__label">Cobertura operacional</span>
+        <strong class="analytics-param__value">${formatPercent(ownerCoverage)}</strong>
+        <span class="analytics-param__hint">${formatPercent(analytics.averageCoverage)} de preenchimento médio e ${formatNumber(Math.max(analytics.totalRows - analytics.noResp1, 0))} clientes com Resp.1 definido.</span>
+      </article>
+    `;
   }
 
   function drillAttrs(attrs = {}) {
@@ -3102,17 +3263,19 @@ document.addEventListener("DOMContentLoaded", () => {
     const updatedEl = document.getElementById("analyticsUpdatedAt");
     const sourceChip = document.getElementById("analyticsSourceChip");
 
-    setMetric("metricQuotaComplete", analytics.quotaAnalytics.allDelivered, "Clientes com ciclo completo de quotas.");
-    setMetric("metricQuotaCoverage", analytics.quotaAnalytics.coverage, "Preenchimento médio entre 1ª, 2ª e 3ª quota.", (value) => formatPercent(value));
-    setMetric("metricQuotaPending", analytics.quotaAnalytics.pending, "Clientes com quota iniciada e ciclo ainda aberto.");
-    setMetric("metricTotal", analytics.totalRows, "Clientes válidos identificados na base.");
-    setMetric("metricActive", analytics.activeRows, `${formatNumber(Math.max(analytics.totalRows - analytics.activeRows, 0))} fora da operação ativa.`);
-    setMetric("metricNoResp1", analytics.noResp1, analytics.noResp1 ? "Carteira ainda sem dono primário em parte da base." : "Cobertura completa de Resp.1.");
-    setMetric("metricMit", analytics.mitPending, analytics.mitPending ? "Há sinais de pendência em MIT/Controle MIT." : "Sem sinais fortes de pendência no MIT.");
-    setMetric("metricAthenas", analytics.inconsistencias, analytics.inconsistencias ? "Campo de inconsistência com registros preenchidos." : "Sem inconsistências preenchidas.");
-    setMetric("metricDesligamento", analytics.desligamentos, analytics.desligamentos ? "Há linhas com desligamento informado." : "Sem desligamentos preenchidos.");
-    setMetric("metricColumns", analytics.totalColumns, "Todas as colunas atuais do ContFlow estão auditadas.");
-    setMetric("metricCoverage", analytics.averageCoverage, "Média de preenchimento entre todas as colunas.", (value) => formatPercent(value));
+    renderAnalyticsParameters(analytics);
+
+    setMetric("metricQuotaComplete", analytics.quotaAnalytics.allDelivered, `${formatNumber(analytics.quotaAnalytics.clientsCompleteExpected)} clientes fecharam todo o ciclo esperado.`);
+    setMetric("metricQuotaCoverage", analytics.quotaAnalytics.coverage, `${formatNumber(analytics.quotaAnalytics.totalDelivered)} entregas registradas de ${formatNumber(analytics.quotaAnalytics.totalPossible)} possíveis.`, (value) => formatPercent(value));
+    setMetric("metricQuotaPending", analytics.quotaAnalytics.pending, `${formatNumber(analytics.quotaAnalytics.clientsPendingExpected)} clientes ainda têm etapa pendente.`);
+    setMetric("metricTotal", analytics.totalRows, "Base válida usada na leitura gerencial do BI.");
+    setMetric("metricActive", analytics.activeRows, `${formatNumber(Math.max(analytics.totalRows - analytics.activeRows, 0))} clientes estão fora da operação ativa.`);
+    setMetric("metricNoResp1", analytics.noResp1, analytics.noResp1 ? "Esses clientes ainda estão sem dono primário definido." : "Toda a carteira já tem Resp.1 definido.");
+    setMetric("metricMit", analytics.mitPending, analytics.mitPending ? "Há registros com sinal de pendência em MIT ou Controle de MIT." : "Não há sinais fortes de pendência em MIT.");
+    setMetric("metricAthenas", analytics.inconsistencias, analytics.inconsistencias ? "Existem apontamentos preenchidos em Inconsistência Athenas." : "Não há apontamentos de Athenas na leitura atual.");
+    setMetric("metricDesligamento", analytics.desligamentos, analytics.desligamentos ? "Há clientes com desligamento informado na base." : "Não há desligamentos preenchidos na leitura atual.");
+    setMetric("metricColumns", analytics.totalColumns, "Total de colunas auditadas no ContFlow atual.");
+    setMetric("metricCoverage", analytics.averageCoverage, "Preenchimento médio considerando todas as colunas auditadas.", (value) => formatPercent(value));
 
     renderInsights(analytics);
     renderBarList("tribDistribution", analytics.triDist, { drillType: "distribution", drillField: "trib", drillTitle: "Tributação" });
@@ -3152,11 +3315,13 @@ document.addEventListener("DOMContentLoaded", () => {
   function renderLoadingState() {
     const updatedEl = document.getElementById("analyticsUpdatedAt");
     const sourceChip = document.getElementById("analyticsSourceChip");
+    const params = document.getElementById("analyticsParams");
     const insights = document.getElementById("analyticsInsights");
     const auditRows = document.getElementById("analyticsAuditRows");
 
     if (updatedEl) updatedEl.textContent = "Atualizando indicadores e auditoria...";
     if (sourceChip) sourceChip.textContent = "Fonte: ContFlow";
+    if (params) params.innerHTML = '<div class="empty-state">Organizando parâmetros e contexto da leitura...</div>';
     renderTaxBiLoading();
     if (insights) insights.innerHTML = '<div class="empty-state">Carregando leitura gerencial da base...</div>';
     if (auditRows) {
@@ -3195,6 +3360,7 @@ document.addEventListener("DOMContentLoaded", () => {
   function renderAnalyticsError(err) {
     console.error("❌ Falha ao carregar BI do ContAnalytics:", err);
     const healthPill = document.getElementById("analyticsHealthPill");
+    const params = document.getElementById("analyticsParams");
     const insights = document.getElementById("analyticsInsights");
     const rows = document.getElementById("analyticsRows");
     const auditRows = document.getElementById("analyticsAuditRows");
@@ -3211,6 +3377,9 @@ document.addEventListener("DOMContentLoaded", () => {
     }
     if (insights) {
       insights.innerHTML = `<div class="empty-state">${escapeHtml(err?.message || "Não foi possível carregar a auditoria agora.")}</div>`;
+    }
+    if (params) {
+      params.innerHTML = '<div class="empty-state">Os parâmetros do BI não puderam ser montados.</div>';
     }
     if (rows) {
       rows.innerHTML = '<tr><td colspan="8"><div class="empty-state">Os destaques não puderam ser montados.</div></td></tr>';
@@ -3291,7 +3460,10 @@ document.addEventListener("DOMContentLoaded", () => {
 
     state.contFlowSheets = [datasets.cf1, datasets.cf2, datasets.cf3, datasets.cf4];
     state.contFlow = getLatestContFlowDataset(state.contFlowSheets);
-    state.contFlowCompanyMap = buildContFlowCompanyMap(getValidContFlowRows(state.contFlow));
+    state.contFlowMasterRows = buildContFlowMasterRows(state.contFlowSheets);
+    state.contFlowCompanyMap = buildContFlowCompanyMap(
+      state.contFlowMasterRows.length ? state.contFlowMasterRows : getValidContFlowRows(state.contFlow)
+    );
     state.painelTributario = datasets.pt || EMPTY_DATASET;
     state.painelTributarioLR = datasets.ptlr || EMPTY_DATASET;
     state.painelTributarioLRA = datasets.ptlra || EMPTY_DATASET;

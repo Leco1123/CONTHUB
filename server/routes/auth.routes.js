@@ -59,6 +59,14 @@ function toSafeProfile(user) {
   };
 }
 
+function isUniqueEmailConflict(err) {
+  return (
+    err?.code === "P2002" &&
+    Array.isArray(err?.meta?.target) &&
+    err.meta.target.includes("email")
+  );
+}
+
 /* ===============================
    LOGIN
    POST /api/auth/login
@@ -176,6 +184,10 @@ router.post("/signup", async (req, res) => {
       return res.status(201).json({ user: safe });
     });
   } catch (err) {
+    if (isUniqueEmailConflict(err)) {
+      return res.status(409).json({ error: "Já existe um usuário com esse email." });
+    }
+
     console.error("ERRO REAL NO SIGNUP:");
     console.error(err);
     return res.status(500).json({ error: "Erro interno ao cadastrar usuário." });
@@ -216,7 +228,10 @@ router.post("/forgot", async (req, res) => {
 
     const baseUrl = process.env.APP_BASE_URL || "http://localhost:3000";
     const resetLink = `${baseUrl}/reset/reset.html?token=${rawToken}`;
-    console.log("🔐 RESET LINK:", resetLink);
+    console.info("Password reset solicitado para:", normalizedEmail);
+    if (process.env.NODE_ENV !== "production") {
+      console.info("Reset link local:", resetLink);
+    }
 
     return res.json({ ok: true });
   } catch (err) {

@@ -589,6 +589,81 @@ button.btn {
   color: #ffb4b4;
 }
 
+.analytics-params {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 14px;
+  margin: 18px 0 24px;
+}
+
+.analytics-param {
+  padding: 16px 18px;
+  border-radius: 20px;
+  background: linear-gradient(180deg, rgba(16, 23, 39, 0.96), rgba(11, 18, 30, 0.9));
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  box-shadow: var(--shadow-soft);
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.analytics-param__label {
+  color: #9ac8ff;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.analytics-param__value {
+  font-size: 18px;
+  line-height: 1.15;
+  font-weight: 900;
+  color: #f8fbff;
+}
+
+.analytics-param__hint {
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--muted);
+}
+
+.analytics-param__pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.analytics-param__pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 28px;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.04);
+  color: #dbeafe;
+  font-size: 11px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.analytics-param__pill[data-tone="ok"] {
+  background: rgba(78, 204, 163, 0.14);
+  border-color: rgba(78, 204, 163, 0.26);
+}
+
+.analytics-param__pill[data-tone="warn"] {
+  background: rgba(255, 209, 102, 0.14);
+  border-color: rgba(255, 209, 102, 0.26);
+}
+
+.analytics-param__pill[data-tone="brand"] {
+  background: rgba(49, 200, 255, 0.14);
+  border-color: rgba(49, 200, 255, 0.26);
+}
+
 .analytics-kpis {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -2017,6 +2092,10 @@ button.btn {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
+  .analytics-params {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
   .panel-card {
     grid-column: span 6;
   }
@@ -2077,6 +2156,10 @@ button.btn {
   }
 
   .analytics-kpis {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .analytics-params {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
@@ -2147,6 +2230,10 @@ button.btn {
   }
 
   .analytics-kpis {
+    grid-template-columns: 1fr;
+  }
+
+  .analytics-params {
     grid-template-columns: 1fr;
   }
 

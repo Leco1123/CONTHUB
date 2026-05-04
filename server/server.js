@@ -19,6 +19,19 @@ const sheetsRoutes = require("./routes/sheets.routes");
 const reconciliacaoRoutes = require("./routes/reconciliacao.routes");
 
 const app = express();
+const isProduction = String(process.env.NODE_ENV || "").trim().toLowerCase() === "production";
+const appBaseUrl = String(process.env.APP_BASE_URL || "").trim();
+const sessionSecret = String(process.env.SESSION_SECRET || "").trim();
+const sessionCookieSecure =
+  String(process.env.SESSION_COOKIE_SECURE || "").trim() !== ""
+    ? String(process.env.SESSION_COOKIE_SECURE).trim().toLowerCase() === "true"
+    : isProduction && /^https:\/\//i.test(appBaseUrl);
+
+if (!sessionSecret) {
+  throw new Error("SESSION_SECRET não configurado.");
+}
+
+app.set("trust proxy", 1);
 
 // ---------------------------------------------------
 // MIDDLEWARES
@@ -36,12 +49,12 @@ app.use(express.json({ limit: "10mb" }));
 app.use(
   session({
     name: "conthub.sid",
-    secret: process.env.SESSION_SECRET || "conthub_super_secret",
+    secret: sessionSecret,
     resave: false,
     saveUninitialized: false,
     cookie: {
       httpOnly: true,
-      secure: false,
+      secure: sessionCookieSecure,
       sameSite: "lax",
       maxAge: 1000 * 60 * 60 * 8,
     },
@@ -80,8 +93,7 @@ app.use("/api/dashboard", requireAuth, dashboardRoutes);
 
 app.use("/api/sheets", requireAuth, sheetsRoutes);
 
-// 🔵 ROTA NOVA DA RECONCILIAÇÃO (SEM AUTH TEMPORARIAMENTE)
-app.use("/api/reconciliacao", reconciliacaoRoutes);
+app.use("/api/reconciliacao", requireAuth, reconciliacaoRoutes);
 
 app.use("/api/admin/users", requireAuth, adminUsersRoutes);
 

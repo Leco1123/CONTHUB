@@ -3,10 +3,38 @@ const express = require("express");
 const db = require("../db");
 
 const router = express.Router();
+const RATE_LIMIT_WINDOW_MS = Number(process.env.PUBLIC_CUSTOMER_WINDOW_MS || 10 * 60 * 1000);
+const RATE_LIMIT_MAX_REQUESTS = Number(process.env.PUBLIC_CUSTOMER_MAX_REQUESTS || 10);
+const registrationAttempts = new Map();
 
 // Honeypot anti-bot: campo "website" deve vir vazio (no form a gente esconde)
 function isSpam(body) {
   return body && typeof body.website === "string" && body.website.trim().length > 0;
+}
+
+function getClientIp(req) {
+  return String(
+    req.headers["x-forwarded-for"]?.split(",")[0]?.trim() ||
+      req.socket?.remoteAddress ||
+      req.ip ||
+      "unknown"
+  );
+}
+
+function consumeRegistrationQuota(ip) {
+  const now = Date.now();
+  const current = registrationAttempts.get(ip);
+  if (!current || current.resetAt <= now) {
+    registrationAttempts.set(ip, { count: 1, resetAt: now + RATE_LIMIT_WINDOW_MS });
+    return true;
+  }
+
+  if (current.count >= RATE_LIMIT_MAX_REQUESTS) {
+    return false;
+  }
+
+  current.count += 1;
+  return true;
 }
 
 router.post("/register", async (req, res) => {
@@ -14,6 +42,11 @@ router.post("/register", async (req, res) => {
     if (isSpam(req.body)) {
       // responde sucesso pra bot não insistir
       return res.status(200).json({ ok: true });
+    }
+
+    const ip = getClientIp(req);
+    if (!consumeRegistrationQuota(ip)) {
+      return res.status(429).json({ error: "Muitas tentativas. Tente novamente em alguns minutos." });
     }
 
     const { name, email, phone, document } = req.body || {};

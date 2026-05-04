@@ -595,17 +595,11 @@ document.addEventListener("DOMContentLoaded", () => {
   // API HELPERS
   // =======================================
   async function fetchJson(url, opts = {}) {
-    const actor = getSessionUser();
-    const actorId = actor?.id != null ? String(actor.id) : "";
-    const actorEmail = actor?.email ? String(actor.email) : "";
-
     const res = await fetch(url, {
       method: opts.method || "GET",
       credentials: "include",
       headers: {
         "Content-Type": "application/json",
-        "X-User-Id": actorId,
-        "X-User-Email": actorEmail,
         ...(opts.headers || {}),
       },
       body: opts.body ? JSON.stringify(opts.body) : undefined,

@@ -1,7 +1,7 @@
 console.log("⚡ Painel Tributário JS carregando...");
 
 window.PainelTributarioLRSheet = (() => {
-    const STORAGE_KEY = "conthub:contflow:painel-tributario-lr:v3";
+    const STORAGE_KEY = "conthub:contflow:painel-tributario-lr:v5";
   const API_SHEET_KEY = "painel-tributario-lr";
   const API_SHEET_URL = `/api/sheets/${API_SHEET_KEY}`;
   const API_SHEET_CELLS_URL = `${API_SHEET_URL}/cells`;
@@ -38,25 +38,33 @@ window.PainelTributarioLRSheet = (() => {
   const PT_FROZEN_COL_KEYS = ["cod", "razao_social", "tipo", "cnpj_cpf", "class", "grupo", "trib"];
   const PT_FROZEN_GROUP_COLSPAN = 7;
 
-  const LR_COLUMNS = [
+  const LR_SUPPORT_COLUMNS = [
     { key: "fat_total", label: "Receita Bruta", type: "read", readClass: "read-ir" },
     { key: "fat_m1", label: "Fat Mês 1", type: "read", readClass: "read-ir" },
     { key: "fat_m2", label: "Fat Mês 2", type: "read", readClass: "read-ir" },
     { key: "fat_m3", label: "Fat Mês 3", type: "read", readClass: "read-ir" },
+  ];
+
+  const LR_COLUMNS = [
     { key: "resultado_antes_irpj_csll", label: "Resultado antes do IRPJ e CSLL", type: "number" },
-    { key: "adicoes", label: "Adições", type: "number" },
-    { key: "exclusoes", label: "Exclusoes", type: "number" },
+    { key: "adicoes", label: "Adições", type: "read", readClass: "read-ir" },
+    { key: "exclusoes", label: "Exclusoes", type: "read", readClass: "read-ir" },
     { key: "compensacao_prej", label: "Compensação Prej.", type: "number" },
+    { key: "incentivo_antes_bc", label: "Incentivo fiscal BC", type: "number" },
     { key: "bc", label: "BC", type: "read", readClass: "read-ir" },
+    { key: "incentivo_depois_bc", label: "Incentivo fiscal IRPJ", type: "number" },
     { key: "irpj_devido_15", label: "IRPJ devido 15%", type: "read", readClass: "read-ir" },
     { key: "irpj_adicional_lra", label: "IRPJ adicional- LRA", type: "read", readClass: "read-ir" },
     { key: "irpj_adicional_lrt", label: "IRPJ adicional- LRT", type: "read", readClass: "read-ir" },
-    { key: "retencoes_incentivos_pagos", label: "Retenções e incentivos e pagos", type: "number" },
+    { key: "retencoes_incentivos_pagos", label: "IR retido", type: "number" },
     { key: "irpj_a_pagar", label: "IRPJ a pagar", type: "read", readClass: "read-ir" },
     { key: "csll_devida", label: "CSLL devida", type: "read", readClass: "read-csll" },
-    { key: "retencoes_pagos_csll", label: "Retenções pagos", type: "number" },
+    { key: "retencoes_pagos_csll", label: "CSLL retido", type: "number" },
+    { key: "incentivo_fiscal_csll", label: "Incentivo fiscal CSLL", type: "number" },
     { key: "csll_a_pagar", label: "CSLL a pagar", type: "read", readClass: "read-csll" },
   ];
+  const HIDDEN_COLUMNS = [{ key: "lalur_payload", label: "_LALUR_PAYLOAD_", type: "hidden" }];
+  const LR_GROUP_COLSPAN = LR_COLUMNS.length;
 
   const SHEET_TITLES = ["1º Trimestre", "2º Trimestre", "3º Trimestre", "4º Trimestre"];
   const QUARTER_MONTHS = [
@@ -80,6 +88,7 @@ window.PainelTributarioLRSheet = (() => {
     modalMode: "base",
     modalRowId: "",
     modalTaxKind: "irpj",
+    modalLalurKind: "additions",
     lastRevenueMirrorSignature: "",
     };
     let cellMeta = new Map();
@@ -88,6 +97,8 @@ window.PainelTributarioLRSheet = (() => {
     let clipboardTextCache = "";
 
   const IRPJ_ADICIONAL_LIMIT = 60000;
+  const LALUR_ENTRY_COUNT = 5;
+  const LALUR_SYNC_TOLERANCE = 0.005;
 
   function detectTribMode(value) {
     const normalized = String(value || "")
@@ -209,6 +220,12 @@ window.PainelTributarioLRSheet = (() => {
         </div>
       `;
       modalActions.insertAdjacentElement("beforebegin", additionalCalc);
+
+      const lalurCalculator = document.createElement("section");
+      lalurCalculator.id = "ptlr-lalur-calculator";
+      lalurCalculator.className = "pt-lalur-workbench";
+      lalurCalculator.hidden = true;
+      modalActions.insertAdjacentElement("beforebegin", lalurCalculator);
     }
     lrBackdrop.insertAdjacentElement("afterend", lrModal);
   }
@@ -248,7 +265,7 @@ window.PainelTributarioLRSheet = (() => {
   }
 
   function getAllColumns() {
-    return [...BASE_META_COLUMNS, ...LR_COLUMNS];
+    return [...getDynamicColumns(), ...LR_SUPPORT_COLUMNS, ...HIDDEN_COLUMNS];
   }
 
   function getDirtyCellKey(rowId, colKey) {
@@ -552,26 +569,189 @@ window.PainelTributarioLRSheet = (() => {
   }
 
   function getDynamicColumns() {
-    const [m1, m2, m3] = getQuarterMonths();
-    const quarterLabel = `${state.sheetIndex + 1}º trim`;
+    return [...BASE_META_COLUMNS, ...LR_COLUMNS.map((col) => ({ ...col }))];
+  }
 
-    const lrCols = LR_COLUMNS.map((col) => {
-      if (col.key === "fat_total") {
-        return { ...col, label: `Receita Bruta ${quarterLabel}` };
-      }
-      if (col.key === "fat_m1") {
-        return { ...col, label: `Fat ${m1}` };
-      }
-      if (col.key === "fat_m2") {
-        return { ...col, label: `Fat ${m2}` };
-      }
-      if (col.key === "fat_m3") {
-        return { ...col, label: `Fat ${m3}` };
-      }
-      return { ...col };
-    });
+  function createEmptyLalurEntry() {
+    return { date: "", type: "", note: "", amount: "" };
+  }
 
-    return [...BASE_META_COLUMNS, ...lrCols];
+  function normalizeLalurEntry(raw) {
+    return {
+      date: String(raw?.date || "").trim(),
+      type: String(raw?.type || "").trim(),
+      note: String(raw?.note || "").trim(),
+      amount: String(raw?.amount || "").trim(),
+    };
+  }
+
+  function normalizeLalurPayload(raw, monthLabels = getQuarterMonths()) {
+    const sourceMonths = Array.isArray(raw?.months) ? raw.months : [];
+
+    return {
+      months: monthLabels.map((label, monthIndex) => {
+        const source = sourceMonths[monthIndex] || {};
+        const additions = Array.isArray(source.additions) ? source.additions : [];
+        const exclusions = Array.isArray(source.exclusions) ? source.exclusions : [];
+        const additionsCount = Math.max(LALUR_ENTRY_COUNT, additions.length || 0);
+        const exclusionsCount = Math.max(LALUR_ENTRY_COUNT, exclusions.length || 0);
+
+        return {
+          label,
+          additions: Array.from({ length: additionsCount }, (_, entryIndex) =>
+            normalizeLalurEntry(additions[entryIndex] || createEmptyLalurEntry())
+          ),
+          exclusions: Array.from({ length: exclusionsCount }, (_, entryIndex) =>
+            normalizeLalurEntry(exclusions[entryIndex] || createEmptyLalurEntry())
+          ),
+        };
+      }),
+      updatedAt: String(raw?.updatedAt || "").trim(),
+    };
+  }
+
+  function createDefaultLalurPayload() {
+    return normalizeLalurPayload({});
+  }
+
+  function getLalurPayload(row) {
+    const raw = String(row?.lalur_payload || "").trim();
+    if (!raw) return createDefaultLalurPayload();
+
+    try {
+      return normalizeLalurPayload(JSON.parse(raw));
+    } catch (_) {
+      return createDefaultLalurPayload();
+    }
+  }
+
+  function setLalurPayload(row, payload) {
+    row.lalur_payload = JSON.stringify(
+      normalizeLalurPayload(
+        {
+          ...payload,
+          updatedAt: new Date().toISOString(),
+        },
+        getQuarterMonths()
+      )
+    );
+  }
+
+  function sumLalurEntries(entries = []) {
+    return (Array.isArray(entries) ? entries : []).reduce(
+      (total, entry) => total + Math.max(toNumberBR(entry?.amount), 0),
+      0
+    );
+  }
+
+  function countFilledLalurEntries(entries = []) {
+    return (Array.isArray(entries) ? entries : []).filter((entry) => {
+      const normalized = normalizeLalurEntry(entry);
+      return normalized.date || normalized.type || normalized.note || normalized.amount;
+    }).length;
+  }
+
+  function getLalurQuarterSummary(row) {
+    const payload = getLalurPayload(row);
+    const monthSummaries = payload.months.map((month, monthIndex) => ({
+      label: month.label || getQuarterMonths()[monthIndex] || `Mês ${monthIndex + 1}`,
+      additionsTotal: sumLalurEntries(month.additions),
+      exclusionsTotal: sumLalurEntries(month.exclusions),
+      additionsCount: countFilledLalurEntries(month.additions),
+      exclusionsCount: countFilledLalurEntries(month.exclusions),
+    }));
+
+    const payloadAdditions = monthSummaries.reduce((total, month) => total + month.additionsTotal, 0);
+    const payloadExclusions = monthSummaries.reduce((total, month) => total + month.exclusionsTotal, 0);
+    const rowAdditions = toNumberBR(row?.adicoes);
+    const rowExclusions = toNumberBR(row?.exclusoes);
+    const resultadoAntes = toNumberBR(row?.resultado_antes_irpj_csll);
+    const compensacaoPrej = toNumberBR(row?.compensacao_prej);
+    const incentivoAntesBc = toNumberBR(row?.incentivo_antes_bc);
+    const incentivoDepoisBc = toNumberBR(row?.incentivo_depois_bc);
+    const incentivoFiscalCsll = toNumberBR(row?.incentivo_fiscal_csll);
+    const baseAntesCompensacao = resultadoAntes + rowAdditions - rowExclusions - incentivoAntesBc;
+    const compensacaoLimit = baseAntesCompensacao > 0 ? baseAntesCompensacao * 0.3 : 0;
+    const baseCalculo = resultadoAntes + rowAdditions - rowExclusions - compensacaoPrej - incentivoAntesBc;
+    const irpj15 = baseCalculo * 0.15;
+    const adicionalBase = Math.max(baseCalculo - IRPJ_ADICIONAL_LIMIT, 0);
+    const adicionalLrt = detectTribMode(row?.trib) === "LRT" ? adicionalBase * 0.1 : 0;
+    const retencoesIrpj = toNumberBR(row?.retencoes_incentivos_pagos);
+    const totalIrpj = irpj15 + adicionalLrt;
+    const irpjAPagar = totalIrpj - retencoesIrpj - incentivoDepoisBc;
+    const csllDevida = baseCalculo > 0 ? baseCalculo * 0.09 : 0;
+    const retencoesCsll = toNumberBR(row?.retencoes_pagos_csll);
+    const csllAPagar = csllDevida - retencoesCsll - incentivoFiscalCsll;
+
+    return {
+      payload,
+      monthSummaries,
+      payloadAdditions,
+      payloadExclusions,
+      rowAdditions,
+      rowExclusions,
+      incentivoAntesBc,
+      incentivoDepoisBc,
+      incentivoFiscalCsll,
+      additionsSynced: Math.abs(payloadAdditions - rowAdditions) <= LALUR_SYNC_TOLERANCE,
+      exclusionsSynced: Math.abs(payloadExclusions - rowExclusions) <= LALUR_SYNC_TOLERANCE,
+      resultadoAntes,
+      compensacaoPrej,
+      compensacaoLimit,
+      baseAntesCompensacao,
+      baseCalculo,
+      irpj15,
+      adicionalBase,
+      adicionalLrt,
+      retencoesIrpj,
+      totalIrpj,
+      irpjAPagar,
+      csllDevida,
+      retencoesCsll,
+      csllAPagar,
+      launchCount: monthSummaries.reduce(
+        (total, month) => total + month.additionsCount + month.exclusionsCount,
+        0
+      ),
+    };
+  }
+
+  function getLalurCalculatorCellLabel(row) {
+    const summary = getLalurQuarterSummary(row);
+    if (!summary.launchCount) return "Sem lançamentos";
+    return `${summary.launchCount} lançamento(s)`;
+  }
+
+  function getLalurPayloadTotals(row) {
+    const payload = getLalurPayload(row);
+    return payload.months.reduce(
+      (acc, month) => {
+        acc.additions += sumLalurEntries(month.additions);
+        acc.exclusions += sumLalurEntries(month.exclusions);
+        return acc;
+      },
+      { additions: 0, exclusions: 0 }
+    );
+  }
+
+  function syncLalurTotalsToRow(row) {
+    if (!row) return;
+    const totals = getLalurPayloadTotals(row);
+    row.adicoes = totals.additions;
+    row.exclusoes = totals.exclusions;
+  }
+
+  function appendLalurEntry(kind, monthIndex) {
+    const row = getActiveModalRow();
+    if (!row) return;
+
+    const payload = getLalurPayload(row);
+    const month = payload.months[monthIndex];
+    if (!month || !Array.isArray(month[kind])) return;
+
+    month[kind].push(createEmptyLalurEntry());
+    setLalurPayload(row, payload);
+    state.dirty = true;
   }
 
   function getPainelFrozenIndexes() {
@@ -583,7 +763,7 @@ window.PainelTributarioLRSheet = (() => {
 
   function createEmptyRow() {
     const row = { __id: genId(), __sourceRowId: "" };
-    const cols = [...BASE_META_COLUMNS, ...LR_COLUMNS];
+    const cols = [...BASE_META_COLUMNS, ...LR_COLUMNS, ...LR_SUPPORT_COLUMNS];
 
     cols.forEach((col) => {
       row[col.key] = "";
@@ -839,6 +1019,14 @@ window.PainelTributarioLRSheet = (() => {
     }) + "%";
   }
 
+  function escapeHTML(value) {
+    return String(value ?? "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+  }
+
   function formatPercentInputValue(value) {
     return (toPercent(value) * 100).toLocaleString("pt-BR", {
       minimumFractionDigits: 2,
@@ -866,6 +1054,7 @@ window.PainelTributarioLRSheet = (() => {
   }
 
   function calcRow(row) {
+    syncLalurTotalsToRow(row);
     const fatM1 = toNumberBR(row.fat_m1);
     const fatM2 = toNumberBR(row.fat_m2);
     const fatM3 = toNumberBR(row.fat_m3);
@@ -873,9 +1062,11 @@ window.PainelTributarioLRSheet = (() => {
     const adicoes = toNumberBR(row.adicoes);
     const exclusoes = toNumberBR(row.exclusoes);
     const compensacaoPrej = toNumberBR(row.compensacao_prej);
-
+    const incentivoAntesBc = toNumberBR(row.incentivo_antes_bc);
+    const incentivoDepoisBc = toNumberBR(row.incentivo_depois_bc);
+    const incentivoFiscalCsll = toNumberBR(row.incentivo_fiscal_csll);
     const fatTotal = fatM1 + fatM2 + fatM3;
-    const baseCalculo = resultadoAntes + adicoes - exclusoes - compensacaoPrej;
+    const baseCalculo = resultadoAntes + adicoes - exclusoes - compensacaoPrej - incentivoAntesBc;
     const irpjDevido15 = baseCalculo * 0.15;
     const tribMode = detectTribMode(row.trib);
     const additionalBase = Math.max(baseCalculo - IRPJ_ADICIONAL_LIMIT, 0);
@@ -883,10 +1074,10 @@ window.PainelTributarioLRSheet = (() => {
     const irpjAdicionalLra = tribMode === "LRA" ? irpjAdicionalBase : 0;
     const irpjAdicionalLrt = tribMode === "LRT" ? irpjAdicionalBase : 0;
     const retencoesIrpj = toNumberBR(row.retencoes_incentivos_pagos);
-    const irpjAPagar = irpjDevido15 + irpjAdicionalLra + irpjAdicionalLrt - retencoesIrpj;
+    const irpjAPagar = irpjDevido15 + irpjAdicionalLra + irpjAdicionalLrt - retencoesIrpj - incentivoDepoisBc;
     const csllDevida = baseCalculo > 0 ? baseCalculo * 0.09 : 0;
     const retencoesCsll = toNumberBR(row.retencoes_pagos_csll);
-    const csllAPagar = csllDevida - retencoesCsll;
+    const csllAPagar = csllDevida - retencoesCsll - incentivoFiscalCsll;
 
     row.fat_total = fatTotal;
     row.bc = baseCalculo;
@@ -1039,7 +1230,7 @@ window.PainelTributarioLRSheet = (() => {
         const col = cols[c];
         if (!col) continue;
 
-        if (col.type === "read") line.push(col.percent ? formatPercent(row[col.key]) : formatMoney(row[col.key]));
+        if (col.type === "read") line.push(readCellContent(col, row));
         else line.push(String(row[col.key] ?? ""));
       }
 
@@ -1396,14 +1587,17 @@ window.PainelTributarioLRSheet = (() => {
       adicoes: 120,
       exclusoes: 120,
       compensacao_prej: 150,
+      incentivo_antes_bc: 150,
       bc: 90,
+      incentivo_depois_bc: 150,
       irpj_devido_15: 130,
       irpj_adicional_lra: 150,
       irpj_adicional_lrt: 150,
-      retencoes_incentivos_pagos: 190,
+      retencoes_incentivos_pagos: 120,
       irpj_a_pagar: 120,
       csll_devida: 120,
-      retencoes_pagos_csll: 150,
+      retencoes_pagos_csll: 120,
+      incentivo_fiscal_csll: 150,
       csll_a_pagar: 120,
     };
 
@@ -1420,7 +1614,7 @@ window.PainelTributarioLRSheet = (() => {
         <th id="ptlr-corner-select" class="group-meta" rowspan="2">#</th>
         <th class="group-meta" colspan="7">Dados cadastrais</th>
         <th class="group-meta group-meta-rest" colspan="3"></th>
-        <th class="group-ir" colspan="17">Painel Tributário LR</th>
+        <th class="group-ir" colspan="${LR_GROUP_COLSPAN}">Painel Tributário LR</th>
       </tr>
       <tr class="cols-row">
         ${cols.map((col) => `<th>${col.label}</th>`).join("")}
@@ -1449,6 +1643,7 @@ window.PainelTributarioLRSheet = (() => {
     const panel = document.getElementById("ptlr-quota-panel");
     const baseCalcEl = document.getElementById("ptlr-base-total-calc");
     const additionalCalcEl = document.getElementById("ptlr-additional-calc");
+    const lalurCalculatorEl = document.getElementById("ptlr-lalur-calculator");
     const quotaSummaryEl = document.querySelector("#ptlr-modal .pt-quota-summary");
     const quotaBlockEl = document.querySelector("#ptlr-modal .pt-quota-block");
     const previewEl = document.getElementById("ptlr-quota-preview");
@@ -1456,6 +1651,7 @@ window.PainelTributarioLRSheet = (() => {
     if (panel) panel.hidden = true;
     if (baseCalcEl) baseCalcEl.hidden = true;
     if (additionalCalcEl) additionalCalcEl.hidden = true;
+    if (lalurCalculatorEl) lalurCalculatorEl.hidden = true;
     if (quotaSummaryEl) quotaSummaryEl.hidden = true;
     if (quotaBlockEl) quotaBlockEl.hidden = true;
     if (previewEl) previewEl.hidden = true;
@@ -1517,23 +1713,215 @@ window.PainelTributarioLRSheet = (() => {
     if (totalEl) totalEl.textContent = formatMoney(total);
   }
 
+  function buildLalurEntriesMarkup(entries, monthIndex, kind) {
+    return entries
+      .map(
+        (entry, entryIndex) => `
+          <tr>
+            <td>
+              <input
+                type="date"
+                data-lalur-field="date"
+                data-lalur-kind="${kind}"
+                data-lalur-month="${monthIndex}"
+                data-lalur-entry="${entryIndex}"
+                value="${escapeHTML(String(entry.date || ""))}"
+              />
+            </td>
+            <td>
+              <input
+                type="text"
+                data-lalur-field="type"
+                data-lalur-kind="${kind}"
+                data-lalur-month="${monthIndex}"
+                data-lalur-entry="${entryIndex}"
+                value="${escapeHTML(String(entry.type || ""))}"
+                placeholder="Tipo"
+              />
+            </td>
+            <td>
+              <input
+                type="text"
+                data-lalur-field="note"
+                data-lalur-kind="${kind}"
+                data-lalur-month="${monthIndex}"
+                data-lalur-entry="${entryIndex}"
+                value="${escapeHTML(String(entry.note || ""))}"
+                placeholder="Observação"
+              />
+            </td>
+            <td>
+              <input
+                type="text"
+                data-lalur-field="amount"
+                data-lalur-kind="${kind}"
+                data-lalur-month="${monthIndex}"
+                data-lalur-entry="${entryIndex}"
+                value="${escapeHTML(String(entry.amount || ""))}"
+                placeholder="R$ 0,00"
+              />
+            </td>
+          </tr>
+        `
+      )
+      .join("");
+  }
+
+  function renderLalurCalculator() {
+    const section = document.getElementById("ptlr-lalur-calculator");
+    const row = getActiveModalRow();
+    if (!section) return;
+
+    const shouldShow =
+      (state.modalMode === "lalur_additions" || state.modalMode === "lalur_exclusions") && !!row;
+    section.hidden = !shouldShow;
+    if (!shouldShow) return;
+
+    const summary = getLalurQuarterSummary(row);
+    const activeKind = state.modalLalurKind === "exclusions" ? "exclusions" : "additions";
+    const kindLabel = activeKind === "exclusions" ? "Exclusões" : "Adições";
+    const quarterTotal = activeKind === "exclusions" ? summary.payloadExclusions : summary.payloadAdditions;
+    const rowTotal = activeKind === "exclusions" ? summary.rowExclusions : summary.rowAdditions;
+
+    section.innerHTML = `
+      <div class="pt-lalur-head">
+        <div class="pt-lalur-head-copy">
+          <span>${kindLabel} do trimestre</span>
+          <strong>${escapeHTML(String(row.razao_social || row.cod || "Linha selecionada"))}</strong>
+          <p>Preencha só os lançamentos de ${kindLabel.toLowerCase()} deste trimestre.</p>
+        </div>
+        <div class="pt-lalur-head-badges">
+          <span class="pt-lalur-chip">Trib. ${escapeHTML(detectTribMode(row.trib) || "-")}</span>
+          <span class="pt-lalur-chip is-soft">${escapeHTML(SHEET_TITLES[state.sheetIndex] || "")}</span>
+        </div>
+      </div>
+      <div class="pt-lalur-summary-strip">
+        <div class="pt-lalur-summary-card">
+          <span>Total de ${kindLabel.toLowerCase()}</span>
+          <strong>${formatMoney(quarterTotal)}</strong>
+          <small>Linha atual: ${formatMoney(rowTotal)}</small>
+        </div>
+      </div>
+      <div class="pt-lalur-month-grid">
+        ${summary.payload.months
+          .map((month, monthIndex) => {
+            const monthSummary = summary.monthSummaries[monthIndex];
+            const monthEntries = activeKind === "exclusions" ? month.exclusions : month.additions;
+            const monthTotal = activeKind === "exclusions" ? monthSummary.exclusionsTotal : monthSummary.additionsTotal;
+            const monthCount = activeKind === "exclusions" ? monthSummary.exclusionsCount : monthSummary.additionsCount;
+            return `
+              <section class="pt-lalur-month-card">
+                <header>
+                  <span>${escapeHTML(month.label)}</span>
+                  <strong>${monthCount} lanç.</strong>
+                </header>
+                <div class="pt-lalur-table-wrap">
+                  <div class="pt-lalur-table-block">
+                    <div class="pt-lalur-block-head">
+                      <strong>${kindLabel}</strong>
+                      <div class="pt-lalur-block-actions">
+                        <span>${formatMoney(monthTotal)}</span>
+                        <button type="button" class="cf-btn cf-btn--ghost" data-lalur-add-row data-lalur-kind="${activeKind}" data-lalur-month="${monthIndex}">Criar linha</button>
+                      </div>
+                    </div>
+                    <table class="pt-lalur-table">
+                      <thead>
+                        <tr><th>Data</th><th>Tipo</th><th>Obs.</th><th>Valor</th></tr>
+                      </thead>
+                      <tbody>${buildLalurEntriesMarkup(monthEntries, monthIndex, activeKind)}</tbody>
+                    </table>
+                  </div>
+                </div>
+              </section>
+            `;
+          })
+          .join("")}
+      </div>
+      <div class="pt-lalur-footer">
+        <div class="pt-lalur-footer-note">
+          ${summary.additionsSynced && summary.exclusionsSynced
+            ? "Os totais já estão refletidos nas colunas da linha."
+            : "Os totais das colunas acompanham os lançamentos automaticamente."}
+        </div>
+        <div class="pt-lalur-footer-actions">
+          <button type="button" class="cf-btn" data-lalur-close>Fechar</button>
+        </div>
+      </div>
+    `;
+  }
+
   function renderModalMode() {
     const modal = document.getElementById("ptlr-modal");
     const title = document.getElementById("ptlr-modal-title");
     const actions = modal?.querySelector(".cf-modal-actions");
+    const quotaPanel = document.getElementById("ptlr-quota-panel");
+    const backupsPanel = document.getElementById("ptlr-backups-panel");
     if (!modal) return;
     const isAdditionalMode = state.modalMode === "additional";
+    const isLalurCalcMode =
+      state.modalMode === "lalur_additions" || state.modalMode === "lalur_exclusions";
     modal.classList.toggle("is-quota-mode", isAdditionalMode);
     modal.classList.remove("is-base-total-mode");
-    if (actions) actions.style.display = isAdditionalMode ? "none" : "";
-    if (title) title.textContent = isAdditionalMode ? "Cálculo do IRPJ adicional" : "Base Painel Tributário LR";
+    modal.classList.toggle("is-lalur-calc-mode", isLalurCalcMode);
+    modal.classList.toggle("is-lalur-additions-mode", state.modalMode === "lalur_additions");
+    modal.classList.toggle("is-lalur-exclusions-mode", state.modalMode === "lalur_exclusions");
+    modal.classList.remove("is-lalur-memory-mode");
+    if (actions) actions.style.display = isAdditionalMode || isLalurCalcMode ? "none" : "";
+    if (quotaPanel && isLalurCalcMode) quotaPanel.hidden = true;
+    if (backupsPanel && isLalurCalcMode) backupsPanel.hidden = true;
+    if (title) {
+      title.textContent = isAdditionalMode
+        ? "Cálculo do IRPJ adicional"
+        : isLalurCalcMode
+          ? state.modalMode === "lalur_exclusions"
+            ? "Lançamentos de exclusões"
+            : "Lançamentos de adições"
+            : "Base Painel Tributário LR";
+    }
   }
 
   function isModalTriggerColumn(col) {
     return col?.key === "irpj_adicional_lra" || col?.key === "irpj_adicional_lrt";
   }
 
+  function isLalurTotalColumn(col) {
+    return col?.key === "adicoes" || col?.key === "exclusoes";
+  }
+
   function renderReadCell(td, col, row, rowIndex, colIndex, totalRows) {
+    if (isLalurTotalColumn(col)) {
+      const wrap = document.createElement("div");
+      wrap.className = "cf-read-action cf-read-action--stacked";
+
+      const span = document.createElement("span");
+      span.className = "cf-read";
+      span.dataset.readKey = col.key;
+      span.textContent = readCellContent(col, row);
+
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "cf-cell-action-btn";
+      button.textContent = "Abrir";
+      button.setAttribute(
+        "aria-label",
+        col.key === "adicoes"
+          ? "Abrir lançamentos de adições"
+          : "Abrir lançamentos de exclusões"
+      );
+      button.title = "Abrir calculadora";
+      button.addEventListener("click", (e) => {
+        e.stopPropagation();
+        setSelection(rowIndex, rowIndex, colIndex, colIndex, totalRows);
+        applySelectionVisual();
+        openModal(col.key === "exclusoes" ? "lalur_exclusions" : "lalur_additions", row.__id);
+      });
+
+      wrap.appendChild(span);
+      wrap.appendChild(button);
+      td.appendChild(wrap);
+      return;
+    }
+
     if (isModalTriggerColumn(col)) {
       const wrap = document.createElement("div");
       wrap.className = "cf-read-action";
@@ -1831,6 +2219,26 @@ window.PainelTributarioLRSheet = (() => {
 
     applySelectionVisual();
     requestAnimationFrame(() => applyPainelFrozenColumns());
+  }
+
+  function updateLalurPayloadField(target) {
+    const row = getActiveModalRow();
+    if (!row || !target) return;
+
+    const monthIndex = Number(target.dataset.lalurMonth);
+    const entryIndex = Number(target.dataset.lalurEntry);
+    const kind = String(target.dataset.lalurKind || "").trim();
+    const field = String(target.dataset.lalurField || "").trim();
+    if (!Number.isInteger(monthIndex) || !Number.isInteger(entryIndex) || !kind || !field) return;
+
+    const payload = getLalurPayload(row);
+    const month = payload.months[monthIndex];
+    const bucket = month?.[kind];
+    if (!month || !Array.isArray(bucket) || !bucket[entryIndex]) return;
+
+    bucket[entryIndex][field] = field === "amount" ? normalizeEditableValue({ type: "number" }, target.value) : String(target.value || "").trim();
+    setLalurPayload(row, payload);
+    state.dirty = true;
   }
 
   function getPainelStickyOffsets() {
@@ -2159,7 +2567,7 @@ window.PainelTributarioLRSheet = (() => {
     }
   }
 
-  function openModal(mode = "base", rowId = "", taxKind = "irpj") {
+  function openModal(mode = "base", rowId = "", taxKind = "irpj", lalurKind = "additions") {
     if (mode === "base" && !canManageBase()) {
       alert("Apenas Leandro pode abrir e salvar a base completa. Use Salvar células.");
       return;
@@ -2168,9 +2576,12 @@ window.PainelTributarioLRSheet = (() => {
     state.modalMode = mode;
     state.modalRowId = rowId || "";
     state.modalTaxKind = taxKind === "lrt" ? "lrt" : "lra";
+    state.modalLalurKind =
+      mode === "lalur_exclusions" || lalurKind === "exclusions" ? "exclusions" : "additions";
     renderModalMode();
     renderQuotaPanel();
     renderAdditionalCalc();
+    renderLalurCalculator();
     document.getElementById("ptlr-modal")?.classList.add("is-open");
     document.getElementById("ptlr-modal-backdrop")?.classList.add("is-open");
   }
@@ -2179,9 +2590,11 @@ window.PainelTributarioLRSheet = (() => {
     state.modalMode = "base";
     state.modalRowId = "";
     state.modalTaxKind = "lra";
+    state.modalLalurKind = "additions";
     renderModalMode();
     renderQuotaPanel();
     renderAdditionalCalc();
+    renderLalurCalculator();
     document.getElementById("ptlr-modal")?.classList.remove("is-open");
     document.getElementById("ptlr-modal-backdrop")?.classList.remove("is-open");
   }
@@ -2247,6 +2660,41 @@ window.PainelTributarioLRSheet = (() => {
     document.getElementById("ptlr-base-btn")?.addEventListener("click", () => openModal("base"));
     document.getElementById("ptlr-modal-close")?.addEventListener("click", closeModal);
     document.getElementById("ptlr-modal-backdrop")?.addEventListener("click", closeModal);
+    document.getElementById("ptlr-modal")?.addEventListener("input", (e) => {
+      const target = e.target;
+      if (!(target instanceof HTMLInputElement) || !target.dataset.lalurField) return;
+      updateLalurPayloadField(target);
+      const row = getActiveModalRow();
+      if (row) updateRowDisplay(row.__id);
+    });
+    document.getElementById("ptlr-modal")?.addEventListener("change", (e) => {
+      const target = e.target;
+      if (!(target instanceof HTMLInputElement) || !target.dataset.lalurField) return;
+      updateLalurPayloadField(target);
+      const row = getActiveModalRow();
+      if (row) updateRowDisplay(row.__id);
+      renderLalurCalculator();
+    });
+    document.getElementById("ptlr-modal")?.addEventListener("click", (e) => {
+      const target = e.target.closest("[data-lalur-close],[data-lalur-add-row]");
+      if (!target) return;
+
+      if (target.hasAttribute("data-lalur-add-row")) {
+        const monthIndex = Number(target.getAttribute("data-lalur-month"));
+        const kind = String(target.getAttribute("data-lalur-kind") || "").trim();
+        if (Number.isInteger(monthIndex) && (kind === "additions" || kind === "exclusions")) {
+          appendLalurEntry(kind, monthIndex);
+          const row = getActiveModalRow();
+          if (row) updateRowDisplay(row.__id);
+          renderLalurCalculator();
+        }
+        return;
+      }
+
+      if (target.hasAttribute("data-lalur-close")) {
+        closeModal();
+      }
+    });
 
     document.getElementById("ptlr-add-row")?.addEventListener("click", () => {
       addRow();
@@ -2329,7 +2777,7 @@ window.PainelTributarioLRSheet = (() => {
       activeIndex: state.sheetIndex,
       periodLabels: SHEET_TITLES.slice(),
       sheets: deepClone(state.sheets),
-      columns: getAllColumns().map(({ key, label, type, percent }) => ({ key, label, type, percent: Boolean(percent) })),
+      columns: getDynamicColumns().map(({ key, label, type, percent }) => ({ key, label, type, percent: Boolean(percent) })),
     }),
   };
 })();
