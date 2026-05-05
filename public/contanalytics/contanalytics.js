@@ -1030,7 +1030,10 @@ document.addEventListener("DOMContentLoaded", () => {
     let dispensadas = 0;
     let semMovimento = 0;
     let withActor = 0;
+    let invalidDateEntries = 0;
+    let withActorEntries = 0;
     const actorMap = new Map();
+    const recentDeliveries = [];
 
     const registerTimeline = (map, value) => {
       const dt = parseQuotaDate(value);
@@ -1078,6 +1081,38 @@ document.addEventListener("DOMContentLoaded", () => {
         if (rowActors.length) withActor += 1;
         rowActors.forEach((actorName) => {
           actorMap.set(actorName, (actorMap.get(actorName) || 0) + 1);
+        });
+
+        entries.forEach((entry, index) => {
+          if (!entry.isFilled) return;
+          if (entry.isInvalidDate) invalidDateEntries += 1;
+          if (entry.actor) withActorEntries += 1;
+
+          const deliveryDt =
+            entry.date && !Number.isNaN(entry.date.getTime())
+              ? entry.date
+              : entry.updatedAt
+                ? new Date(entry.updatedAt)
+                : null;
+          const sortTime =
+            deliveryDt && !Number.isNaN(deliveryDt.getTime()) ? deliveryDt.getTime() : 0;
+
+          recentDeliveries.push({
+            cod: String(row.cod || ""),
+            razao_social: String(row.razao_social || ""),
+            resp1: String(row.resp1 || ""),
+            stageId: `quota${index + 1}`,
+            stageLabel: `${index + 1}ª quota`,
+            statusLabel: entry.statusLabel,
+            actor: entry.actor || "Não identificado",
+            raw: entry.raw || "",
+            dateLabel: deliveryDt
+              ? deliveryDt.toLocaleDateString("pt-BR")
+              : entry.statusLabel === "Data inválida"
+                ? "Data inválida"
+                : "Sem data",
+            sortTime,
+          });
         });
 
         if (hasSequenceIssue) sequenceIssues += 1;
@@ -1187,6 +1222,13 @@ document.addEventListener("DOMContentLoaded", () => {
       .map(([label, value]) => ({ label, value }))
       .sort((a, b) => b.value - a.value || a.label.localeCompare(b.label, "pt-BR"))
       .slice(0, 8);
+    const statusMix = [
+      { label: "Entregue com data", value: Math.max(totalDelivered - dispensadas - semMovimento - invalidDateEntries, 0), scope: "regular-delivered" },
+      { label: "Dispensada", value: dispensadas, scope: "dispensada" },
+      { label: "S/M", value: semMovimento, scope: "sem-movimento" },
+      { label: "Data inválida", value: invalidDateEntries, scope: "invalid-date" },
+      { label: "Sem autor", value: Math.max(totalDelivered - withActorEntries, 0), scope: "without-actor" },
+    ].filter((item) => item.value > 0);
 
     return {
       quota1: stageStats[0].filled,
@@ -1208,6 +1250,10 @@ document.addEventListener("DOMContentLoaded", () => {
         .map(([label, value]) => ({ label, value }))
         .sort((a, b) => b.value - a.value || a.label.localeCompare(b.label, "pt-BR"))
         .slice(0, 10),
+      recentDeliveries: recentDeliveries
+        .sort((a, b) => b.sortTime - a.sortTime || a.razao_social.localeCompare(b.razao_social, "pt-BR"))
+        .slice(0, 12),
+      statusMix,
       focusRows: focusRows.slice(0, 18),
       clientsCompleteExpected,
       clientsPendingExpected,
@@ -1218,6 +1264,8 @@ document.addEventListener("DOMContentLoaded", () => {
       invalidNumQuotas,
       dispensadas,
       semMovimento,
+      invalidDateEntries,
+      withActorEntries,
       withActor,
     };
   }
@@ -2361,6 +2409,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const ownerCoverage = analytics.totalRows ? ((analytics.totalRows - analytics.noResp1) / analytics.totalRows) * 100 : 0;
     const activeRows = Math.max(analytics.activeRows, 0);
     const inactiveRows = Math.max(analytics.totalRows - analytics.activeRows, 0);
+    const totalPossibleQuotas = analytics.quotaAnalytics?.totalPossible || 0;
     const totalTaxRows =
       (state.painelTributario?.rows || []).length +
       (state.painelTributarioLR?.rows || []).length +
@@ -2385,11 +2434,11 @@ document.addEventListener("DOMContentLoaded", () => {
       <article class="analytics-param">
         <span class="analytics-param__label">Fonte principal</span>
         <strong class="analytics-param__value">${escapeHtml(state.contFlow.__sourceLabel || "ContFlow consolidado")}</strong>
-        <span class="analytics-param__hint">Leitura-base usada para os cards e indicadores gerenciais.</span>
+        <span class="analytics-param__hint">Base-mãe que abastece a abertura executiva do BI e a auditoria do ContFlow.</span>
       </article>
 
       <article class="analytics-param">
-        <span class="analytics-param__label">Universo lido</span>
+        <span class="analytics-param__label">Carteira lida</span>
         <strong class="analytics-param__value">${formatNumber(analytics.totalRows)} clientes</strong>
         <span class="analytics-param__hint">${formatNumber(activeRows)} ativos e ${formatNumber(inactiveRows)} fora da operação ativa.</span>
       </article>
@@ -2401,15 +2450,21 @@ document.addEventListener("DOMContentLoaded", () => {
       </article>
 
       <article class="analytics-param">
-        <span class="analytics-param__label">Cruzamento tributário</span>
-        <strong class="analytics-param__value">${formatNumber(totalTaxRows)} linhas tributárias</strong>
+        <span class="analytics-param__label">Quotas esperadas</span>
+        <strong class="analytics-param__value">${formatNumber(totalPossibleQuotas)} etapas</strong>
+        <span class="analytics-param__hint">${formatNumber(analytics.quotaAnalytics.totalDelivered)} já foram registradas na leitura atual do BI.</span>
+      </article>
+
+      <article class="analytics-param">
+        <span class="analytics-param__label">Painéis tributários lidos</span>
+        <strong class="analytics-param__value">${formatNumber(totalTaxRows)} linhas</strong>
         <div class="analytics-param__pills">${taxPills}</div>
       </article>
 
       <article class="analytics-param">
-        <span class="analytics-param__label">Período analisado</span>
+        <span class="analytics-param__label">Período consolidado</span>
         <strong class="analytics-param__value">Mensal + trimestral</strong>
-        <span class="analytics-param__hint">${formatCurrency(analytics.timeAnalytics.annualRevenue)} no radar mensal e ${formatNumber(analytics.timeAnalytics.quarterSummary.length)} trimestres consolidados.</span>
+        <span class="analytics-param__hint">${formatCurrency(analytics.timeAnalytics.annualRevenue)} em faturamento anual consolidado e ${formatNumber(analytics.timeAnalytics.quarterSummary.length)} trimestres com leitura ativa.</span>
       </article>
 
       <article class="analytics-param">
@@ -2768,6 +2823,72 @@ document.addEventListener("DOMContentLoaded", () => {
       .join("");
   }
 
+  function renderQuotaExecutiveSummary(analytics) {
+    const target = document.getElementById("quotaExecutiveSummary");
+    if (!target) return;
+
+    const quota = analytics.quotaAnalytics || {};
+    const deliveredRate = quota.totalPossible ? (quota.totalDelivered / quota.totalPossible) * 100 : 0;
+    const actorRate = quota.totalDelivered ? (quota.withActorEntries / quota.totalDelivered) * 100 : 0;
+    const distinctActors = quota.actorDistribution?.length || 0;
+    const topPendingResp = quota.pendingByResp?.[0] || null;
+
+    const cards = [
+      {
+        label: "Entregas registradas",
+        value: formatNumber(quota.totalDelivered),
+        meta: `${formatPercent(deliveredRate)} do esperado`,
+        hint: `${formatNumber(quota.totalPossible)} entregas eram esperadas no recorte atual.`,
+        tone: deliveredRate >= 80 ? "ok" : deliveredRate >= 45 ? "warn" : "danger",
+      },
+      {
+        label: "Autores ativos",
+        value: formatNumber(distinctActors),
+        meta: `${formatNumber(quota.withActorEntries || 0)} entregas com autoria`,
+        hint: "Pessoas diferentes que o BI conseguiu identificar dentro das quotas concluídas.",
+        tone: actorRate >= 70 ? "ok" : actorRate >= 40 ? "warn" : "danger",
+      },
+      {
+        label: "Ciclo completo",
+        value: formatNumber(quota.clientsCompleteExpected),
+        meta: `${formatNumber(quota.clientsPendingExpected)} com pendência`,
+        hint: "Clientes que fecharam todo o ciclo esperado de quotas.",
+        tone: quota.clientsPendingExpected > quota.clientsCompleteExpected ? "warn" : "ok",
+      },
+      {
+        label: "Resp.1 mais pressionado",
+        value: formatNumber(topPendingResp?.value || 0),
+        meta: topPendingResp?.label
+          ? `${topPendingResp.label} lidera a fila`
+          : "Sem concentração crítica",
+        hint: "Mostra onde a pendência de quotas está mais pesada neste momento.",
+        tone: topPendingResp?.value ? "warn" : "ok",
+      },
+      {
+        label: "Leituras especiais",
+        value: formatNumber((quota.dispensadas || 0) + (quota.semMovimento || 0)),
+        meta: `${formatNumber(quota.dispensadas || 0)} dispensadas • ${formatNumber(quota.semMovimento || 0)} S/M`,
+        hint: "Quotas concluídas por exceção ou sem movimento.",
+        tone: "warn",
+      },
+    ];
+
+    target.innerHTML = cards
+      .map(
+        (card) => `
+          <article class="delivery-callout" data-tone="${card.tone}">
+            <span class="delivery-callout__eyebrow">${escapeHtml(card.label)}</span>
+            <strong class="delivery-callout__value">${escapeHtml(card.value)}</strong>
+            <div class="delivery-callout__meta">
+              <span>${escapeHtml(card.meta)}</span>
+            </div>
+            <div class="delivery-callout__hint">${escapeHtml(card.hint)}</div>
+          </article>
+        `
+      )
+      .join("");
+  }
+
   function renderQuotaMetrics(analytics) {
     const target = document.getElementById("quotaMetrics");
     if (!target) return;
@@ -2857,6 +2978,52 @@ document.addEventListener("DOMContentLoaded", () => {
         "quota-scope": "timeline",
         "quota-period": item.key,
         "drill-title": `Quotas em ${item.label}`,
+      }),
+    });
+  }
+
+  function renderQuotaRecentDeliveries(analytics) {
+    const tbody = document.getElementById("quotaRecentDeliveriesRows");
+    if (!tbody) return;
+
+    const items = analytics.quotaAnalytics?.recentDeliveries || [];
+    if (!items.length) {
+      tbody.innerHTML =
+        '<tr><td colspan="6"><div class="empty-state">Ainda não há entregas recentes suficientes para montar esta leitura.</div></td></tr>';
+      return;
+    }
+
+    tbody.innerHTML = items
+      .map(
+        (item) => `
+          <tr>
+            <td>${escapeHtml(item.dateLabel)}</td>
+            <td>
+              <div class="row-name">${escapeHtml(item.razao_social || "Sem razão social")}</div>
+              <div class="row-note">${escapeHtml(item.cod || "-")}</div>
+            </td>
+            <td>${escapeHtml(item.stageLabel)}</td>
+            <td><span class="table-badge" data-tone="${
+              item.statusLabel === "Entregue"
+                ? "ok"
+                : item.statusLabel === "Data inválida"
+                  ? "danger"
+                  : "warn"
+            }">${escapeHtml(item.statusLabel)}</span></td>
+            <td>${escapeHtml(item.actor || "Não identificado")}</td>
+            <td>${escapeHtml(item.resp1 || "Não informado")}</td>
+          </tr>
+        `
+      )
+      .join("");
+  }
+
+  function renderQuotaStatusMix(analytics) {
+    renderBarList("quotaStatusMix", analytics.quotaAnalytics?.statusMix || [], {
+      getAttrs: (item) => ({
+        "analytics-drill": "quota",
+        "quota-scope": item.scope,
+        "drill-title": item.label,
       }),
     });
   }
@@ -3265,6 +3432,14 @@ document.addEventListener("DOMContentLoaded", () => {
 
     renderAnalyticsParameters(analytics);
 
+    setMetric("metricQuotaDelivered", analytics.quotaAnalytics.totalDelivered, `${formatNumber(analytics.quotaAnalytics.totalPossible)} entregas eram esperadas na leitura atual.`);
+    setMetric(
+      "metricQuotaWithActor",
+      analytics.quotaAnalytics.actorDistribution.length,
+      analytics.quotaAnalytics.withActorEntries
+        ? `${formatNumber(analytics.quotaAnalytics.withActorEntries)} entrega(s) tiveram autoria identificada.`
+        : "Ainda não há autor identificado nas quotas lidas."
+    );
     setMetric("metricQuotaComplete", analytics.quotaAnalytics.allDelivered, `${formatNumber(analytics.quotaAnalytics.clientsCompleteExpected)} clientes fecharam todo o ciclo esperado.`);
     setMetric("metricQuotaCoverage", analytics.quotaAnalytics.coverage, `${formatNumber(analytics.quotaAnalytics.totalDelivered)} entregas registradas de ${formatNumber(analytics.quotaAnalytics.totalPossible)} possíveis.`, (value) => formatPercent(value));
     setMetric("metricQuotaPending", analytics.quotaAnalytics.pending, `${formatNumber(analytics.quotaAnalytics.clientsPendingExpected)} clientes ainda têm etapa pendente.`);
@@ -3286,7 +3461,10 @@ document.addEventListener("DOMContentLoaded", () => {
     renderOperationalRadarChart(analytics);
     renderGroupDynamicChart(analytics.grupoDist);
     renderQualityGrid(analytics);
+    renderQuotaExecutiveSummary(analytics);
     renderQuotaMetrics(analytics);
+    renderQuotaRecentDeliveries(analytics);
+    renderQuotaStatusMix(analytics);
     renderQuotaStageCoverage(analytics);
     renderQuotaExpectedDistribution(analytics);
     renderQuotaPendingByResp(analytics);
@@ -3339,6 +3517,17 @@ document.addEventListener("DOMContentLoaded", () => {
       coverage: [],
     });
     renderGroupDynamicChart([]);
+    const quotaExecutiveSummary = document.getElementById("quotaExecutiveSummary");
+    if (quotaExecutiveSummary) {
+      quotaExecutiveSummary.innerHTML =
+        '<div class="empty-state">Carregando visão executiva das entregas...</div>';
+    }
+    const quotaRecentDeliveriesRows = document.getElementById("quotaRecentDeliveriesRows");
+    if (quotaRecentDeliveriesRows) {
+      quotaRecentDeliveriesRows.innerHTML =
+        '<tr><td colspan="6"><div class="empty-state">Montando últimas entregas...</div></td></tr>';
+    }
+    renderBarList("quotaStatusMix", []);
     renderBarList("quotaStageCoverage", []);
     renderBarList("quotaExpectedDistribution", []);
     renderBarList("quotaPendingByResp", []);
@@ -3366,7 +3555,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const auditRows = document.getElementById("analyticsAuditRows");
     const quotaMetrics = document.getElementById("quotaMetrics");
 
-    ["metricQuotaComplete", "metricQuotaCoverage", "metricQuotaPending", "metricTotal", "metricActive", "metricNoResp1", "metricMit", "metricAthenas", "metricDesligamento", "metricColumns", "metricCoverage"].forEach((id) => {
+    ["metricQuotaDelivered", "metricQuotaWithActor", "metricQuotaComplete", "metricQuotaCoverage", "metricQuotaPending", "metricTotal", "metricActive", "metricNoResp1", "metricMit", "metricAthenas", "metricDesligamento", "metricColumns", "metricCoverage"].forEach((id) => {
       const el = document.getElementById(id);
       if (el) el.textContent = "--";
     });
@@ -3390,6 +3579,16 @@ document.addEventListener("DOMContentLoaded", () => {
     if (quotaMetrics) {
       quotaMetrics.innerHTML = '<div class="empty-state">As métricas de quotas não puderam ser calculadas.</div>';
     }
+    const quotaExecutiveSummary = document.getElementById("quotaExecutiveSummary");
+    if (quotaExecutiveSummary) {
+      quotaExecutiveSummary.innerHTML =
+        '<div class="empty-state">A visão executiva das entregas não pôde ser montada.</div>';
+    }
+    const quotaRecentDeliveriesRows = document.getElementById("quotaRecentDeliveriesRows");
+    if (quotaRecentDeliveriesRows) {
+      quotaRecentDeliveriesRows.innerHTML =
+        '<tr><td colspan="6"><div class="empty-state">As últimas entregas não puderam ser montadas.</div></td></tr>';
+    }
 
     renderBarList("tribDistribution", []);
     renderBarList("statusDistribution", []);
@@ -3407,6 +3606,7 @@ document.addEventListener("DOMContentLoaded", () => {
     });
     renderGroupDynamicChart([]);
     renderBarList("quotaTimeline", []);
+    renderBarList("quotaStatusMix", []);
     renderBarList("quotaStageCoverage", []);
     renderBarList("quotaExpectedDistribution", []);
     renderBarList("quotaPendingByResp", []);

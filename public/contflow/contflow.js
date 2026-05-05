@@ -265,6 +265,7 @@ let cfQuotaModalState = {
 /* controle de pendências */
 let dirtyCells = new Set();
 let hasStructuralChanges = false;
+let structuralDirtyReasons = new Set();
 let hasConfigChanges = false;
 let cfServerBackups = [];
 
@@ -309,6 +310,7 @@ function createQuarterSnapshot() {
     versions: deepClone(cfVersions),
     dirtyCells: new Set(Array.from(dirtyCells)),
     hasStructuralChanges: Boolean(hasStructuralChanges),
+    structuralDirtyReasons: Array.from(structuralDirtyReasons),
     hasConfigChanges: Boolean(hasConfigChanges),
     lastSavedPayload: deepClone(lastSavedPayload),
   };
@@ -328,6 +330,9 @@ function applyQuarterSnapshot(snapshot) {
   cfVersions = Array.isArray(snapshot.versions) ? deepClone(snapshot.versions) : [];
   dirtyCells = new Set(Array.from(snapshot.dirtyCells || []));
   hasStructuralChanges = Boolean(snapshot.hasStructuralChanges);
+  structuralDirtyReasons = new Set(
+    Array.isArray(snapshot.structuralDirtyReasons) ? snapshot.structuralDirtyReasons : []
+  );
   hasConfigChanges = Boolean(snapshot.hasConfigChanges);
   lastSavedPayload = snapshot.lastSavedPayload ? deepClone(snapshot.lastSavedPayload) : null;
   return true;
@@ -827,8 +832,10 @@ function markDirtyChanges(changes = []) {
   refreshDirtyVisuals();
 }
 
-function markStructureDirty() {
+function markStructureDirty(reason = "generic") {
   hasStructuralChanges = true;
+  const cleanReason = String(reason || "").trim();
+  structuralDirtyReasons.add(cleanReason || "generic");
   refreshDirtyVisuals();
 }
 
@@ -840,8 +847,30 @@ function markConfigDirty() {
 function clearDirtyState() {
   dirtyCells.clear();
   hasStructuralChanges = false;
+  structuralDirtyReasons.clear();
   hasConfigChanges = false;
   refreshDirtyVisuals();
+}
+
+function getStructuralDirtyReasonList() {
+  return Array.from(structuralDirtyReasons);
+}
+
+function hasOnlyBootstrapStructuralChanges() {
+  const reasons = getStructuralDirtyReasonList();
+  return !!reasons.length && reasons.every((reason) => reason === "empty_sheet_bootstrap");
+}
+
+function getStructuralSaveMessage() {
+  if (hasOnlyBootstrapStructuralChanges()) {
+    if (canManageContFlowBase(getSessionUser())) {
+      return "Este trimestre ainda não existe no banco. Vou salvar a base completa para criar a estrutura e manter suas alterações.";
+    }
+
+    return "Este trimestre ainda não foi criado no banco. Um usuário com permissão de salvar base precisa criar a estrutura primeiro; depois o botão de salvar células volta a funcionar normalmente.";
+  }
+
+  return "Há alterações estruturais pendentes. Use o botão de salvar base para concluir as mudanças da planilha.";
 }
 
 function hasPendingDirtyChanges() {
@@ -880,7 +909,7 @@ async function loadCurrentContFlowSheet() {
     if (!cfData.length) {
       cfData = Array.from({ length: 15 }, () => createEmptyRow());
       CF_COLUMNS.forEach((c) => setDefaultWidthForCol(c.key));
-      markStructureDirty();
+      markStructureDirty("empty_sheet_bootstrap");
     }
     await mirrorSharedColumnsFromFirstQuarter();
     saveLocalDraft(buildServerPayload());
@@ -1405,7 +1434,9 @@ function refreshDirtyVisuals() {
   if (hasPendingDirtyChanges()) {
     const parts = [];
     if (dirtyCells.size > 0) parts.push(`${dirtyCells.size} célula(s)`);
-    if (hasStructuralChanges) parts.push("estrutura");
+    if (hasStructuralChanges) {
+      parts.push(hasOnlyBootstrapStructuralChanges() ? "estrutura inicial" : "estrutura");
+    }
     if (hasConfigChanges) parts.push("configuração");
     statusEl.textContent = `${cleanText} · Pendências: ${parts.join(" + ")}`;
   } else {
@@ -2474,8 +2505,13 @@ async function saveDirtyCells(silent = false) {
     }
 
     if (hasStructuralChanges) {
+      if (hasOnlyBootstrapStructuralChanges() && canManageContFlowBase(getSessionUser())) {
+        await saveBase(silent, { mode: "cells" });
+        return;
+      }
+
       if (!silent) {
-        alert("Há alterações estruturais pendentes. Use o botão de salvar base para concluir as mudanças da planilha.");
+        alert(getStructuralSaveMessage());
       }
       return;
     }
@@ -5894,7 +5930,7 @@ function openContextMenu(e, ctx) {
       filters[col.key] = { mode: "equals", value: v, raw: "=" + v };
       rebuildViewMap();
       renderTable();
-      markStructureDirty();
+      markConfigDirty();
     });
 
     addMenuItem(menu, "Limpar filtros", () => clearAllFilters());

@@ -8,7 +8,7 @@
       content="ContAnalytics reúne indicadores, métricas e análises gerenciais do ContHub para acompanhamento da operação contábil."
     />
     <title>ContHub • ContAnalytics</title>
-    <link rel="stylesheet" href="./contanalytics.css?v=20260504-02" />
+    <link rel="stylesheet" href="./contanalytics.css?v=20260504-04" />
   </head>
 
   <body>
@@ -181,56 +181,14 @@
           </div>
         </header>
 
-        <section class="tax-bi-shell glass" aria-label="BI tributário">
-          <div class="tax-bi-hero">
-            <div>
-              <div class="analytics-eyebrow">BI Tributário</div>
-              <h2 class="analytics-title">BI por tópicos tributários</h2>
-              <p class="analytics-subtitle">
-                Cada aba cruza as empresas do ContFlow pela tributação correta e organiza a
-                leitura em panorama, valores, empresas, períodos e diagnóstico.
-              </p>
-            </div>
-
-            <div class="tax-bi-actions">
-              <span class="analytics-chip analytics-chip--brand" id="taxBiUpdatedAt">
-                Atualizando BI tributário...
-              </span>
-              <button class="btn btn--ghost" type="button" id="btnTaxBiRefresh">
-                Atualizar tributário
-              </button>
-            </div>
-          </div>
-
-          <nav class="tax-bi-tabs" aria-label="Páginas do BI tributário">
-            <button class="tax-bi-tab is-active" type="button" data-tax-bi-page="lp">
-              BI - LP
-            </button>
-            <button class="tax-bi-tab" type="button" data-tax-bi-page="lrt">
-              BI - LRT
-            </button>
-            <button class="tax-bi-tab" type="button" data-tax-bi-page="lra">
-              BI - LRA
-            </button>
-            <button class="tax-bi-tab" type="button" data-tax-bi-page="complete">
-              BI - Completo
-            </button>
-          </nav>
-
-          <section class="tax-bi-page is-active" data-tax-bi-panel="lp"></section>
-          <section class="tax-bi-page" data-tax-bi-panel="lrt"></section>
-          <section class="tax-bi-page" data-tax-bi-panel="lra"></section>
-          <section class="tax-bi-page" data-tax-bi-panel="complete"></section>
-        </section>
-
         <section class="analytics-shell">
           <section class="analytics-hero glass">
             <div class="analytics-hero__copy">
               <div class="analytics-eyebrow">BI integrado ao ContFlow</div>
               <h2 class="analytics-title">Visão gerencial da carteira contábil</h2>
               <p class="analytics-subtitle">
-                Leitura rápida da base do ContFlow com foco em volume, responsáveis,
-                tributação, qualidade cadastral e pontos que exigem ação.
+                O painel abre primeiro com entregas, autores e pendências do ContFlow.
+                Depois entram os parâmetros, os números operacionais e a camada tributária.
               </p>
 
               <div class="analytics-hero__meta">
@@ -256,89 +214,99 @@
             </div>
           </section>
 
-          <section class="analytics-params" id="analyticsParams"></section>
+          <div class="analytics-section-head analytics-section-head--priority">
+            <div>
+              <h3 class="analytics-section-head__title">Leitura imediata do ContFlow</h3>
+              <p class="analytics-section-head__subtitle">Primeiro o que foi entregue, quem entregou, o que ficou pendente e o quanto do ciclo já foi fechado.</p>
+            </div>
+          </div>
 
-          <section class="analytics-kpis" id="analyticsKpis">
+          <section class="analytics-kpis analytics-kpis--priority" id="analyticsKpis">
+            <article class="metric-card glass" data-analytics-drill="quota" data-quota-scope="delivered" data-drill-title="Entregas registradas">
+              <span class="metric-card__label">Entregas registradas</span>
+              <strong class="metric-card__value" id="metricQuotaDelivered">--</strong>
+              <span class="metric-card__hint" id="metricQuotaDeliveredHint">Total de quotas já preenchidas.</span>
+            </article>
+
+            <article class="metric-card glass" data-analytics-drill="quota" data-quota-scope="with-actor" data-drill-title="Quem entregou">
+              <span class="metric-card__label">Quem entregou</span>
+              <strong class="metric-card__value" id="metricQuotaWithActor">--</strong>
+              <span class="metric-card__hint" id="metricQuotaWithActorHint">Quotas com autor identificado.</span>
+            </article>
+
             <article class="metric-card glass" data-analytics-drill="quota" data-quota-scope="complete" data-drill-title="Ciclo completo de quotas">
               <span class="metric-card__label">Ciclo completo de quotas</span>
               <strong class="metric-card__value" id="metricQuotaComplete">--</strong>
-              <span class="metric-card__hint" id="metricQuotaCompleteHint">Clientes com 3 quotas entregues.</span>
-            </article>
-
-            <article class="metric-card glass" data-analytics-drill="quota" data-quota-scope="coverage" data-drill-title="Cobertura de quotas">
-              <span class="metric-card__label">Cobertura de quotas</span>
-              <strong class="metric-card__value" id="metricQuotaCoverage">--</strong>
-              <span class="metric-card__hint" id="metricQuotaCoverageHint">Preenchimento médio entre 1ª, 2ª e 3ª quota.</span>
+              <span class="metric-card__hint" id="metricQuotaCompleteHint">Clientes com ciclo fechado.</span>
             </article>
 
             <article class="metric-card glass" data-analytics-drill="quota" data-quota-scope="pending" data-drill-title="Pendência de quotas">
               <span class="metric-card__label">Pendência de quotas</span>
               <strong class="metric-card__value" id="metricQuotaPending">--</strong>
-              <span class="metric-card__hint" id="metricQuotaPendingHint">Clientes sem fechar o ciclo de quotas.</span>
+              <span class="metric-card__hint" id="metricQuotaPendingHint">Clientes que ainda não fecharam a entrega.</span>
             </article>
 
-            <article class="metric-card glass" data-analytics-drill="radar" data-drill-key="all" data-drill-title="Carteira total">
-              <span class="metric-card__label">Carteira total</span>
-              <strong class="metric-card__value" id="metricTotal">--</strong>
-              <span class="metric-card__hint" id="metricTotalHint">Linhas válidas na base.</span>
-            </article>
-
-            <article class="metric-card glass" data-analytics-drill="radar" data-drill-key="active" data-drill-title="Status ativos">
-              <span class="metric-card__label">Status ativos</span>
-              <strong class="metric-card__value" id="metricActive">--</strong>
-              <span class="metric-card__hint" id="metricActiveHint">Clientes operando hoje.</span>
-            </article>
-
-            <article class="metric-card glass" data-analytics-drill="radar" data-drill-key="no-resp1" data-drill-title="Sem Resp.1">
-              <span class="metric-card__label">Sem Resp.1</span>
-              <strong class="metric-card__value" id="metricNoResp1">--</strong>
-              <span class="metric-card__hint" id="metricNoResp1Hint">Base sem dono primário.</span>
-            </article>
-
-            <article class="metric-card glass" data-analytics-drill="radar" data-drill-key="mit-pending" data-drill-title="MIT pendente">
-              <span class="metric-card__label">MIT pendente</span>
-              <strong class="metric-card__value" id="metricMit">--</strong>
-              <span class="metric-card__hint" id="metricMitHint">Leitura do MIT/Controle MIT.</span>
-            </article>
-
-            <article class="metric-card glass" data-analytics-drill="radar" data-drill-key="athenas" data-drill-title="Inconsistências">
-              <span class="metric-card__label">Inconsistências</span>
-              <strong class="metric-card__value" id="metricAthenas">--</strong>
-              <span class="metric-card__hint" id="metricAthenasHint">Athenas com apontamento.</span>
-            </article>
-
-            <article class="metric-card glass" data-analytics-drill="radar" data-drill-key="disconnect" data-drill-title="Desligamentos">
-              <span class="metric-card__label">Desligamentos</span>
-              <strong class="metric-card__value" id="metricDesligamento">--</strong>
-              <span class="metric-card__hint" id="metricDesligamentoHint">Campos de data preenchidos.</span>
-            </article>
-
-            <article class="metric-card glass">
-              <span class="metric-card__label">Colunas auditadas</span>
-              <strong class="metric-card__value" id="metricColumns">--</strong>
-              <span class="metric-card__hint" id="metricColumnsHint">Estrutura atual da planilha.</span>
-            </article>
-
-            <article class="metric-card glass">
-              <span class="metric-card__label">Cobertura média</span>
-              <strong class="metric-card__value" id="metricCoverage">--</strong>
-              <span class="metric-card__hint" id="metricCoverageHint">Preenchimento médio da base.</span>
+            <article class="metric-card glass" data-analytics-drill="quota" data-quota-scope="coverage" data-drill-title="Cobertura de quotas">
+              <span class="metric-card__label">Cobertura de quotas</span>
+              <strong class="metric-card__value" id="metricQuotaCoverage">--</strong>
+              <span class="metric-card__hint" id="metricQuotaCoverageHint">Preenchimento médio das 3 etapas.</span>
             </article>
           </section>
 
           <div class="analytics-section-head">
             <div>
-              <h3 class="analytics-section-head__title">Quotas e entregas</h3>
-              <p class="analytics-section-head__subtitle">Leitura prioritária do andamento das quotas, ciclo completo e evolução das entregas.</p>
+              <h3 class="analytics-section-head__title">ContFlow • entregas e responsáveis</h3>
+              <p class="analytics-section-head__subtitle">Primeiro o que foi entregue, quem entregou e onde estão as pendências que afetam a operação.</p>
             </div>
           </div>
 
           <section class="analytics-grid">
+            <article class="panel-card panel-card--full panel-card--executive glass">
+              <div class="panel-card__header">
+                <div>
+                  <h3 class="panel-card__title">Painel executivo de entregas</h3>
+                  <p class="panel-card__subtitle">Primeira leitura do BI: o que já foi entregue, quem entregou, o que foi dispensado e onde a operação ainda está travada.</p>
+                </div>
+              </div>
+              <div class="delivery-overview" id="quotaExecutiveSummary"></div>
+              <div class="delivery-executive-grid">
+                <section class="delivery-executive-block">
+                  <div class="delivery-executive-block__head">
+                    <h4 class="delivery-executive-block__title">Últimas entregas</h4>
+                    <p class="delivery-executive-block__subtitle">As movimentações mais recentes capturadas nas quotas.</p>
+                  </div>
+                  <div class="table-shell">
+                    <table class="analytics-table analytics-table--compact">
+                      <thead>
+                        <tr>
+                          <th>Data</th>
+                          <th>Empresa</th>
+                          <th>Quota</th>
+                          <th>Status</th>
+                          <th>Quem fez</th>
+                          <th>Resp.1</th>
+                        </tr>
+                      </thead>
+                      <tbody id="quotaRecentDeliveriesRows"></tbody>
+                    </table>
+                  </div>
+                </section>
+
+                <section class="delivery-executive-block">
+                  <div class="delivery-executive-block__head">
+                    <h4 class="delivery-executive-block__title">Mix da entrega</h4>
+                    <p class="delivery-executive-block__subtitle">Separação entre entrega com data, dispensada, S/M, inválida e sem autor.</p>
+                  </div>
+                  <div class="bar-list" id="quotaStatusMix"></div>
+                </section>
+              </div>
+            </article>
+
             <article class="panel-card panel-card--wide glass">
               <div class="panel-card__header">
                 <div>
-                  <h3 class="panel-card__title">Métrica de quotas</h3>
-                  <p class="panel-card__subtitle">Volume entregue, pendência, cobertura e linha do tempo das quotas.</p>
+                  <h3 class="panel-card__title">Resumo de entregas</h3>
+                  <p class="panel-card__subtitle">Volume entregue, pendência, cobertura e evolução das quotas no ContFlow.</p>
                 </div>
               </div>
               <div class="quota-grid quota-grid--hero" id="quotaMetrics"></div>
@@ -348,8 +316,28 @@
             <article class="panel-card glass">
               <div class="panel-card__header">
                 <div>
+                  <h3 class="panel-card__title">Autoria das entregas</h3>
+                  <p class="panel-card__subtitle">Quem mais registrou quotas no período lido pelo BI.</p>
+                </div>
+              </div>
+              <div class="bar-list" id="quotaActorDistribution"></div>
+            </article>
+
+            <article class="panel-card glass">
+              <div class="panel-card__header">
+                <div>
+                  <h3 class="panel-card__title">Pendência por Resp.1</h3>
+                  <p class="panel-card__subtitle">Onde a carga pendente está mais concentrada dentro do ContFlow.</p>
+                </div>
+              </div>
+              <div class="bar-list" id="quotaPendingByResp"></div>
+            </article>
+
+            <article class="panel-card glass">
+              <div class="panel-card__header">
+                <div>
                   <h3 class="panel-card__title">Responsáveis</h3>
-                  <p class="panel-card__subtitle">Top distribuição por Resp.1.</p>
+                  <p class="panel-card__subtitle">Distribuição por Resp.1 na carteira do ContFlow.</p>
                 </div>
               </div>
               <div class="bar-list" id="responsavelDistribution"></div>
@@ -359,7 +347,7 @@
               <div class="panel-card__header">
                 <div>
                   <h3 class="panel-card__title">Apoio operacional</h3>
-                  <p class="panel-card__subtitle">Top distribuição por Resp.2.</p>
+                  <p class="panel-card__subtitle">Distribuição por Resp.2 para leitura de apoio.</p>
                 </div>
               </div>
               <div class="bar-list" id="resp2Distribution"></div>
@@ -369,7 +357,7 @@
               <div class="panel-card__header">
                 <div>
                   <h3 class="panel-card__title">Cobertura por etapa</h3>
-                  <p class="panel-card__subtitle">Quanto cada etapa de quota está sendo entregue sobre o universo esperado.</p>
+                  <p class="panel-card__subtitle">Quanto cada etapa está sendo entregue sobre o universo esperado.</p>
                 </div>
               </div>
               <div class="bar-list" id="quotaStageCoverage"></div>
@@ -385,31 +373,11 @@
               <div class="bar-list" id="quotaExpectedDistribution"></div>
             </article>
 
-            <article class="panel-card glass">
-              <div class="panel-card__header">
-                <div>
-                  <h3 class="panel-card__title">Pendência por Resp.1</h3>
-                  <p class="panel-card__subtitle">Onde está concentrada a carga de quotas pendentes ou inconsistentes.</p>
-                </div>
-              </div>
-              <div class="bar-list" id="quotaPendingByResp"></div>
-            </article>
-
-            <article class="panel-card glass">
-              <div class="panel-card__header">
-                <div>
-                  <h3 class="panel-card__title">Quem fez</h3>
-                  <p class="panel-card__subtitle">Distribuição dos autores identificados nas quotas.</p>
-                </div>
-              </div>
-              <div class="bar-list" id="quotaActorDistribution"></div>
-            </article>
-
             <article class="panel-card panel-card--full glass">
               <div class="panel-card__header">
                 <div>
                   <h3 class="panel-card__title">Linha do tempo por etapa</h3>
-                  <p class="panel-card__subtitle">Histórico separado entre 1ª, 2ª e 3ª quota para entender ritmo e gargalo.</p>
+                  <p class="panel-card__subtitle">Histórico entre 1ª, 2ª e 3ª quota para entender ritmo de entrega.</p>
                 </div>
               </div>
               <div class="quota-stage-grid" id="quotaStageTimelines"></div>
@@ -419,7 +387,7 @@
               <div class="panel-card__header">
                 <div>
                   <h3 class="panel-card__title">Auditoria detalhada de quotas</h3>
-                  <p class="panel-card__subtitle">Leitura linha a linha com quantidade esperada, entregue, pendente e inconsistências.</p>
+                  <p class="panel-card__subtitle">Leitura linha a linha com esperado, entregue, pendente, quem fez e inconsistências.</p>
                 </div>
               </div>
               <div class="table-shell">
@@ -442,6 +410,72 @@
                   <tbody id="quotaAuditRows"></tbody>
                 </table>
               </div>
+            </article>
+          </section>
+
+          <div class="analytics-section-head">
+            <div>
+              <h3 class="analytics-section-head__title">Parâmetros e contexto da leitura</h3>
+              <p class="analytics-section-head__subtitle">Depois das entregas, aqui entram fonte, volume, trimestres carregados e o quanto do ecossistema do BI foi lido.</p>
+            </div>
+          </div>
+
+          <section class="analytics-params" id="analyticsParams"></section>
+
+          <div class="analytics-section-head">
+            <div>
+              <h3 class="analytics-section-head__title">Base operacional do ContFlow</h3>
+              <p class="analytics-section-head__subtitle">Aqui entram os números estruturais da carteira: base ativa, responsáveis, MIT, inconsistências e cobertura.</p>
+            </div>
+          </div>
+
+          <section class="analytics-kpis analytics-kpis--operations">
+            <article class="metric-card glass" data-analytics-drill="radar" data-drill-key="all" data-drill-title="Carteira total">
+              <span class="metric-card__label">Carteira total</span>
+              <strong class="metric-card__value" id="metricTotal">--</strong>
+              <span class="metric-card__hint" id="metricTotalHint">Clientes válidos usados no BI.</span>
+            </article>
+
+            <article class="metric-card glass" data-analytics-drill="radar" data-drill-key="active" data-drill-title="Status ativos">
+              <span class="metric-card__label">Status ativos</span>
+              <strong class="metric-card__value" id="metricActive">--</strong>
+              <span class="metric-card__hint" id="metricActiveHint">Clientes operando hoje.</span>
+            </article>
+
+            <article class="metric-card glass" data-analytics-drill="radar" data-drill-key="no-resp1" data-drill-title="Sem Resp.1">
+              <span class="metric-card__label">Sem Resp.1</span>
+              <strong class="metric-card__value" id="metricNoResp1">--</strong>
+              <span class="metric-card__hint" id="metricNoResp1Hint">Clientes sem dono primário.</span>
+            </article>
+
+            <article class="metric-card glass" data-analytics-drill="radar" data-drill-key="mit-pending" data-drill-title="MIT pendente">
+              <span class="metric-card__label">MIT pendente</span>
+              <strong class="metric-card__value" id="metricMit">--</strong>
+              <span class="metric-card__hint" id="metricMitHint">Sinais de pendência em MIT.</span>
+            </article>
+
+            <article class="metric-card glass" data-analytics-drill="radar" data-drill-key="athenas" data-drill-title="Inconsistências">
+              <span class="metric-card__label">Inconsistências</span>
+              <strong class="metric-card__value" id="metricAthenas">--</strong>
+              <span class="metric-card__hint" id="metricAthenasHint">Apontamentos no Athenas.</span>
+            </article>
+
+            <article class="metric-card glass" data-analytics-drill="radar" data-drill-key="disconnect" data-drill-title="Desligamentos">
+              <span class="metric-card__label">Desligamentos</span>
+              <strong class="metric-card__value" id="metricDesligamento">--</strong>
+              <span class="metric-card__hint" id="metricDesligamentoHint">Clientes com desligamento informado.</span>
+            </article>
+
+            <article class="metric-card glass">
+              <span class="metric-card__label">Cobertura média</span>
+              <strong class="metric-card__value" id="metricCoverage">--</strong>
+              <span class="metric-card__hint" id="metricCoverageHint">Preenchimento médio da base.</span>
+            </article>
+
+            <article class="metric-card glass">
+              <span class="metric-card__label">Colunas auditadas</span>
+              <strong class="metric-card__value" id="metricColumns">--</strong>
+              <span class="metric-card__hint" id="metricColumnsHint">Quantidade de campos considerados na auditoria do ContFlow.</span>
             </article>
           </section>
 
@@ -669,6 +703,48 @@
 
           </section>
         </section>
+
+        <section class="tax-bi-shell glass" aria-label="BI tributário">
+          <div class="tax-bi-hero">
+            <div>
+              <div class="analytics-eyebrow">BI Tributário</div>
+              <h2 class="analytics-title">Camada tributária especializada</h2>
+              <p class="analytics-subtitle">
+                Depois do ContFlow, aqui entram os recortes de LP, LRT, LRA e a visão completa
+                para análise fiscal, faturamento, base de cálculo e diagnóstico por painel.
+              </p>
+            </div>
+
+            <div class="tax-bi-actions">
+              <span class="analytics-chip analytics-chip--brand" id="taxBiUpdatedAt">
+                Atualizando BI tributário...
+              </span>
+              <button class="btn btn--ghost" type="button" id="btnTaxBiRefresh">
+                Atualizar tributário
+              </button>
+            </div>
+          </div>
+
+          <nav class="tax-bi-tabs" aria-label="Páginas do BI tributário">
+            <button class="tax-bi-tab is-active" type="button" data-tax-bi-page="lp">
+              BI - LP
+            </button>
+            <button class="tax-bi-tab" type="button" data-tax-bi-page="lrt">
+              BI - LRT
+            </button>
+            <button class="tax-bi-tab" type="button" data-tax-bi-page="lra">
+              BI - LRA
+            </button>
+            <button class="tax-bi-tab" type="button" data-tax-bi-page="complete">
+              BI - Completo
+            </button>
+          </nav>
+
+          <section class="tax-bi-page is-active" data-tax-bi-panel="lp"></section>
+          <section class="tax-bi-page" data-tax-bi-panel="lrt"></section>
+          <section class="tax-bi-page" data-tax-bi-panel="lra"></section>
+          <section class="tax-bi-page" data-tax-bi-panel="complete"></section>
+        </section>
       </main>
     </div>
 
@@ -686,6 +762,6 @@
     </aside>
 
     <script src="/libs/xlsx.full.min.js"></script>
-    <script src="./contanalytics.js?v=20260504-02"></script>
+    <script src="./contanalytics.js?v=20260504-04"></script>
   </body>
 </html>
