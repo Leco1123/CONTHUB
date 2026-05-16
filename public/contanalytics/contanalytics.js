@@ -47,6 +47,7 @@ document.addEventListener("DOMContentLoaded", () => {
   let moduleStatusMap = {};
   let moduleAccessMap = {};
   let analyticsDrillBound = false;
+  const CONTFLOW_ACTIVE_QUARTER_STORAGE_KEY = "conthub:contflow:active-quarter";
 
   const state = {
     contFlow: {
@@ -66,6 +67,7 @@ document.addEventListener("DOMContentLoaded", () => {
     lastAnalytics: null,
     taxBiAnalytics: {},
     contFlowCompanyMap: new Map(),
+    quotaTimelineAudit: {},
   };
 
   const app = document.getElementById("app");
@@ -265,6 +267,11 @@ document.addEventListener("DOMContentLoaded", () => {
       minimumFractionDigits: decimals,
       maximumFractionDigits: decimals,
     })}%`;
+  }
+
+  function ratioPercent(part, total, decimals = 1) {
+    if (!total) return formatPercent(0, decimals);
+    return formatPercent((Number(part || 0) / Number(total || 0)) * 100, decimals);
   }
 
   function formatDateTime(value) {
@@ -821,10 +828,12 @@ document.addEventListener("DOMContentLoaded", () => {
       counts.set(label, (counts.get(label) || 0) + 1);
     });
 
-    return Array.from(counts.entries())
+    const items = Array.from(counts.entries())
       .map(([label, value]) => ({ label, value }))
-      .sort((a, b) => b.value - a.value || a.label.localeCompare(b.label, "pt-BR"))
-      .slice(0, limit);
+      .sort((a, b) => b.value - a.value || a.label.localeCompare(b.label, "pt-BR"));
+
+    if (!Number.isFinite(limit) || limit <= 0) return items;
+    return items.slice(0, limit);
   }
 
   function buildCoverage(columns, rows, cells) {
@@ -948,9 +957,17 @@ document.addEventListener("DOMContentLoaded", () => {
       normalized.includes("sem movimento") ||
       normalized.includes("sem mov") ||
       normalized.includes("sm ");
+    const isCompensacao =
+      normalized === "compensacao" ||
+      normalized.includes("compens");
+    const isPrejuizo =
+      normalized === "prejuizo" ||
+      normalized.includes("preju");
     const isFilledQuota = raw !== "";
-    const isRegularDelivered = isFilledQuota && !isDispensada && !isSemMovimento && Boolean(date);
-    const isInvalidDate = isFilledQuota && !isDispensada && !isSemMovimento && !date;
+    const isAcceptedSpecialStatus =
+      isDispensada || isSemMovimento || isCompensacao || isPrejuizo;
+    const isRegularDelivered = isFilledQuota && Boolean(date);
+    const isInvalidDate = isFilledQuota && !isAcceptedSpecialStatus && !date;
 
     return {
       raw,
@@ -959,16 +976,23 @@ document.addEventListener("DOMContentLoaded", () => {
       isFilled: isFilledQuota,
       isDispensada,
       isSemMovimento,
+      isCompensacao,
+      isPrejuizo,
+      isAcceptedSpecialStatus,
       isRegularDelivered,
       isInvalidDate,
       statusLabel: isDispensada
         ? "Dispensada"
         : isSemMovimento
           ? "S/M"
+          : isCompensacao
+            ? "Compensação"
+            : isPrejuizo
+              ? "Prejuízo"
           : isRegularDelivered
             ? "Entregue"
             : isInvalidDate
-              ? "Data inválida"
+              ? "Valor inválido"
               : "Sem preenchimento",
     };
   }
@@ -987,7 +1011,12 @@ document.addEventListener("DOMContentLoaded", () => {
     };
   }
 
-  function buildQuotaAnalytics(rows, cells = []) {
+  function buildQuotaAnalytics(rows, cells = [], options = {}) {
+    const sourceMeta = {
+      index: Number.isInteger(options?.sourceIndex) ? options.sourceIndex : null,
+      label: String(options?.sourceLabel || "").trim() || "ContFlow",
+      reason: String(options?.sourceReason || "").trim(),
+    };
     const quotaCellMeta = new Map();
     (cells || []).forEach((cell) => {
       const colKey = String(cell?.colKey || "").trim();
@@ -996,9 +1025,9 @@ document.addEventListener("DOMContentLoaded", () => {
     });
 
     const stageStats = [
-      { id: "quota1", label: "1ª quota", expectedRows: 0, filled: 0, missing: 0, invalidDates: 0, dispensadas: 0, semMovimento: 0, withActor: 0 },
-      { id: "quota2", label: "2ª quota", expectedRows: 0, filled: 0, missing: 0, invalidDates: 0, dispensadas: 0, semMovimento: 0, withActor: 0 },
-      { id: "quota3", label: "3ª quota", expectedRows: 0, filled: 0, missing: 0, invalidDates: 0, dispensadas: 0, semMovimento: 0, withActor: 0 },
+      { id: "quota1", label: "1ª quota", expectedRows: 0, filled: 0, missing: 0, invalidDates: 0, dispensadas: 0, semMovimento: 0, compensacao: 0, prejuizo: 0, withActor: 0 },
+      { id: "quota2", label: "2ª quota", expectedRows: 0, filled: 0, missing: 0, invalidDates: 0, dispensadas: 0, semMovimento: 0, compensacao: 0, prejuizo: 0, withActor: 0 },
+      { id: "quota3", label: "3ª quota", expectedRows: 0, filled: 0, missing: 0, invalidDates: 0, dispensadas: 0, semMovimento: 0, compensacao: 0, prejuizo: 0, withActor: 0 },
     ];
     const totalPossible = rows.reduce((sum, row) => sum + getExpectedQuotaInfo(row).expected, 0);
     const quotaCountMap = new Map([
@@ -1015,6 +1044,12 @@ document.addEventListener("DOMContentLoaded", () => {
       quota2: new Map(),
       quota3: new Map(),
     };
+    const timelineAudit = {
+      all: {},
+      quota1: {},
+      quota2: {},
+      quota3: {},
+    };
 
     let totalDelivered = 0;
     let allDelivered = 0;
@@ -1029,20 +1064,36 @@ document.addEventListener("DOMContentLoaded", () => {
     let invalidNumQuotas = 0;
     let dispensadas = 0;
     let semMovimento = 0;
+    let compensacao = 0;
+    let prejuizo = 0;
     let withActor = 0;
     let invalidDateEntries = 0;
     let withActorEntries = 0;
     const actorMap = new Map();
     const recentDeliveries = [];
 
-    const registerTimeline = (map, value) => {
-      const dt = parseQuotaDate(value);
-      if (!dt) return;
+    const registerTimeline = (map, auditGroup, entry, row, stage) => {
+      const dt = entry?.date;
+      if (!(dt instanceof Date) || Number.isNaN(dt.getTime())) return;
       const key = `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}`;
       const label = dt.toLocaleDateString("pt-BR", { month: "short", year: "2-digit" });
-      const current = map.get(key) || { key, label, value: 0 };
+      const current = map.get(key) || { key, label, value: 0, rows: [] };
       current.value += 1;
+      current.rows.push({
+        rowId: row.__rowId,
+        cod: String(row.cod || ""),
+        razao_social: String(row.razao_social || ""),
+        resp1: String(row.resp1 || ""),
+        stageId: stage.id,
+        stageLabel: stage.label,
+        raw: String(entry.raw || ""),
+        dateLabel: dt.toLocaleDateString("pt-BR"),
+        periodKey: key,
+        sourceIndex: sourceMeta.index,
+        sourceLabel: sourceMeta.label,
+      });
       map.set(key, current);
+      auditGroup[key] = current.rows.slice();
     };
 
     const focusRows = rows
@@ -1060,6 +1111,8 @@ document.addEventListener("DOMContentLoaded", () => {
         const completeExpected = pendingExpected === 0 && !hasSequenceIssue;
         const rowDispensadas = entries.filter((entry) => entry.isDispensada).length;
         const rowSemMovimento = entries.filter((entry) => entry.isSemMovimento).length;
+        const rowCompensacao = entries.filter((entry) => entry.isCompensacao).length;
+        const rowPrejuizo = entries.filter((entry) => entry.isPrejuizo).length;
         const rowActors = entries.map((entry) => entry.actor).filter(Boolean);
 
         if (expectedInfo.isMissing) missingNumQuotas += 1;
@@ -1078,6 +1131,8 @@ document.addEventListener("DOMContentLoaded", () => {
         totalDelivered += delivered;
         dispensadas += rowDispensadas;
         semMovimento += rowSemMovimento;
+        compensacao += rowCompensacao;
+        prejuizo += rowPrejuizo;
         if (rowActors.length) withActor += 1;
         rowActors.forEach((actorName) => {
           actorMap.set(actorName, (actorMap.get(actorName) || 0) + 1);
@@ -1108,8 +1163,8 @@ document.addEventListener("DOMContentLoaded", () => {
             raw: entry.raw || "",
             dateLabel: deliveryDt
               ? deliveryDt.toLocaleDateString("pt-BR")
-              : entry.statusLabel === "Data inválida"
-                ? "Data inválida"
+              : entry.statusLabel === "Valor inválido"
+                ? "Valor inválido"
                 : "Sem data",
             sortTime,
           });
@@ -1128,13 +1183,15 @@ document.addEventListener("DOMContentLoaded", () => {
             const entry = entries[index];
             if (entry.isFilled) {
               stage.filled += 1;
-              registerTimeline(stageTimelineMaps[stage.id], row[stage.id]);
-              registerTimeline(timelineMap, row[stage.id]);
+              registerTimeline(stageTimelineMaps[stage.id], timelineAudit[stage.id], entry, row, stage);
+              registerTimeline(timelineMap, timelineAudit.all, entry, row, stage);
             } else {
               stage.missing += 1;
             }
             if (entry.isDispensada) stage.dispensadas += 1;
             if (entry.isSemMovimento) stage.semMovimento += 1;
+            if (entry.isCompensacao) stage.compensacao += 1;
+            if (entry.isPrejuizo) stage.prejuizo += 1;
             if (entry.actor) stage.withActor += 1;
             if (entry.isInvalidDate) stage.invalidDates += 1;
           }
@@ -1187,6 +1244,8 @@ document.addEventListener("DOMContentLoaded", () => {
           actor: rowActors.join(" · "),
           dispensadas: rowDispensadas,
           semMovimento: rowSemMovimento,
+          compensacao: rowCompensacao,
+          prejuizo: rowPrejuizo,
           completeExpected,
           hasSequenceIssue,
           invalidDates,
@@ -1223,10 +1282,12 @@ document.addEventListener("DOMContentLoaded", () => {
       .sort((a, b) => b.value - a.value || a.label.localeCompare(b.label, "pt-BR"))
       .slice(0, 8);
     const statusMix = [
-      { label: "Entregue com data", value: Math.max(totalDelivered - dispensadas - semMovimento - invalidDateEntries, 0), scope: "regular-delivered" },
+      { label: "Entregue com data", value: Math.max(totalDelivered - dispensadas - semMovimento - compensacao - prejuizo - invalidDateEntries, 0), scope: "regular-delivered" },
       { label: "Dispensada", value: dispensadas, scope: "dispensada" },
       { label: "S/M", value: semMovimento, scope: "sem-movimento" },
-      { label: "Data inválida", value: invalidDateEntries, scope: "invalid-date" },
+      { label: "Compensação", value: compensacao, scope: "compensacao" },
+      { label: "Prejuízo", value: prejuizo, scope: "prejuizo" },
+      { label: "Valor inválido", value: invalidDateEntries, scope: "invalid-date" },
       { label: "Sem autor", value: Math.max(totalDelivered - withActorEntries, 0), scope: "without-actor" },
     ].filter((item) => item.value > 0);
 
@@ -1244,6 +1305,10 @@ document.addEventListener("DOMContentLoaded", () => {
       timeline,
       stageCoverage,
       stageTimelines,
+      timelineAudit,
+      sourceLabel: sourceMeta.label,
+      sourceIndex: sourceMeta.index,
+      sourceReason: sourceMeta.reason,
       expectedDistribution,
       pendingByResp,
       actorDistribution: Array.from(actorMap.entries())
@@ -1264,6 +1329,8 @@ document.addEventListener("DOMContentLoaded", () => {
       invalidNumQuotas,
       dispensadas,
       semMovimento,
+      compensacao,
+      prejuizo,
       invalidDateEntries,
       withActorEntries,
       withActor,
@@ -1307,8 +1374,41 @@ document.addEventListener("DOMContentLoaded", () => {
     return {
       ...candidates[0].dataset,
       __sourceIndex: candidates[0].index,
-      __sourceLabel: `ContFlow ${QUARTER_LABELS[candidates[0].index] || ""}`.trim(),
+      __sourceLabel: `ContFlow ${QUARTER_LABELS[candidates[0].index] || ""} • mais atualizado`.trim(),
+      __sourceReason: "mais atualizado",
     };
+  }
+
+  function getPreferredContFlowQuarterIndex() {
+    try {
+      const raw = localStorage.getItem(CONTFLOW_ACTIVE_QUARTER_STORAGE_KEY);
+      const parsed = Number(raw);
+      if (Number.isInteger(parsed) && parsed >= 0 && parsed < QUARTER_LABELS.length) {
+        return parsed;
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  function decorateContFlowDataset(dataset, index, reason) {
+    return {
+      ...(dataset || EMPTY_DATASET),
+      __sourceIndex: index,
+      __sourceLabel: `ContFlow ${QUARTER_LABELS[index] || ""} • ${reason}`.trim(),
+      __sourceReason: reason,
+    };
+  }
+
+  function getPreferredContFlowDataset(datasets = []) {
+    const preferredIndex = getPreferredContFlowQuarterIndex();
+    if (preferredIndex != null) {
+      const preferredDataset = datasets[preferredIndex] || EMPTY_DATASET;
+      const preferredRows = getValidContFlowRows(preferredDataset);
+      if (preferredRows.length) {
+        return decorateContFlowDataset(preferredDataset, preferredIndex, "trimestre ativo");
+      }
+    }
+    return getLatestContFlowDataset(datasets);
   }
 
   function sumPainelTributarioMonth(row, monthOffset) {
@@ -1329,7 +1429,12 @@ document.addEventListener("DOMContentLoaded", () => {
       const quarterRowIds = new Set(contFlowRows.map((row) => row.__rowId));
       const quotaAnalytics = buildQuotaAnalytics(
         contFlowRows,
-        (contFlowDataset?.cells || []).filter((cell) => quarterRowIds.has(cell.rowId))
+        (contFlowDataset?.cells || []).filter((cell) => quarterRowIds.has(cell.rowId)),
+        {
+          sourceIndex: quarterIndex,
+          sourceLabel: `ContFlow ${QUARTER_LABELS[quarterIndex] || ""}`.trim(),
+          sourceReason: "resumo trimestral",
+        }
       );
 
       const ptRows = (painelTributario?.rows || []).filter(
@@ -2283,13 +2388,18 @@ document.addEventListener("DOMContentLoaded", () => {
     const validRowIds = new Set(validRows.map((row) => row.__rowId));
     const quotaAnalytics = buildQuotaAnalytics(
       validRows,
-      (dataset.cells || []).filter((cell) => validRowIds.has(cell.rowId))
+      (dataset.cells || []).filter((cell) => validRowIds.has(cell.rowId)),
+      {
+        sourceIndex: dataset.__sourceIndex,
+        sourceLabel: dataset.__sourceLabel,
+        sourceReason: dataset.__sourceReason,
+      }
     );
 
     const triDist = buildDistribution(validRows, "trib");
     const statusDist = buildDistribution(validRows, "status");
     const respDist = buildDistribution(validRows, "resp1");
-    const resp2Dist = buildDistribution(validRows, "resp2");
+    const resp2Dist = buildDistribution(validRows, "resp2", Number.POSITIVE_INFINITY);
     const grupoDist = buildDistribution(validRows, "grupo");
 
     const criticalColumns = coverage
@@ -2511,6 +2621,7 @@ document.addEventListener("DOMContentLoaded", () => {
               <span class="bar-row__label">${escapeHtml(item.label)}</span>
               <span class="bar-row__value">${valueFormatter(item.value)}</span>
             </div>
+            ${item.meta ? `<div class="bar-row__hint">${escapeHtml(item.meta)}</div>` : ""}
             <div class="bar-row__track">
               <div class="bar-row__fill" style="width:${Math.max(6, (item.value / max) * 100)}%"></div>
             </div>
@@ -2780,43 +2891,50 @@ document.addEventListener("DOMContentLoaded", () => {
         label: "Sem tributação",
         count: analytics.coverage.find((item) => item.key === "trib")?.empty || 0,
         hint: "Registros sem regime tributário informado.",
+        tone: "warn",
       },
       {
         label: "Sem status",
         count: analytics.coverage.find((item) => item.key === "status")?.empty || 0,
         hint: "Linhas sem status operacional preenchido.",
+        tone: "warn",
       },
       {
         label: "Sem Resp.1",
         count: analytics.noResp1,
         hint: "Clientes que seguem sem responsável principal.",
+        tone: analytics.noResp1 ? "warn" : "ok",
       },
       {
         label: "MIT pendente",
         count: analytics.mitPending,
         hint: "Heurística baseada nos campos MIT e Controle de MIT.",
+        tone: analytics.mitPending ? "warn" : "ok",
       },
       {
         label: "Athenas com apontamento",
         count: analytics.inconsistencias,
         hint: "Campo de inconsistência preenchido no cadastro.",
+        tone: analytics.inconsistencias ? "warn" : "ok",
       },
       {
         label: "Desligamentos",
         count: analytics.desligamentos,
         hint: "Linhas com data de desligamento informada.",
+        tone: analytics.desligamentos ? "brand" : "ok",
       },
     ];
 
     target.innerHTML = items
       .map(
         (item) => `
-          <article class="quality-item">
+          <article class="quality-item" data-tone="${item.tone}">
             <div class="quality-item__label">
               <span>${escapeHtml(item.label)}</span>
               <strong class="quality-item__count">${formatNumber(item.count)}</strong>
             </div>
             <div class="quality-item__hint">${escapeHtml(item.hint)}</div>
+            <div class="quality-item__meta">${ratioPercent(item.count, analytics.totalRows || 0)} da carteira monitorada</div>
           </article>
         `
       )
@@ -2866,9 +2984,9 @@ document.addEventListener("DOMContentLoaded", () => {
       },
       {
         label: "Leituras especiais",
-        value: formatNumber((quota.dispensadas || 0) + (quota.semMovimento || 0)),
-        meta: `${formatNumber(quota.dispensadas || 0)} dispensadas • ${formatNumber(quota.semMovimento || 0)} S/M`,
-        hint: "Quotas concluídas por exceção ou sem movimento.",
+        value: formatNumber((quota.dispensadas || 0) + (quota.semMovimento || 0) + (quota.compensacao || 0) + (quota.prejuizo || 0)),
+        meta: `${formatNumber(quota.dispensadas || 0)} dispensadas • ${formatNumber(quota.semMovimento || 0)} S/M • ${formatNumber(quota.compensacao || 0)} compensações • ${formatNumber(quota.prejuizo || 0)} prejuízos`,
+        hint: "Quotas concluídas por exceção, sem movimento ou parâmetros especiais aceitos pelo painel.",
         tone: "warn",
       },
     ];
@@ -2908,68 +3026,31 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const pendingTone = quota.pending > Math.max(quota.allDelivered, 1) ? "warn" : "ok";
     const coverageTone = quota.coverage < 40 ? "danger" : quota.coverage < 75 ? "warn" : "ok";
+    const totalClients = analytics.totalRows || 0;
+    const quotaCard = (label, value, hint, meta, tone, attrs = {}) => `
+      <article class="quota-card" data-tone="${tone}" ${drillAttrs(attrs)}>
+        <div class="quota-card__label">${escapeHtml(label)}</div>
+        <div class="quota-card__value-row">
+          <div class="quota-card__value">${escapeHtml(value)}</div>
+          ${meta ? `<div class="quota-card__meta">${escapeHtml(meta)}</div>` : ""}
+        </div>
+        <div class="quota-card__hint">${escapeHtml(hint)}</div>
+      </article>
+    `;
 
     target.innerHTML = `
-      <article class="quota-card" data-tone="ok" ${drillAttrs({ "analytics-drill": "quota", "quota-scope": "stage", "quota-stage": "quota1", "drill-title": "1ª quota entregue" })}>
-        <div class="quota-card__label">1ª quota entregue</div>
-        <div class="quota-card__value">${formatNumber(quota.quota1)}</div>
-        <div class="quota-card__hint">Clientes com a primeira quota preenchida.</div>
-      </article>
-      <article class="quota-card" data-tone="ok" ${drillAttrs({ "analytics-drill": "quota", "quota-scope": "stage", "quota-stage": "quota2", "drill-title": "2ª quota entregue" })}>
-        <div class="quota-card__label">2ª quota entregue</div>
-        <div class="quota-card__value">${formatNumber(quota.quota2)}</div>
-        <div class="quota-card__hint">Clientes com segunda quota registrada.</div>
-      </article>
-      <article class="quota-card" data-tone="ok" ${drillAttrs({ "analytics-drill": "quota", "quota-scope": "stage", "quota-stage": "quota3", "drill-title": "3ª quota entregue" })}>
-        <div class="quota-card__label">3ª quota entregue</div>
-        <div class="quota-card__value">${formatNumber(quota.quota3)}</div>
-        <div class="quota-card__hint">Clientes com terceira quota concluída.</div>
-      </article>
-      <article class="quota-card" data-tone="ok" ${drillAttrs({ "analytics-drill": "quota", "quota-scope": "complete", "drill-title": "Ciclo esperado completo" })}>
-        <div class="quota-card__label">Ciclo esperado completo</div>
-        <div class="quota-card__value">${formatNumber(quota.clientsCompleteExpected)}</div>
-        <div class="quota-card__hint">Clientes que entregaram tudo o que o campo Num Quotas pede.</div>
-      </article>
-      <article class="quota-card" data-tone="${coverageTone}" ${drillAttrs({ "analytics-drill": "quota", "quota-scope": "coverage", "drill-title": "Cobertura total de quotas" })}>
-        <div class="quota-card__label">Cobertura total</div>
-        <div class="quota-card__value">${formatPercent(quota.coverage)}</div>
-        <div class="quota-card__hint">${formatNumber(quota.totalDelivered)} entregas registradas de um total esperado de ${formatNumber(quota.totalPossible)}.</div>
-      </article>
-      <article class="quota-card" data-tone="${pendingTone}" ${drillAttrs({ "analytics-drill": "quota", "quota-scope": "pending", "drill-title": "Pendência de ciclo" })}>
-        <div class="quota-card__label">Pendência de ciclo</div>
-        <div class="quota-card__value">${formatNumber(quota.clientsPendingExpected)}</div>
-        <div class="quota-card__hint">Clientes que ainda não fecharam a quantidade esperada de quotas.</div>
-      </article>
-      <article class="quota-card" data-tone="${quota.missingNumQuotas ? "warn" : "ok"}" ${drillAttrs({ "analytics-drill": "quota", "quota-scope": "missing-num", "drill-title": "Sem Num Quotas" })}>
-        <div class="quota-card__label">Sem Num Quotas</div>
-        <div class="quota-card__value">${formatNumber(quota.missingNumQuotas)}</div>
-        <div class="quota-card__hint">Linhas que ficaram sem quantidade declarada de quotas.</div>
-      </article>
-      <article class="quota-card" data-tone="${quota.sequenceIssues ? "danger" : "ok"}" ${drillAttrs({ "analytics-drill": "quota", "quota-scope": "sequence", "drill-title": "Sequência inconsistente" })}>
-        <div class="quota-card__label">Sequência inconsistente</div>
-        <div class="quota-card__value">${formatNumber(quota.sequenceIssues)}</div>
-        <div class="quota-card__hint">Há 2ª/3ª quota sem a etapa anterior preenchida.</div>
-      </article>
-      <article class="quota-card" data-tone="${quota.invalidDateRows ? "warn" : "ok"}" ${drillAttrs({ "analytics-drill": "quota", "quota-scope": "invalid-date", "drill-title": "Datas inválidas" })}>
-        <div class="quota-card__label">Datas inválidas</div>
-        <div class="quota-card__value">${formatNumber(quota.invalidDateRows)}</div>
-        <div class="quota-card__hint">Campos de quota preenchidos, mas com data fora do padrão reconhecido.</div>
-      </article>
-      <article class="quota-card" data-tone="${quota.dispensadas ? "warn" : "ok"}" ${drillAttrs({ "analytics-drill": "quota", "quota-scope": "dispensada", "drill-title": "Quotas dispensadas" })}>
-        <div class="quota-card__label">Dispensadas</div>
-        <div class="quota-card__value">${formatNumber(quota.dispensadas)}</div>
-        <div class="quota-card__hint">Quantidade de quotas marcadas como dispensadas.</div>
-      </article>
-      <article class="quota-card" data-tone="${quota.semMovimento ? "warn" : "ok"}" ${drillAttrs({ "analytics-drill": "quota", "quota-scope": "sem-movimento", "drill-title": "Quotas S/M" })}>
-        <div class="quota-card__label">S/M</div>
-        <div class="quota-card__value">${formatNumber(quota.semMovimento)}</div>
-        <div class="quota-card__hint">Quantidade de quotas marcadas como sem movimento.</div>
-      </article>
-      <article class="quota-card" data-tone="${quota.withActor ? "ok" : "warn"}" ${drillAttrs({ "analytics-drill": "quota", "quota-scope": "with-actor", "drill-title": "Com autor identificado" })}>
-        <div class="quota-card__label">Com autor identificado</div>
-        <div class="quota-card__value">${formatNumber(quota.withActor)}</div>
-        <div class="quota-card__hint">Linhas de quota em que foi possível identificar quem fez.</div>
-      </article>
+      ${quotaCard("1ª quota entregue", formatNumber(quota.quota1), "Clientes com a primeira quota preenchida e válida no recorte atual.", `${ratioPercent(quota.quota1, totalClients)} da carteira`, "ok", { "analytics-drill": "quota", "quota-scope": "stage", "quota-stage": "quota1", "drill-title": "1ª quota entregue" })}
+      ${quotaCard("2ª quota entregue", formatNumber(quota.quota2), "Clientes com a segunda quota registrada, mostrando avanço do ciclo operacional.", `${ratioPercent(quota.quota2, totalClients)} da carteira`, "ok", { "analytics-drill": "quota", "quota-scope": "stage", "quota-stage": "quota2", "drill-title": "2ª quota entregue" })}
+      ${quotaCard("3ª quota entregue", formatNumber(quota.quota3), "Clientes com a terceira quota concluída dentro do fluxo esperado.", `${ratioPercent(quota.quota3, totalClients)} da carteira`, "ok", { "analytics-drill": "quota", "quota-scope": "stage", "quota-stage": "quota3", "drill-title": "3ª quota entregue" })}
+      ${quotaCard("Ciclo esperado completo", formatNumber(quota.clientsCompleteExpected), "Clientes que entregaram tudo o que o campo Num Quotas exige para o período.", `${ratioPercent(quota.clientsCompleteExpected, totalClients)} da carteira`, "ok", { "analytics-drill": "quota", "quota-scope": "complete", "drill-title": "Ciclo esperado completo" })}
+      ${quotaCard("Pendência de ciclo", formatNumber(quota.clientsPendingExpected), "Clientes que ainda não fecharam a quantidade esperada de quotas na leitura atual.", `${ratioPercent(quota.clientsPendingExpected, totalClients)} da carteira`, pendingTone, { "analytics-drill": "quota", "quota-scope": "pending", "drill-title": "Pendência de ciclo" })}
+      ${quotaCard("Cobertura total", formatPercent(quota.coverage), `${formatNumber(quota.totalDelivered)} entregas registradas de um total esperado de ${formatNumber(quota.totalPossible)}.`, `${formatNumber(Math.max(quota.totalPossible - quota.totalDelivered, 0))} etapas ainda abertas`, coverageTone, { "analytics-drill": "quota", "quota-scope": "coverage", "drill-title": "Cobertura total de quotas" })}
+      ${quotaCard("Sem Num Quotas", formatNumber(quota.missingNumQuotas), "Linhas sem quantidade declarada de quotas, afetando a expectativa do ciclo operacional.", `${ratioPercent(quota.missingNumQuotas, totalClients)} da carteira`, quota.missingNumQuotas ? "warn" : "ok", { "analytics-drill": "quota", "quota-scope": "missing-num", "drill-title": "Sem Num Quotas" })}
+      ${quotaCard("Sequência inconsistente", formatNumber(quota.sequenceIssues), "Há 2ª ou 3ª quota preenchida sem a etapa anterior concluída corretamente.", `${ratioPercent(quota.sequenceIssues, totalClients)} da carteira`, quota.sequenceIssues ? "danger" : "ok", { "analytics-drill": "quota", "quota-scope": "sequence", "drill-title": "Sequência inconsistente" })}
+      ${quotaCard("Valores inválidos", formatNumber(quota.invalidDateRows), "Campos de quota preenchidos com valor fora dos parâmetros reconhecidos pelo BI.", `${formatNumber(quota.invalidDateEntries || 0)} ocorrências encontradas`, quota.invalidDateRows ? "warn" : "ok", { "analytics-drill": "quota", "quota-scope": "invalid-date", "drill-title": "Valores inválidos" })}
+      ${quotaCard("Dispensadas", formatNumber(quota.dispensadas), "Quantidade de quotas marcadas como dispensadas, removendo a necessidade de avanço no ciclo.", `${ratioPercent(quota.dispensadas, Math.max(quota.totalDelivered, 1))} das entregas`, quota.dispensadas ? "warn" : "ok", { "analytics-drill": "quota", "quota-scope": "dispensada", "drill-title": "Quotas dispensadas" })}
+      ${quotaCard("S/M", formatNumber(quota.semMovimento), "Quantidade de quotas marcadas como sem movimento no período lido pelo BI.", `${ratioPercent(quota.semMovimento, Math.max(quota.totalDelivered, 1))} das entregas`, quota.semMovimento ? "warn" : "ok", { "analytics-drill": "quota", "quota-scope": "sem-movimento", "drill-title": "Quotas S/M" })}
+      ${quotaCard("Com autor identificado", formatNumber(quota.withActor), "Linhas de quota em que foi possível identificar quem fez o registro.", `${formatNumber(quota.withActorEntries || 0)} lançamentos com autoria`, quota.withActor ? "ok" : "warn", { "analytics-drill": "quota", "quota-scope": "with-actor", "drill-title": "Com autor identificado" })}
     `;
 
     renderBarList("quotaTimeline", quota.timeline, {
@@ -3006,7 +3087,7 @@ document.addEventListener("DOMContentLoaded", () => {
             <td><span class="table-badge" data-tone="${
               item.statusLabel === "Entregue"
                 ? "ok"
-                : item.statusLabel === "Data inválida"
+                : item.statusLabel === "Valor inválido"
                   ? "danger"
                   : "warn"
             }">${escapeHtml(item.statusLabel)}</span></td>
@@ -3048,7 +3129,11 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   function renderQuotaExpectedDistribution(analytics) {
-    renderBarList("quotaExpectedDistribution", analytics.quotaAnalytics.expectedDistribution || [], {
+    const items = (analytics.quotaAnalytics.expectedDistribution || []).map((item) => ({
+      ...item,
+      meta: `${ratioPercent(item.value, analytics.totalRows || 0)} da carteira`,
+    }));
+    renderBarList("quotaExpectedDistribution", items, {
       getAttrs: (item) => ({
         "analytics-drill": "quota",
         "quota-scope": "expected",
@@ -3059,7 +3144,12 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   function renderQuotaPendingByResp(analytics) {
-    renderBarList("quotaPendingByResp", analytics.quotaAnalytics.pendingByResp || [], {
+    const total = analytics.quotaAnalytics.clientsPendingExpected || 0;
+    const items = (analytics.quotaAnalytics.pendingByResp || []).map((item) => ({
+      ...item,
+      meta: `${ratioPercent(item.value, total)} da pendência`,
+    }));
+    renderBarList("quotaPendingByResp", items, {
       getAttrs: (item) => ({
         "analytics-drill": "quota",
         "quota-scope": "pending-resp",
@@ -3070,7 +3160,12 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   function renderQuotaActors(analytics) {
-    renderBarList("quotaActorDistribution", analytics.quotaAnalytics.actorDistribution || [], {
+    const total = analytics.quotaAnalytics.withActorEntries || 0;
+    const items = (analytics.quotaAnalytics.actorDistribution || []).map((item) => ({
+      ...item,
+      meta: `${ratioPercent(item.value, total)} da autoria rastreada`,
+    }));
+    renderBarList("quotaActorDistribution", items, {
       getAttrs: (item) => ({
         "analytics-drill": "quota",
         "quota-scope": "actor",
@@ -3084,6 +3179,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const target = document.getElementById("quotaStageTimelines");
     if (!target) return;
     const groups = analytics.quotaAnalytics.stageTimelines || [];
+    const sourceLabel = analytics.quotaAnalytics.sourceLabel || state.contFlow.__sourceLabel || "ContFlow";
     if (!groups.length) {
       target.innerHTML = '<div class="empty-state">Sem histórico por etapa para mostrar.</div>';
       return;
@@ -3094,6 +3190,7 @@ document.addEventListener("DOMContentLoaded", () => {
         (group) => `
           <article class="quota-stage-panel">
             <div class="quota-stage-panel__title">${escapeHtml(group.label)}</div>
+            <div class="panel-card__subtitle">Fonte auditada: ${escapeHtml(sourceLabel)}. A contagem usa o valor atual parseado da célula.</div>
             <div class="bar-list">${group.items.length ? group.items
               .map(
                 (item) => `
@@ -3160,12 +3257,12 @@ document.addEventListener("DOMContentLoaded", () => {
         <article class="summary-kpi" ${drillAttrs({ "analytics-drill": "month", "month-scope": "all", "drill-title": "Faturamento anual PT" })}>
           <span class="summary-kpi__label">Faturamento anual PT</span>
           <strong class="summary-kpi__value">${formatCurrency(time.annualRevenue)}</strong>
-          <span class="summary-kpi__hint">Soma dos 12 meses do Painel Tributário.</span>
+          <span class="summary-kpi__hint">Soma dos 12 meses do Painel Tributário, refletindo a massa total monitorada no ano.</span>
         </article>
         <article class="summary-kpi" ${drillAttrs({ "analytics-drill": "month", "month-scope": "all", "drill-title": "Média mensal" })}>
           <span class="summary-kpi__label">Média mensal</span>
           <strong class="summary-kpi__value">${formatCurrency(time.averageMonthlyRevenue)}</strong>
-          <span class="summary-kpi__hint">Média mensal consolidada no ano.</span>
+          <span class="summary-kpi__hint">Média mensal consolidada para entender o ritmo financeiro típico do painel.</span>
         </article>
         <article class="summary-kpi" ${drillAttrs({
           "analytics-drill": "month",
@@ -3176,7 +3273,7 @@ document.addEventListener("DOMContentLoaded", () => {
         })}>
           <span class="summary-kpi__label">Maior mês</span>
           <strong class="summary-kpi__value">${time.bestMonth ? escapeHtml(time.bestMonth.label) : "--"}</strong>
-          <span class="summary-kpi__hint">${time.bestMonth ? formatCurrency(time.bestMonth.value) : "Sem dados mensais."}</span>
+          <span class="summary-kpi__hint">${time.bestMonth ? `${formatCurrency(time.bestMonth.value)} no mês com maior tração.` : "Sem dados mensais."}</span>
         </article>
         <article class="summary-kpi" ${drillAttrs({
           "analytics-drill": "quarter",
@@ -3185,7 +3282,7 @@ document.addEventListener("DOMContentLoaded", () => {
         })}>
           <span class="summary-kpi__label">Maior trimestre</span>
           <strong class="summary-kpi__value">${time.bestQuarter ? escapeHtml(time.bestQuarter.label) : "--"}</strong>
-          <span class="summary-kpi__hint">${time.bestQuarter ? formatCurrency(time.bestQuarter.ptRevenue) : "Sem dados trimestrais."}</span>
+          <span class="summary-kpi__hint">${time.bestQuarter ? `${formatCurrency(time.bestQuarter.ptRevenue)} no trimestre líder.` : "Sem dados trimestrais."}</span>
         </article>
       `;
     }
@@ -3427,6 +3524,8 @@ document.addEventListener("DOMContentLoaded", () => {
       painelTributarioLR: state.painelTributarioLR,
     });
     state.lastAnalytics = analytics;
+    state.quotaTimelineAudit = analytics.quotaAnalytics.timelineAudit || {};
+    window.__contanalyticsQuotaTimelineAudit = state.quotaTimelineAudit;
     const updatedEl = document.getElementById("analyticsUpdatedAt");
     const sourceChip = document.getElementById("analyticsSourceChip");
 
@@ -3659,7 +3758,7 @@ document.addEventListener("DOMContentLoaded", () => {
     });
 
     state.contFlowSheets = [datasets.cf1, datasets.cf2, datasets.cf3, datasets.cf4];
-    state.contFlow = getLatestContFlowDataset(state.contFlowSheets);
+    state.contFlow = getPreferredContFlowDataset(state.contFlowSheets);
     state.contFlowMasterRows = buildContFlowMasterRows(state.contFlowSheets);
     state.contFlowCompanyMap = buildContFlowCompanyMap(
       state.contFlowMasterRows.length ? state.contFlowMasterRows : getValidContFlowRows(state.contFlow)
@@ -3738,15 +3837,17 @@ document.addEventListener("DOMContentLoaded", () => {
       ["Sem Num Quotas", analytics.quotaAnalytics.missingNumQuotas],
       ["Num Quotas inválido", analytics.quotaAnalytics.invalidNumQuotas],
       ["Sequência inconsistente", analytics.quotaAnalytics.sequenceIssues],
-      ["Linhas com datas inválidas", analytics.quotaAnalytics.invalidDateRows],
+      ["Linhas com valores inválidos", analytics.quotaAnalytics.invalidDateRows],
       ["Dispensadas", analytics.quotaAnalytics.dispensadas],
       ["S/M", analytics.quotaAnalytics.semMovimento],
+      ["Compensação", analytics.quotaAnalytics.compensacao],
+      ["Prejuízo", analytics.quotaAnalytics.prejuizo],
       ["Com autor identificado", analytics.quotaAnalytics.withActor],
     ]);
     XLSX.utils.book_append_sheet(wb, quotaSummarySheet, "Resumo Quotas");
 
     const quotaAuditSheet = XLSX.utils.aoa_to_sheet([
-      ["Cód.", "Razão social", "Resp.1", "Num Quotas", "Esperado", "Entregue", "Pendente", "1ª quota", "2ª quota", "3ª quota", "Datas inválidas", "Quem fez", "Leitura"],
+      ["Cód.", "Razão social", "Resp.1", "Num Quotas", "Esperado", "Entregue", "Pendente", "1ª quota", "2ª quota", "3ª quota", "Valores inválidos", "Quem fez", "Leitura"],
       ...analytics.quotaAnalytics.focusRows.map((item) => [
         item.cod,
         item.razao_social,
@@ -3833,6 +3934,10 @@ document.addEventListener("DOMContentLoaded", () => {
           return info.entries.some((item) => item.isDispensada);
         case "sem-movimento":
           return info.entries.some((item) => item.isSemMovimento);
+        case "compensacao":
+          return info.entries.some((item) => item.isCompensacao);
+        case "prejuizo":
+          return info.entries.some((item) => item.isPrejuizo);
         case "with-actor":
           return info.actors.length > 0;
         case "expected": {
@@ -4470,6 +4575,311 @@ document.addEventListener("DOMContentLoaded", () => {
     btnExport?.addEventListener("click", exportSpreadsheet);
   }
 
+  function createSimplifiedIntro() {
+    const shell = document.querySelector(".analytics-shell");
+    const hero = shell?.querySelector(".analytics-hero");
+    if (!shell || !hero || shell.querySelector(".analytics-simple-toolbar")) return;
+
+    const toolbar = document.createElement("section");
+    toolbar.className = "analytics-simple-toolbar glass";
+    toolbar.innerHTML = `
+      <div class="analytics-simple-toolbar__copy">
+        <span class="analytics-eyebrow">Leitura simplificada</span>
+        <h3>O essencial fica aberto. O resto vira apoio.</h3>
+        <p>Entregas, pendências, resumo trimestral e BI tributário continuam aqui, mas a leitura avançada fica recolhida para não poluir o painel.</p>
+      </div>
+      <div class="analytics-simple-toolbar__actions">
+        <button class="btn btn--ghost" type="button" data-simple-expand="all">Abrir tudo</button>
+        <button class="btn" type="button" data-simple-expand="core">Modo simples</button>
+      </div>
+    `;
+
+    hero.insertAdjacentElement("afterend", toolbar);
+
+    toolbar.querySelector('[data-simple-expand="all"]')?.addEventListener("click", () => {
+      document
+        .querySelectorAll(".analytics-disclosure")
+        .forEach((item) => item.setAttribute("open", "open"));
+    });
+
+    toolbar.querySelector('[data-simple-expand="core"]')?.addEventListener("click", () => {
+      document.querySelectorAll(".analytics-disclosure").forEach((item) => {
+        if (item.dataset.defaultOpen === "true") {
+          item.setAttribute("open", "open");
+        } else {
+          item.removeAttribute("open");
+        }
+      });
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    });
+  }
+
+  function buildDisclosure(title, subtitle, selectors, options = {}) {
+    const shell = document.querySelector(".analytics-shell");
+    if (!shell || !Array.isArray(selectors) || !selectors.length) return;
+    if (shell.querySelector(`[data-disclosure-key="${options.key || title}"]`)) return;
+
+    const elements = selectors
+      .map((selector) =>
+        typeof selector === "string" ? document.querySelector(selector) : selector
+      )
+      .filter(Boolean)
+      .filter((element, index, list) => list.indexOf(element) === index);
+
+    if (!elements.length) return;
+
+    const details = document.createElement("details");
+    details.className = "analytics-disclosure glass";
+    details.dataset.disclosureKey = options.key || title;
+    details.dataset.defaultOpen = options.open ? "true" : "false";
+    if (options.open) details.open = true;
+
+    const summary = document.createElement("summary");
+    summary.className = "analytics-disclosure__summary";
+    summary.innerHTML = `
+      <div class="analytics-disclosure__copy">
+        <span class="analytics-eyebrow">${escapeHtml(options.kicker || "Bloco")}</span>
+        <h3>${escapeHtml(title)}</h3>
+        <p>${escapeHtml(subtitle || "")}</p>
+      </div>
+      <span class="analytics-disclosure__indicator">Abrir</span>
+    `;
+
+    const body = document.createElement("div");
+    body.className = "analytics-disclosure__body";
+
+    details.appendChild(summary);
+    details.appendChild(body);
+
+    const anchor = elements[0];
+    anchor.insertAdjacentElement("beforebegin", details);
+    elements.forEach((element) => body.appendChild(element));
+  }
+
+  function simplifyAnalyticsLayout() {
+    if (document.querySelector(".analytics-disclosure")) return;
+
+    createSimplifiedIntro();
+    const sectionHeads = Array.from(document.querySelectorAll(".analytics-shell > .analytics-section-head"));
+    const analyticsGrids = Array.from(document.querySelectorAll(".analytics-shell > .analytics-grid"));
+    const params = document.getElementById("analyticsParams");
+    const priorityHead = document.querySelector(".analytics-section-head--priority");
+    const priorityKpis = document.getElementById("analyticsKpis");
+    const operationsKpis = document.querySelector(".analytics-kpis--operations");
+
+    buildDisclosure(
+      "Leitura principal do ContFlow",
+      "Os indicadores mais usados da rotina ficam visíveis de primeira, junto com o painel executivo e os principais responsáveis.",
+      [
+        priorityHead,
+        priorityKpis,
+        sectionHeads[1],
+        analyticsGrids[0],
+      ],
+      { key: "core", kicker: "Essencial", open: true }
+    );
+
+    buildDisclosure(
+      "Contexto e operação",
+      "Fonte carregada, volume da base, cobertura operacional e saúde geral da carteira.",
+      [
+        sectionHeads[2],
+        params,
+        sectionHeads[3],
+        operationsKpis,
+        sectionHeads[6],
+        analyticsGrids[2],
+      ],
+      { key: "operations", kicker: "Apoio operacional", open: false }
+    );
+
+    buildDisclosure(
+      "Mensal, trimestral e fontes",
+      "Resumo de faturamento, conferência por trimestre e checklist das bases usadas no BI.",
+      [
+        sectionHeads[4],
+        analyticsGrids[1],
+      ],
+      { key: "periodic", kicker: "Financeiro", open: true }
+    );
+
+    buildDisclosure(
+      "Qualidade e auditoria",
+      "Pendências cadastrais, atividade recente, clientes em foco e auditoria detalhada por coluna.",
+      [
+        sectionHeads[5],
+        analyticsGrids[3],
+        sectionHeads[7],
+        analyticsGrids[4],
+      ],
+      { key: "audit", kicker: "Auditoria", open: false }
+    );
+
+    const taxBiShell = document.querySelector(".tax-bi-shell");
+    if (taxBiShell && !taxBiShell.closest(".analytics-disclosure")) {
+      const shell = document.querySelector(".main");
+      const details = document.createElement("details");
+      details.className = "analytics-disclosure glass analytics-disclosure--tax";
+      details.dataset.disclosureKey = "tax-bi";
+      details.dataset.defaultOpen = "false";
+      details.innerHTML = `
+        <summary class="analytics-disclosure__summary">
+          <div class="analytics-disclosure__copy">
+            <span class="analytics-eyebrow">Tributário</span>
+            <h3>BI tributário completo</h3>
+            <p>LP, LRT, LRA e a visão completa continuam disponíveis, mas fora da leitura inicial para deixar o painel mais leve.</p>
+          </div>
+          <span class="analytics-disclosure__indicator">Abrir</span>
+        </summary>
+        <div class="analytics-disclosure__body"></div>
+      `;
+      const body = details.querySelector(".analytics-disclosure__body");
+      taxBiShell.insertAdjacentElement("beforebegin", details);
+      body?.appendChild(taxBiShell);
+    }
+  }
+
+  function findAnalyticsCardByTitle(title) {
+    const normalizedTitle = normalizeText(title);
+    return Array.from(document.querySelectorAll(".panel-card")).find((card) => {
+      const heading = card.querySelector(".panel-card__title");
+      return normalizeText(heading?.textContent) === normalizedTitle;
+    });
+  }
+
+  function findAnalyticsSectionHeadByTitle(title) {
+    const normalizedTitle = normalizeText(title);
+    return Array.from(document.querySelectorAll(".analytics-section-head")).find((head) => {
+      const heading = head.querySelector(".analytics-section-head__title");
+      return normalizeText(heading?.textContent) === normalizedTitle;
+    });
+  }
+
+  function buildAnalyticsFocusSection(config) {
+    const section = document.createElement("section");
+    section.className = "analytics-focus-section";
+    if (config.wide) section.classList.add("analytics-focus-section--wide");
+
+    const cards = (config.cards || [])
+      .map((title) => findAnalyticsCardByTitle(title))
+      .filter(Boolean);
+
+    if (!cards.length && !config.headTitle) return null;
+
+    if (config.headTitle) {
+      const head = document.createElement("div");
+      head.className = "analytics-focus-section__head";
+      head.innerHTML = `
+        <h3>${escapeHtml(config.headTitle)}</h3>
+        ${config.headSubtitle ? `<p>${escapeHtml(config.headSubtitle)}</p>` : ""}
+      `;
+      section.appendChild(head);
+    }
+
+    const grid = document.createElement("div");
+    grid.className = "analytics-focus-grid";
+    if (config.columns === 1) grid.classList.add("analytics-focus-grid--single");
+    if (config.columns === 2) grid.classList.add("analytics-focus-grid--double");
+    if (config.columns === 3) grid.classList.add("analytics-focus-grid--triple");
+
+    if (config.layout === "ops-split" && cards.length === 3) {
+      grid.classList.add("analytics-focus-grid--ops-split");
+      const leftStack = document.createElement("div");
+      leftStack.className = "analytics-focus-stack";
+
+      cards.forEach((card, index) => {
+        card.classList.add("panel-card--focus");
+        if (index < 2) {
+          card.classList.add("panel-card--focus-compact");
+          leftStack.appendChild(card);
+        } else {
+          card.classList.add("panel-card--focus-featured");
+          card.style.gridRow = "1 / span 2";
+          grid.appendChild(card);
+        }
+      });
+
+      grid.prepend(leftStack);
+      section.appendChild(grid);
+      return section;
+    }
+
+    cards.forEach((card) => {
+      card.classList.add("panel-card--focus");
+      grid.appendChild(card);
+    });
+
+    if (cards.length) section.appendChild(grid);
+    return section;
+  }
+
+  function focusConfiguredAnalytics() {
+    const shell = document.querySelector(".analytics-shell");
+    if (!shell || shell.querySelector(".analytics-single-focus")) return;
+
+    Array.from(shell.children).forEach((child) => {
+      child.classList.add("analytics-is-hidden");
+    });
+
+    document.querySelector(".tax-bi-shell")?.classList.add("analytics-is-hidden");
+
+    const focus = document.createElement("section");
+    focus.className = "analytics-single-focus";
+    focus.innerHTML = `
+      <div class="analytics-single-focus__head">
+        <span class="analytics-eyebrow">ContAnalytics</span>
+        <h2>ContAnalytics essencial</h2>
+        <p>Um painel mais executivo, com leitura visual mais bonita e explicações mais completas para acompanhar entregas, operação, faturamento e qualidade da base sem excesso de ruído.</p>
+      </div>
+    `;
+
+    const focusBody = document.createElement("div");
+    focusBody.className = "analytics-single-focus__body";
+    focus.appendChild(focusBody);
+
+    const selectedSections = [
+      {
+        cards: ["Resumo de entregas"],
+        columns: 1,
+      },
+      {
+        cards: ["Pendência por Resp.1", "Responsáveis", "Apoio operacional"],
+        layout: "ops-split",
+      },
+      {
+        cards: ["Num Quotas declarado"],
+        columns: 1,
+      },
+      {
+        cards: ["Linha do tempo por etapa"],
+        columns: 1,
+      },
+      {
+        headTitle: "Mensal e trimestral",
+        headSubtitle: "Checklist mensal e trimestral com faturamento, base de cálculo e impostos dos painéis tributários.",
+        cards: ["Radar mensal"],
+        columns: 1,
+      },
+      {
+        cards: ["Tributação", "Status da carteira", "Grupos"],
+        columns: 3,
+      },
+      {
+        headTitle: "Qualidade e atividade",
+        headSubtitle: "Pendências cadastrais, qualidade da base e ritmo recente de atualização.",
+        cards: ["Qualidade da base", "Atividade recente"],
+        columns: 2,
+      },
+    ];
+
+    selectedSections
+      .map((config) => buildAnalyticsFocusSection(config))
+      .filter(Boolean)
+      .forEach((section) => focusBody.appendChild(section));
+
+    shell.prepend(focus);
+  }
+
   function handleInitError(err) {
     console.error("❌ Falha ao inicializar ContAnalytics:", err);
     fillPageTexts();
@@ -4512,6 +4922,7 @@ document.addEventListener("DOMContentLoaded", () => {
       bindTaxBiActions();
       bindInteractiveAnalyticsActions();
       await loadAnalytics();
+      focusConfiguredAnalytics();
 
       console.log("🎉 ContAnalytics inicializado!");
     } catch (err) {

@@ -36,6 +36,7 @@ window.PainelTributarioLRASheet = (() => {
     { key: "status", label: "Status", type: "text" },
     { key: "resp1", label: "Resp.1", type: "text" },
     { key: "resp2", label: "Resp.2", type: "text" },
+    { key: "resp3", label: "Resp.3", type: "text" },
   ];
 
   const CADASTRAL_KEYS = [
@@ -49,6 +50,7 @@ window.PainelTributarioLRASheet = (() => {
     "status",
     "resp1",
     "resp2",
+    "resp3",
   ];
 
   const PT_FROZEN_COL_KEYS = ["cod", "razao_social", "tipo", "cnpj_cpf", "class", "grupo", "trib"];

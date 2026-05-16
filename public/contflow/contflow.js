@@ -32,6 +32,7 @@ const CF_SHARED_COL_KEYS = [
   "status",
   "resp1",
   "resp2",
+  "resp3",
   "tipo",
 ];
 const CF_ACTIVE_QUARTER_STORAGE_KEY = "conthub:contflow:active-quarter";
@@ -42,6 +43,12 @@ const CF_QUOTA_MODAL_MODE_LABELS = {
   data: "Data",
   outro: "Outro valor",
 };
+const CF_MIT_GENERATION_OPTIONS = [
+  "entrega manual",
+  "ok",
+  "prejuizo",
+  "s/m",
+];
 
 function parseContFlowQuarterFromHash(hash = "") {
   const match = String(hash || "").trim().match(/^#cf-quarter-(\d+)$/i);
@@ -197,6 +204,7 @@ let CF_COLUMNS = [
   { key: "status", label: "Status" },
   { key: "resp1", label: "Resp.1" },
   { key: "resp2", label: "Resp.2" },
+  { key: "resp3", label: "Resp.3" },
   { key: "tipo", label: "Tipo" },
   { key: "num_quotas", label: "Num Quotas" },
   { key: "quota1", label: "1º quota" },
@@ -229,6 +237,7 @@ let autoSaveTimeout = null;
 
 let editing = null;
 let quotaEditor = null;
+let mitEditor = null;
 let optionEditor = null;
 let suppressClickSelect = false;
 
@@ -355,6 +364,7 @@ function getCanonicalContFlowSharedKeyFromLabel(label = "") {
   if (/^status\b|situac/.test(normalized)) return "status";
   if (/resp.*1|responsavel.*1/.test(normalized)) return "resp1";
   if (/resp.*2|responsavel.*2/.test(normalized)) return "resp2";
+  if (/resp.*3|responsavel.*3/.test(normalized)) return "resp3";
   if (/^tipo\b/.test(normalized)) return "tipo";
   return "";
 }
@@ -590,6 +600,11 @@ function isSelectColumnKey(colKey) {
   return CF_SELECT_COLUMN_KEYS.has(String(colKey || "").trim());
 }
 
+function isMitGenerationColumnKey(colKey) {
+  const cleanKey = String(colKey || "").trim();
+  return cleanKey === getMitGenerationKey();
+}
+
 function collectColumnValuesFromRows(rows = [], colKey) {
   const values = [];
   (Array.isArray(rows) ? rows : []).forEach((row) => {
@@ -643,7 +658,7 @@ function getSelectOptionsForColumn(colKey, currentValue = "") {
     ...collectColumnValuesAcrossQuarters(key),
   ];
 
-  if (key === "resp1" || key === "resp2") {
+  if (key === "resp1" || key === "resp2" || key === "resp3") {
     values.push(...cfAssignableUsers);
   }
 
@@ -667,6 +682,7 @@ function canonicalContFlowLabel(label) {
   if (/^(status|situacao|situacao fiscal)$/.test(nl)) return "Status";
   if (/^(resp 1|resp1|responsavel 1|responsavel1)$/.test(nl)) return "Resp.1";
   if (/^(resp 2|resp2|responsavel 2|responsavel2)$/.test(nl)) return "Resp.2";
+  if (/^(resp 3|resp3|responsavel 3|responsavel3)$/.test(nl)) return "Resp.3";
   if (nl === "tipo") return "Tipo";
   if (/^(num quotas|numero quotas|numero de quotas|qtd quotas|quantidade quotas)$/.test(nl)) {
     return "Num Quotas";
@@ -705,6 +721,7 @@ function getRequiredContFlowColumns() {
     { key: "status", label: "Status" },
     { key: "resp1", label: "Resp.1" },
     { key: "resp2", label: "Resp.2" },
+    { key: "resp3", label: "Resp.3" },
     { key: "tipo", label: "Tipo" },
     { key: "num_quotas", label: "Num Quotas" },
     { key: "quota1", label: "1º quota" },
@@ -1160,6 +1177,10 @@ function getContFlowRowsForPainelTributario() {
     findColKeyByLabelRegex(/\bresp\.?\s*2\b/) ||
     findColKeyByLabelRegex(/\bresponsavel\b.*\b2\b/) ||
     "resp2";
+  const resp3Key =
+    findColKeyByLabelRegex(/\bresp\.?\s*3\b/) ||
+    findColKeyByLabelRegex(/\bresponsavel\b.*\b3\b/) ||
+    "resp3";
 
   return (cfData || []).map((row) => ({
     __id: String(row?.__id || "").trim(),
@@ -1174,6 +1195,7 @@ function getContFlowRowsForPainelTributario() {
     status: String(row?.[statusKey] ?? ""),
     resp1: String(row?.[resp1Key] ?? ""),
     resp2: String(row?.[resp2Key] ?? ""),
+    resp3: String(row?.[resp3Key] ?? ""),
   }));
 }
 
@@ -1192,6 +1214,7 @@ function syncPainelTributarioFromContFlow(force = false, options = {}) {
         row.status,
         row.resp1,
         row.resp2,
+        row.resp3,
       ])
   );
 
@@ -1239,6 +1262,7 @@ const PAINEL_TRIBUTARIO_MIRROR_KEYS = new Set([
   "status",
   "resp1",
   "resp2",
+  "resp3",
 ]);
 
 function syncPainelTributarioAfterContFlowChange(changes = [], options = {}) {
@@ -1991,6 +2015,14 @@ function getQuota3Key() {
   );
 }
 
+function getMitGenerationKey() {
+  return (
+    findColKeyByLabelRegex(/^mit\b.*\bgeracao\b|\bgeracao\b.*\bmit\b/) ||
+    findColKeyByLabelRegex(/^mit\b$/) ||
+    "mit"
+  );
+}
+
 function getQuotaColumnKey(stage = "") {
   const cleanStage = String(stage || "").trim().toLowerCase();
   if (cleanStage === "quota2") return getQuota2Key();
@@ -2058,6 +2090,25 @@ function normalizeQuotaValue(value) {
   }
 
   return formatDesligamentoDate(raw);
+}
+
+function normalizeMitGenerationValue(value) {
+  const raw = String(value ?? "").trim();
+  if (!raw) return "";
+
+  const normalized = normalizeLabel(raw);
+  if (normalized === "ok") return "ok";
+  if (normalized === "prejuizo") return "prejuizo";
+  if (/^(s m|sm|s\/m)$/.test(normalized)) return "s/m";
+  if (
+    normalized === "entrega manual" ||
+    normalized === "manual" ||
+    normalized === "entregamanual"
+  ) {
+    return "entrega manual";
+  }
+
+  return raw;
 }
 
 function quotaValueToDateInput(value) {
@@ -2419,6 +2470,7 @@ function normalizeCellValue(colKey, value) {
   const raw = String(value ?? "");
   if (colKey === "desligamento") return formatDesligamentoDate(raw);
   if (isQuotaColumnKey(colKey)) return normalizeQuotaValue(raw);
+  if (isMitGenerationColumnKey(colKey)) return normalizeMitGenerationValue(raw);
   return raw;
 }
 
@@ -2768,14 +2820,15 @@ function setDefaultWidthForCol(colKey) {
   else if (colKey === "trib") colWidths[colKey] = 160;
   else if (colKey === "grupo") colWidths[colKey] = 140;
   else if (colKey === "resp1") colWidths[colKey] = 140;
-  else if (colKey === "resp2") colWidths[colKey] = 80;
+  else if (colKey === "resp2") colWidths[colKey] = 120;
+  else if (colKey === "resp3") colWidths[colKey] = 120;
   else if (colKey === "tipo") colWidths[colKey] = 110;
   else if (colKey === "num_quotas") colWidths[colKey] = 110;
   else if (colKey === "quota1") colWidths[colKey] = 180;
   else if (colKey === "quota2") colWidths[colKey] = 180;
   else if (colKey === "quota3") colWidths[colKey] = 180;
   else if (colKey === "obs") colWidths[colKey] = 220;
-  else if (colKey === "mit") colWidths[colKey] = 120;
+  else if (colKey === getMitGenerationKey()) colWidths[colKey] = 160;
   else if (colKey === "controle_mit") colWidths[colKey] = 220;
   else if (colKey === "inconsistencia_athenas") colWidths[colKey] = 240;
   else colWidths[colKey] = 140;
@@ -3591,6 +3644,16 @@ function syncRenderedCellValue(viewRow, colIndex, colKey, nextValue) {
     }
   }
 
+  if (isMitGenerationColumnKey(colKey)) {
+    const trigger = cell.querySelector(".cf-quota-trigger");
+    const label = cell.querySelector(".cf-quota-trigger__label");
+    if (trigger && label) {
+      label.textContent = rawValue || "Selecionar";
+      trigger.classList.toggle("is-filled", Boolean(rawValue));
+      return;
+    }
+  }
+
   cell.textContent = rawValue;
 }
 
@@ -3601,6 +3664,19 @@ function closeQuotaEditor({ focusCell = true } = {}) {
   quotaEditor.el?.remove();
   const previousEditor = quotaEditor;
   quotaEditor = null;
+
+  if (focusCell) {
+    setSingleActiveCell(previousEditor.viewRow, previousEditor.colIndex);
+  }
+}
+
+function closeMitEditor({ focusCell = true } = {}) {
+  if (!mitEditor) return;
+
+  mitEditor.cleanup?.();
+  mitEditor.el?.remove();
+  const previousEditor = mitEditor;
+  mitEditor = null;
 
   if (focusCell) {
     setSingleActiveCell(previousEditor.viewRow, previousEditor.colIndex);
@@ -3841,6 +3917,108 @@ function openQuotaEditor(viewRow, colIndex) {
   customInput?.select();
 }
 
+function openMitEditor(viewRow, colIndex) {
+  const dataIndex = viewMap[viewRow];
+  const col = CF_COLUMNS[colIndex];
+  const cell = document.querySelector(`.cf-cell[data-row-index="${viewRow}"][data-col-index="${colIndex}"]`);
+  if (dataIndex == null || !col || !cell) return;
+
+  injectExtraStyles();
+  if (editing) commitEdit();
+  closeQuotaEditor({ focusCell: false });
+  closeMitEditor({ focusCell: false });
+  closeOptionEditor({ focusCell: false });
+
+  const currentValue = String(cfData[dataIndex]?.[col.key] ?? "").trim();
+  const rect = cell.getBoundingClientRect();
+  const pop = document.createElement("div");
+  pop.className = "cf-quota-editor";
+  pop.innerHTML = `
+    <div class="cf-quota-editor__head">
+      <div>
+        <div class="cf-quota-editor__eyebrow">MIT - geração</div>
+        <div class="cf-quota-editor__title">${col.label}</div>
+      </div>
+      <div class="cf-quota-editor__value-badge">${escapeHTML(currentValue || "Sem valor")}</div>
+    </div>
+    <div class="cf-quota-editor__subtitle">Selecione como a geração da MIT foi concluída nesta empresa.</div>
+    <div class="cf-quota-editor__options-label">Opções rápidas</div>
+    <div class="cf-quota-editor__options" role="listbox" aria-label="Opções de MIT - geração">
+      ${CF_MIT_GENERATION_OPTIONS.map((option) => {
+        const activeClass =
+          normalizeSearchText(currentValue) === normalizeSearchText(option)
+            ? " is-active"
+            : "";
+        return `
+          <button type="button" class="cf-quota-editor__option${activeClass}" data-mit-preset="${option}" aria-selected="${activeClass ? "true" : "false"}">
+            <span class="cf-quota-editor__option-title">${option}</span>
+            <span class="cf-quota-editor__option-hint">Aplicar imediatamente</span>
+          </button>
+        `;
+      }).join("")}
+    </div>
+    <div class="cf-quota-editor__footer">
+      <button type="button" class="cf-quota-editor__footer-btn is-ghost" data-action="clear">Limpar</button>
+      <button type="button" class="cf-quota-editor__footer-btn is-primary" data-action="close">Fechar</button>
+    </div>
+  `;
+
+  pop.style.position = "fixed";
+  pop.style.top = `${Math.min(rect.bottom + 10, window.innerHeight - 280)}px`;
+  pop.style.left = `${Math.min(rect.left, window.innerWidth - 340)}px`;
+  pop.style.zIndex = "2000";
+
+  const stop = (ev) => ev.stopPropagation();
+  pop.addEventListener("mousedown", stop);
+  pop.addEventListener("click", stop);
+
+  const commitMitValue = (value) => {
+    closeMitEditor({ focusCell: false });
+    applyCellValueChange(dataIndex, col.key, value, viewRow, colIndex);
+  };
+
+  const onDocumentMouseDown = (ev) => {
+    if (!pop.contains(ev.target)) closeMitEditor();
+  };
+  const onWindowResize = () => closeMitEditor();
+  const onDocumentKeyDown = (ev) => {
+    if (!mitEditor) return;
+    if (ev.key === "Escape") {
+      ev.preventDefault();
+      closeMitEditor();
+    }
+  };
+
+  Array.from(pop.querySelectorAll("[data-mit-preset]")).forEach((button) => {
+    button.addEventListener("click", () => {
+      const value = String(button.dataset.mitPreset || "").trim();
+      if (!value) return;
+      commitMitValue(value);
+    });
+  });
+
+  pop.querySelector('[data-action="clear"]')?.addEventListener("click", () => commitMitValue(""));
+  pop.querySelector('[data-action="close"]')?.addEventListener("click", () => closeMitEditor());
+
+  document.body.appendChild(pop);
+  document.addEventListener("mousedown", onDocumentMouseDown);
+  document.addEventListener("keydown", onDocumentKeyDown, true);
+  window.addEventListener("resize", onWindowResize);
+
+  mitEditor = {
+    el: pop,
+    viewRow,
+    colIndex,
+    cleanup() {
+      document.removeEventListener("mousedown", onDocumentMouseDown);
+      document.removeEventListener("keydown", onDocumentKeyDown, true);
+      window.removeEventListener("resize", onWindowResize);
+    },
+  };
+
+  setSingleActiveCell(viewRow, colIndex);
+}
+
 function openOptionEditor(viewRow, colIndex, initialText = null) {
   const dataIndex = viewMap[viewRow];
   const col = CF_COLUMNS[colIndex];
@@ -3969,7 +4147,7 @@ function openOptionEditor(viewRow, colIndex, initialText = null) {
   input.focus({ preventScroll: true });
   input.select();
 
-  if (col.key === "resp1" || col.key === "resp2") {
+  if (col.key === "resp1" || col.key === "resp2" || col.key === "resp3") {
     ensureAssignableUsersLoaded()
       .then(() => {
         if (!optionEditor || optionEditor.viewRow !== viewRow || optionEditor.colIndex !== colIndex) return;
@@ -3993,6 +4171,11 @@ function enterEditMode(viewRow, colIndex, initialText = null, selectAll = false)
 
   if (isQuotaColumnKey(col.key)) {
     openQuotaEditor(viewRow, colIndex);
+    return;
+  }
+
+  if (isMitGenerationColumnKey(col.key)) {
+    openMitEditor(viewRow, colIndex);
     return;
   }
 
@@ -4553,6 +4736,7 @@ function renderTable(options = {}) {
   const preserveFocus = options?.preserveFocus || null;
   const suppressCellFocus = Boolean(options?.suppressCellFocus);
   if (quotaEditor) closeQuotaEditor({ focusCell: false });
+  if (mitEditor) closeMitEditor({ focusCell: false });
   if (optionEditor) closeOptionEditor({ focusCell: false });
   renderColgroup();
 
@@ -4606,6 +4790,7 @@ function renderTable(options = {}) {
       if (/(razao|social|obs|observ|controle|histor|descricao)/.test(lbl)) td.classList.add("cf-cell--obs");
       if (/(cod|cód|trib|tipo|num)/.test(lbl)) td.classList.add("cf-cell--tiny");
       if (isQuotaColumnKey(col.key)) td.classList.add("cf-cell--quota");
+      if (isMitGenerationColumnKey(col.key)) td.classList.add("cf-cell--select");
       if (isSelectColumnKey(col.key)) td.classList.add("cf-cell--select");
 
       if (isCellMarkedDirty(row, col.key)) {
@@ -4630,6 +4815,23 @@ function renderTable(options = {}) {
           ev.stopPropagation();
           setSingleActiveCell(viewRowIndex, colIndex);
           openQuotaEditor(viewRowIndex, colIndex);
+        });
+        td.appendChild(trigger);
+      } else if (isMitGenerationColumnKey(col.key)) {
+        td.title = "Abrir opções de MIT - geração";
+        td.innerHTML = "";
+        const trigger = document.createElement("button");
+        trigger.type = "button";
+        trigger.className = rawCellValue.trim() ? "cf-quota-trigger is-filled" : "cf-quota-trigger";
+        trigger.innerHTML = `
+          <span class="cf-quota-trigger__label">${rawCellValue.trim() || "Selecionar"}</span>
+          <span class="cf-quota-trigger__icon">▾</span>
+        `;
+        trigger.addEventListener("mousedown", (ev) => ev.stopPropagation());
+        trigger.addEventListener("click", (ev) => {
+          ev.stopPropagation();
+          setSingleActiveCell(viewRowIndex, colIndex);
+          openMitEditor(viewRowIndex, colIndex);
         });
         td.appendChild(trigger);
       } else if (isSelectColumnKey(col.key)) {
@@ -4744,6 +4946,7 @@ function handleCellMouseDown(e) {
   if (Number.isNaN(rowIndex) || Number.isNaN(colIndex)) return;
 
   if (quotaEditor) closeQuotaEditor({ focusCell: false });
+  if (mitEditor) closeMitEditor({ focusCell: false });
   if (optionEditor) closeOptionEditor({ focusCell: false });
   if (editing) commitEdit();
 
@@ -4828,6 +5031,15 @@ async function handleGlobalKeyDown(e) {
       }
       return;
     }
+  }
+
+  if (mitEditor) {
+    if (e.key === "Escape") {
+      e.preventDefault();
+      closeMitEditor();
+      return;
+    }
+    return;
   }
 
   if (optionEditor) {

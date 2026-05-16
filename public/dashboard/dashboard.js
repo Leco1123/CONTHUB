@@ -11,6 +11,8 @@
     imageDataUrl: "",
     doc: null,
     lastSignature: "",
+    knownIds: new Set(),
+    toastTimer: null,
     pollTimer: null,
     refreshPromise: null,
     visibilityBound: false,
@@ -47,6 +49,7 @@
     data: "Data",
     outro: "Outro valor",
   };
+  const TICKETS_API_URL = `${API_BASE}/api/dashboard/tickets`;
   const TICKETS_API_SHEET_KEY = "dashboard-chamados";
   const TICKETS_API_SHEET_URL = `${API_BASE}/api/sheets/${TICKETS_API_SHEET_KEY}`;
   const TICKETS_POLL_INTERVAL_MS = 10000;
@@ -148,6 +151,128 @@
   function formatDateBR(date) {
     if (!(date instanceof Date) || Number.isNaN(date.getTime())) return "--";
     return date.toLocaleDateString("pt-BR");
+  }
+
+  function formatDateTimeBR(value) {
+    const date = value ? new Date(value) : null;
+    if (!(date instanceof Date) || Number.isNaN(date.getTime())) return "--";
+    try {
+      return date.toLocaleString("pt-BR", {
+        day: "2-digit",
+        month: "2-digit",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+    } catch {
+      return date.toISOString();
+    }
+  }
+
+  function getNotificationSupport() {
+    return typeof window !== "undefined" && "Notification" in window ? window.Notification : null;
+  }
+
+  async function ensureTicketNotificationPermission() {
+    const NotificationApi = getNotificationSupport();
+    if (!NotificationApi) return "unsupported";
+    if (NotificationApi.permission === "granted") return "granted";
+    if (NotificationApi.permission === "denied") return "denied";
+    try {
+      return await NotificationApi.requestPermission();
+    } catch {
+      return NotificationApi.permission || "default";
+    }
+  }
+
+  function notifyForNewTickets(tickets) {
+    const NotificationApi = getNotificationSupport();
+    if (!NotificationApi || NotificationApi.permission !== "granted") return;
+
+    const items = Array.isArray(tickets) ? tickets : [];
+    items.forEach((ticket) => {
+      const title = `${ticket.funcao || "Chamado"} • ${ticketStatusLabel(ticket.status)}`;
+      const body = getTicketTitle(ticket);
+      try {
+        const notification = new NotificationApi(title, {
+          body,
+          tag: `conthub-ticket-${ticket.id}`,
+          renotify: false,
+        });
+        notification.onclick = () => {
+          try {
+            window.focus();
+          } catch (_) {}
+          dashboardTicketsState.selectedFunction = String(ticket.funcao || dashboardTicketsState.selectedFunction || TICKET_FUNCTIONS[0]).trim() || TICKET_FUNCTIONS[0];
+          renderTickets();
+          renderTiTickets();
+        };
+      } catch (_) {}
+    });
+  }
+
+  function detectNewTickets(nextDoc) {
+    const tickets = sortTickets(Array.isArray(nextDoc?.data) ? nextDoc.data : []);
+    const incoming = tickets.filter((ticket) => ticket?.id && !dashboardTicketsState.knownIds.has(String(ticket.id)));
+    dashboardTicketsState.knownIds = new Set(
+      tickets.map((ticket) => String(ticket?.id || "").trim()).filter(Boolean)
+    );
+    return incoming;
+  }
+
+  function ensureTicketToastHost() {
+    let host = document.getElementById("ticketToastHost");
+    if (host) return host;
+
+    host = document.createElement("div");
+    host.id = "ticketToastHost";
+    host.className = "ticketToastHost";
+    document.body.appendChild(host);
+    return host;
+  }
+
+  function showTicketToasts(tickets) {
+    const items = Array.isArray(tickets) ? tickets : [];
+    if (!items.length) return;
+
+    const host = ensureTicketToastHost();
+    items.forEach((ticket) => {
+      const toast = document.createElement("button");
+      toast.type = "button";
+      toast.className = "ticketToast";
+      toast.innerHTML = `
+        <div class="ticketToast__eyebrow">Novo chamado • ${escapeHTML(ticket.funcao || "Chamado")}</div>
+        <strong class="ticketToast__title">${escapeHTML(getTicketTitle(ticket))}</strong>
+        <div class="ticketToast__meta">${escapeHTML(ticketStatusLabel(ticket.status))} • ${escapeHTML(ticketPriorityLabel(ticket.urgencia))}</div>
+      `;
+      toast.addEventListener("click", () => {
+        dashboardTicketsState.selectedFunction = String(ticket.funcao || dashboardTicketsState.selectedFunction || TICKET_FUNCTIONS[0]).trim() || TICKET_FUNCTIONS[0];
+        renderTickets();
+        renderTiTickets();
+        toast.remove();
+        try {
+          window.focus();
+        } catch (_) {}
+      });
+      host.appendChild(toast);
+      setTimeout(() => {
+        toast.classList.add("is-visible");
+      }, 20);
+      setTimeout(() => {
+        toast.classList.remove("is-visible");
+        setTimeout(() => toast.remove(), 220);
+      }, 7000);
+    });
+
+    if (dashboardTicketsState.toastTimer) {
+      clearTimeout(dashboardTicketsState.toastTimer);
+    }
+
+    document.title = `(${items.length}) Novo chamado • ContHub`;
+    dashboardTicketsState.toastTimer = setTimeout(() => {
+      document.title = "ContHub • Boas-vindas";
+      dashboardTicketsState.toastTimer = null;
+    }, 8000);
   }
 
   function getSessionUser() {
@@ -534,8 +659,9 @@
       : "aberto";
     const solicitanteNome = String(raw.solicitanteNome || raw.requesterName || "").trim().slice(0, 160);
     const solicitanteEmail = String(raw.solicitanteEmail || raw.requesterEmail || "").trim().slice(0, 220);
-    const imagem = /^data:image\//i.test(String(raw.imagem || raw.imageDataUrl || "").trim())
-      ? String(raw.imagem || raw.imageDataUrl || "").trim()
+    const imagemRaw = String(raw.imagem || raw.imageDataUrl || "").trim();
+    const imagem = /^(data:image\/|https?:\/\/)/i.test(imagemRaw)
+      ? imagemRaw
       : "";
     const createdAt = String(raw.createdAt || raw.abertoEm || new Date().toISOString()).trim();
     const updatedAt = String(raw.updatedAt || createdAt || new Date().toISOString()).trim();
@@ -643,8 +769,48 @@
     localStorage.setItem(ticketsStorageKey(), JSON.stringify((doc && Array.isArray(doc.data)) ? doc.data : []));
   }
 
+  function isTicketsApiPayload(payload) {
+    return Boolean(
+      payload &&
+      typeof payload === "object" &&
+      (
+        Array.isArray(payload.data) ||
+        Array.isArray(payload.tickets) ||
+        payload.provider === "clickup"
+      )
+    );
+  }
+
+  function extractTicketsFromApiPayload(payload) {
+    if (!payload || typeof payload !== "object") return [];
+    if (Array.isArray(payload.data)) return payload.data;
+    if (Array.isArray(payload.tickets)) return payload.tickets;
+    return [];
+  }
+
+  function isClickupUnavailableResponse(resp, payload) {
+    const code = String(payload?.code || "").trim().toUpperCase();
+    return resp?.status === 503 || code === "CLICKUP_NOT_CONFIGURED";
+  }
+
   async function loadTicketsDocument() {
     try {
+      const remoteResp = await apiFetch(TICKETS_API_URL, { method: "GET" });
+      const remoteData = await remoteResp?.json().catch(() => null);
+      if (remoteResp && remoteResp.ok && isTicketsApiPayload(remoteData)) {
+        const doc = normalizeTicketsDocument({
+          savedAt: remoteData?.savedAt || new Date().toISOString(),
+          data: extractTicketsFromApiPayload(remoteData),
+        });
+        dashboardTicketsState.doc = doc;
+        saveTicketsStateLegacy(doc);
+        return doc;
+      }
+
+      if (remoteResp && !isClickupUnavailableResponse(remoteResp, remoteData)) {
+        throw new Error(remoteData?.error || "Falha ao carregar chamados da API.");
+      }
+
       const resp = await apiFetch(TICKETS_API_SHEET_URL, { method: "GET" });
       const data = await resp?.json().catch(() => null);
       if (!resp || !resp.ok) throw new Error(data?.error || "Falha ao carregar chamados.");
@@ -687,6 +853,48 @@
     }
   }
 
+  async function createTicketViaApi(payload) {
+    const resp = await apiFetch(TICKETS_API_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const data = await resp?.json().catch(() => null);
+    if (!resp || !resp.ok) throw new Error(data?.error || "Falha ao criar chamado.");
+    return normalizeTicketRecord(data?.ticket || data);
+  }
+
+  async function updateTicketStatusViaApi(ticketId, nextStatus) {
+    const resp = await apiFetch(`${TICKETS_API_URL}/${encodeURIComponent(ticketId)}/status`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status: nextStatus }),
+    });
+    const data = await resp?.json().catch(() => null);
+    if (!resp || !resp.ok) throw new Error(data?.error || "Falha ao atualizar status.");
+    return true;
+  }
+
+  async function deleteTicketViaApi(ticketId) {
+    const resp = await apiFetch(`${TICKETS_API_URL}/${encodeURIComponent(ticketId)}`, {
+      method: "DELETE",
+    });
+    const data = await resp?.json().catch(() => null);
+    if (!resp || !resp.ok) throw new Error(data?.error || "Falha ao excluir chamado.");
+    return true;
+  }
+
+  async function clearClosedTicketsViaApi() {
+    const resp = await apiFetch(`${TICKETS_API_URL}/clear-closed`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    const data = await resp?.json().catch(() => null);
+    if (!resp || !resp.ok) throw new Error(data?.error || "Falha ao limpar chamados concluídos.");
+    return true;
+  }
+
   function currentTicketAuthorName() {
     const user = getSessionUser();
     return String(user?.nome || user?.name || "Usuário").trim();
@@ -715,11 +923,24 @@
       case "em_andamento":
         return "Em andamento";
       case "aguardando":
-        return "Aguardando";
+        return "Aguardando teste";
       case "concluido":
         return "Concluído";
       default:
         return "Aberto";
+    }
+  }
+
+  function ticketStatusClass(status) {
+    switch (String(status || "").trim().toLowerCase()) {
+      case "em_andamento":
+        return "ticket__badge--status-em_andamento";
+      case "aguardando":
+        return "ticket__badge--status-aguardando";
+      case "concluido":
+        return "ticket__badge--status-concluido";
+      default:
+        return "ticket__badge--status-aberto";
     }
   }
 
@@ -763,6 +984,22 @@
     return getTicketCode(index >= 0 ? index : items.length);
   }
 
+  function getTicketTitle(ticket) {
+    const raw = String(ticket?.descricao || "").trim();
+    if (!raw) return "Chamado sem descrição";
+    const [firstLine] = raw.split(/\r?\n/).filter(Boolean);
+    return String(firstLine || raw).slice(0, 110);
+  }
+
+  function getTicketSummary(ticket) {
+    const raw = String(ticket?.descricao || "").trim().replace(/\s+/g, " ");
+    if (!raw) return "";
+    const title = getTicketTitle(ticket);
+    const summary = raw.startsWith(title) ? raw.slice(title.length).trim() : raw;
+    if (!summary) return "";
+    return summary.slice(0, 200);
+  }
+
   function renderTicketFunctionTabs() {
     const el = document.getElementById("ticketFunctionTabs");
     if (!el) return;
@@ -781,8 +1018,10 @@
   function renderTicketComposerMeta() {
     const functionEl = document.getElementById("ticketSelectedFunction");
     const authorEl = document.getElementById("ticketOpenedBy");
+    const boardTitleEl = document.getElementById("ticketBoardTitle");
     if (functionEl) functionEl.textContent = `Função: ${dashboardTicketsState.selectedFunction}`;
     if (authorEl) authorEl.textContent = `Solicitante: ${currentTicketAuthorName()}${currentTicketAuthorEmail() ? ` • ${currentTicketAuthorEmail()}` : ""}`;
+    if (boardTitleEl) boardTitleEl.textContent = `${dashboardTicketsState.selectedFunction} • fila de chamados`;
   }
 
   function renderTicketImagePreview() {
@@ -806,9 +1045,14 @@
     renderTicketImagePreview();
 
     const el = document.getElementById("ticketsList");
+    const queueCountEl = document.getElementById("ticketQueueCount");
+    const functionCountEl = document.getElementById("ticketFunctionCount");
     if (!el) return;
 
+    const allTickets = sortTickets(Array.isArray(dashboardTicketsState.doc?.data) ? dashboardTicketsState.doc.data : []);
     const tickets = filteredTicketsForSelectedFunction();
+    if (queueCountEl) queueCountEl.textContent = `${allTickets.length} chamados`;
+    if (functionCountEl) functionCountEl.textContent = `${tickets.length} em ${dashboardTicketsState.selectedFunction}`;
     if (!tickets.length) {
       el.innerHTML = `<div class="tickets__empty">Nenhum chamado aberto para ${escapeHTML(dashboardTicketsState.selectedFunction)} ainda.</div>`;
       return;
@@ -816,20 +1060,53 @@
 
     el.innerHTML = tickets.map((ticket) => `
       <article class="ticket" data-ticket-id="${escapeHTML(ticket.id)}" data-status="${escapeHTML(ticket.status)}">
-        <div class="ticket__code">${escapeHTML(getTicketCodeById(ticket.id))}</div>
+        <div class="ticket__rail">
+          <div class="ticket__code">${escapeHTML(getTicketCodeById(ticket.id))}</div>
+          <div class="ticket__railLabel">${escapeHTML(ticket.funcao)}</div>
+        </div>
 
         <div class="ticket__content">
-          <div class="ticket__meta">
-            <span class="ticket__badge ticket__badge--urgency-${escapeHTML(ticket.urgencia)}">${escapeHTML(ticketPriorityLabel(ticket.urgencia))}</span>
-            <span class="ticket__badge">${escapeHTML(ticketStatusLabel(ticket.status))}</span>
+          <div class="ticket__header">
+            <div class="ticket__meta">
+              <span class="ticket__badge ${escapeHTML(ticketStatusClass(ticket.status))}">${escapeHTML(ticketStatusLabel(ticket.status))}</span>
+              <span class="ticket__badge ticket__badge--urgency-${escapeHTML(ticket.urgencia)}">${escapeHTML(ticketPriorityLabel(ticket.urgencia))}</span>
+              <span class="ticket__badge">ClickUp</span>
+            </div>
           </div>
 
-          <div class="ticket__description">${escapeHTML(ticket.descricao)}</div>
-          <div class="ticket__author">Aberto por ${escapeHTML(ticket.solicitanteNome || "Usuário")} ${ticket.solicitanteEmail ? `• ${escapeHTML(ticket.solicitanteEmail)}` : ""}</div>
+          <div class="ticket__title">${escapeHTML(getTicketTitle(ticket))}</div>
+          ${getTicketSummary(ticket) ? `<div class="ticket__summary">${escapeHTML(getTicketSummary(ticket))}</div>` : ""}
+
+          <div class="ticket__facts">
+            <div class="ticket__fact">
+              <span class="ticket__factLabel">Solicitante</span>
+              <strong>${escapeHTML(ticket.solicitanteNome || "Usuário")}</strong>
+            </div>
+            <div class="ticket__fact">
+              <span class="ticket__factLabel">Abertura</span>
+              <strong>${escapeHTML(formatDateTimeBR(ticket.createdAt))}</strong>
+            </div>
+            <div class="ticket__fact">
+              <span class="ticket__factLabel">Atualização</span>
+              <strong>${escapeHTML(formatDateTimeBR(ticket.updatedAt))}</strong>
+            </div>
+          </div>
+
+          <div class="ticket__author">
+            ${ticket.solicitanteEmail ? escapeHTML(ticket.solicitanteEmail) : "Sem e-mail informado"}
+          </div>
         </div>
 
         <div class="ticket__side">
-          ${ticket.imagem ? `<img class="ticket__thumb" src="${ticket.imagem}" alt="Anexo do chamado" />` : `<div class="ticket__badge">Sem imagem</div>`}
+          ${ticket.imagem ? `
+            <img class="ticket__thumb" src="${ticket.imagem}" alt="Anexo do chamado" />
+            <a class="ticket__link" href="${escapeHTML(ticket.imagem)}" target="_blank" rel="noreferrer">Abrir anexo</a>
+          ` : `
+            <div class="ticket__ghost">
+              <span class="ticket__ghostIcon">🗂</span>
+              <span>Sem anexo</span>
+            </div>
+          `}
         </div>
       </article>
     `).join("");
@@ -860,17 +1137,36 @@
       <article class="tiTicket" data-ti-ticket-id="${escapeHTML(ticket.id)}">
         <div class="tiTicket__main">
           <div class="tiTicket__top">
-            <span class="ticket__code">${escapeHTML(getTicketCodeById(ticket.id))}</span>
-            <span class="ticket__badge">${escapeHTML(ticket.funcao)}</span>
+            <span class="ticket__badge ${escapeHTML(ticketStatusClass(ticket.status))}">${escapeHTML(ticketStatusLabel(ticket.status))}</span>
             <span class="ticket__badge ticket__badge--urgency-${escapeHTML(ticket.urgencia)}">${escapeHTML(ticketPriorityLabel(ticket.urgencia))}</span>
+            <span class="ticket__badge">${escapeHTML(ticket.funcao)}</span>
+            <span class="ticket__badge">ClickUp</span>
           </div>
 
-          <div class="tiTicket__title">${escapeHTML(ticketStatusLabel(ticket.status))}</div>
-          <div class="tiTicket__desc">${escapeHTML(ticket.descricao)}</div>
-          <div class="tiTicket__author">Aberto por ${escapeHTML(ticket.solicitanteNome || "Usuário")} ${ticket.solicitanteEmail ? `• ${escapeHTML(ticket.solicitanteEmail)}` : ""}</div>
+          <div class="tiTicket__title">${escapeHTML(getTicketCodeById(ticket.id))} • ${escapeHTML(getTicketTitle(ticket))}</div>
+          ${getTicketSummary(ticket) ? `<div class="tiTicket__desc">${escapeHTML(getTicketSummary(ticket))}</div>` : ""}
+
+          <div class="ticket__facts ticket__facts--ti">
+            <div class="ticket__fact">
+              <span class="ticket__factLabel">Solicitante</span>
+              <strong>${escapeHTML(ticket.solicitanteNome || "Usuário")}</strong>
+            </div>
+            <div class="ticket__fact">
+              <span class="ticket__factLabel">Email</span>
+              <strong>${escapeHTML(ticket.solicitanteEmail || "--")}</strong>
+            </div>
+            <div class="ticket__fact">
+              <span class="ticket__factLabel">Criado em</span>
+              <strong>${escapeHTML(formatDateTimeBR(ticket.createdAt))}</strong>
+            </div>
+            <div class="ticket__fact">
+              <span class="ticket__factLabel">Última atualização</span>
+              <strong>${escapeHTML(formatDateTimeBR(ticket.updatedAt))}</strong>
+            </div>
+          </div>
         </div>
 
-        <div class="tiTicket__side">
+        <div class="ticket__side">
           <div class="tiTicket__meta">
             <span class="tiTicket__metaLabel">Urgência</span>
             <strong>${escapeHTML(ticketPriorityLabel(ticket.urgencia))}</strong>
@@ -885,7 +1181,15 @@
             </select>
           </div>
 
-          ${ticket.imagem ? `<img class="tiTicket__image" src="${ticket.imagem}" alt="Anexo do chamado" />` : ""}
+          ${ticket.imagem ? `
+            <img class="tiTicket__image" src="${ticket.imagem}" alt="Anexo do chamado" />
+            <a class="ticket__link" href="${escapeHTML(ticket.imagem)}" target="_blank" rel="noreferrer">Abrir anexo</a>
+          ` : `
+            <div class="ticket__ghost ticket__ghost--ti">
+              <span class="ticket__ghostIcon">🗂</span>
+              <span>Sem anexo</span>
+            </div>
+          `}
 
           <div class="tiTicket__actions">
             <button class="btn btn--ghost" type="button" data-ti-ticket-delete="${escapeHTML(ticket.id)}">Excluir</button>
@@ -916,9 +1220,16 @@
       const doc = await loadTicketsDocument();
       const signature = getTicketsSignature(doc);
       const changed = force || dashboardTicketsState.lastSignature !== signature;
+      const hadKnownTickets = dashboardTicketsState.knownIds.size > 0;
+      const newTickets = detectNewTickets(doc);
 
       dashboardTicketsState.doc = doc;
       dashboardTicketsState.lastSignature = signature;
+
+      if (hadKnownTickets && newTickets.length) {
+        showTicketToasts(newTickets);
+        notifyForNewTickets(newTickets);
+      }
 
       if (changed) {
         renderTickets();
@@ -950,16 +1261,29 @@
       return;
     }
 
-    const nextDoc = normalizeTicketsDocument(dashboardTicketsState.doc || emptyTicketsDocument());
-    nextDoc.data.push(normalizeTicketRecord({
-      id: `tk_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
+    const ticketPayload = {
       funcao: dashboardTicketsState.selectedFunction,
       descricao,
       urgencia: String(priorityEl?.value || "media").trim().toLowerCase(),
+      imagem: dashboardTicketsState.imageDataUrl,
+    };
+
+    try {
+      await createTicketViaApi(ticketPayload);
+      clearTicketComposer();
+      await refreshTickets({ force: true });
+      return;
+    } catch (err) {
+      console.warn("Falha ao criar chamado via API remota, usando fallback local:", err);
+    }
+
+    const nextDoc = normalizeTicketsDocument(dashboardTicketsState.doc || emptyTicketsDocument());
+    nextDoc.data.push(normalizeTicketRecord({
+      id: `tk_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
+      ...ticketPayload,
       status: "aberto",
       solicitanteNome: currentTicketAuthorName(),
       solicitanteEmail: currentTicketAuthorEmail(),
-      imagem: dashboardTicketsState.imageDataUrl,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     }));
@@ -972,6 +1296,14 @@
   }
 
   async function clearClosedTickets() {
+    try {
+      await clearClosedTicketsViaApi();
+      await refreshTickets({ force: true });
+      return;
+    } catch (err) {
+      console.warn("Falha ao limpar chamados concluídos via API remota, usando fallback local:", err);
+    }
+
     const currentDoc = normalizeTicketsDocument(dashboardTicketsState.doc || emptyTicketsDocument());
     const nextItems = currentDoc.data.filter((ticket) => {
       if (ticket.status !== "concluido") return true;
@@ -987,6 +1319,14 @@
   }
 
   async function updateTiTicketStatus(ticketId, nextStatus) {
+    try {
+      await updateTicketStatusViaApi(ticketId, nextStatus);
+      await refreshTickets({ force: true });
+      return;
+    } catch (err) {
+      console.warn("Falha ao atualizar status via API remota, usando fallback local:", err);
+    }
+
     const currentDoc = normalizeTicketsDocument(dashboardTicketsState.doc || emptyTicketsDocument());
     const target = currentDoc.data.find((ticket) => ticket.id === ticketId);
     if (!target) return;
@@ -1003,6 +1343,14 @@
   }
 
   async function deleteTiTicket(ticketId) {
+    try {
+      await deleteTicketViaApi(ticketId);
+      await refreshTickets({ force: true });
+      return;
+    } catch (err) {
+      console.warn("Falha ao excluir chamado via API remota, usando fallback local:", err);
+    }
+
     const currentDoc = normalizeTicketsDocument(dashboardTicketsState.doc || emptyTicketsDocument());
     currentDoc.data = currentDoc.data.filter((ticket) => ticket.id !== ticketId);
     await saveTicketsDocument(currentDoc);
@@ -1035,6 +1383,7 @@
     if (btnRefresh && !btnRefresh.__bound) {
       btnRefresh.__bound = true;
       btnRefresh.addEventListener("click", async () => {
+        ensureTicketNotificationPermission().catch(() => {});
         await refreshTickets({ force: true });
       });
     }
@@ -1042,6 +1391,7 @@
     if (btnCreate && !btnCreate.__bound) {
       btnCreate.__bound = true;
       btnCreate.addEventListener("click", async () => {
+        ensureTicketNotificationPermission().catch(() => {});
         await createTicket();
       });
     }
@@ -1063,6 +1413,7 @@
     if (btnRefreshTi && !btnRefreshTi.__bound) {
       btnRefreshTi.__bound = true;
       btnRefreshTi.addEventListener("click", async () => {
+        ensureTicketNotificationPermission().catch(() => {});
         await refreshTickets({ force: true });
       });
     }
@@ -1131,6 +1482,7 @@
 
     if (!dashboardTicketsState.visibilityBound) {
       dashboardTicketsState.visibilityBound = true;
+      ensureTicketNotificationPermission().catch(() => {});
       document.addEventListener("visibilitychange", () => {
         if (!document.hidden) {
           refreshTickets().catch((err) => console.warn("Falha ao sincronizar chamados:", err));

@@ -2,6 +2,7 @@
 const express = require("express");
 const router = express.Router();
 const db = require("../db");
+const clickupTickets = require("../services/clickup.service");
 const NEXT_ACTIONS_COUNT = 6;
 
 // ===================================================
@@ -56,6 +57,51 @@ function normalizeChecks(arr) {
 
   while (out.length < NEXT_ACTIONS_COUNT) out.push(false);
   return out;
+}
+
+function normalizeAccessProfile(value) {
+  const normalized = String(value || "").trim().toLowerCase();
+  return ["ti", "gerencial", "coordenacao", "operacional", "consulta"].includes(normalized)
+    ? normalized
+    : "operacional";
+}
+
+function legacyRoleToAccessProfile(role) {
+  const normalized = String(role || "").trim().toLowerCase();
+  if (normalized === "ti") return "ti";
+  if (normalized === "admin") return "gerencial";
+  return "operacional";
+}
+
+function getAccessProfileFromSession(req) {
+  const user = req?.session?.user || {};
+  return normalizeAccessProfile(
+    user.accessProfile ||
+    user.access_profile ||
+    legacyRoleToAccessProfile(user.role)
+  );
+}
+
+function canManageTickets(req) {
+  const role = String(req?.session?.user?.role || "").trim().toLowerCase();
+  const profile = getAccessProfileFromSession(req);
+  return role === "ti" || role === "admin" || profile === "ti";
+}
+
+function getRequesterName(req) {
+  return String(
+    req?.session?.user?.nome ||
+    req?.session?.user?.name ||
+    "Usuário"
+  ).trim();
+}
+
+function getRequesterEmail(req) {
+  return String(req?.session?.user?.email || "").trim();
+}
+
+function isClickupNotConfigured(err) {
+  return err?.code === "CLICKUP_NOT_CONFIGURED";
 }
 
 // ===================================================
@@ -157,6 +203,204 @@ router.post("/next-actions/reset", async (req, res) => {
   } catch (err) {
     console.error("Erro ao resetar ações:", err);
     return res.status(500).json({ error: "Erro interno." });
+  }
+});
+
+// ===================================================
+// TICKETS / CHAMADOS
+// ===================================================
+
+router.get("/tickets", async (req, res) => {
+  try {
+    if (!clickupTickets.isClickUpTicketsEnabled()) {
+      return res.status(503).json({
+        error: "Integração ClickUp não configurada.",
+        code: "CLICKUP_NOT_CONFIGURED",
+      });
+    }
+
+    const items = await clickupTickets.listAllTasks();
+    return res.json({
+      provider: "clickup",
+      configured: true,
+      savedAt: new Date().toISOString(),
+      data: Array.isArray(items) ? items : [],
+    });
+  } catch (err) {
+    if (isClickupNotConfigured(err)) {
+      return res.status(503).json({
+        error: "Integração ClickUp não configurada.",
+        code: "CLICKUP_NOT_CONFIGURED",
+      });
+    }
+
+    console.error("Erro ao listar chamados no ClickUp:", err);
+    return res.status(502).json({
+      error: "Falha ao sincronizar chamados com o ClickUp.",
+      code: "CLICKUP_SYNC_FAILED",
+    });
+  }
+});
+
+router.post("/tickets", async (req, res) => {
+  try {
+    if (!clickupTickets.isClickUpTicketsEnabled()) {
+      return res.status(503).json({
+        error: "Integração ClickUp não configurada.",
+        code: "CLICKUP_NOT_CONFIGURED",
+      });
+    }
+
+    const funcao = String(req.body?.funcao || "").trim();
+    const descricao = String(req.body?.descricao || "").trim().slice(0, 1000);
+    const urgencia = String(req.body?.urgencia || "media").trim().toLowerCase();
+    const imagem = String(req.body?.imagem || "").trim();
+
+    if (!descricao) {
+      return res.status(400).json({ error: "Descrição do chamado é obrigatória." });
+    }
+
+    const created = await clickupTickets.createTicket({
+      funcao,
+      descricao,
+      urgencia,
+      imagem,
+      solicitanteNome: getRequesterName(req),
+      solicitanteEmail: getRequesterEmail(req),
+    });
+
+    return res.status(201).json({
+      provider: "clickup",
+      ticket: created,
+    });
+  } catch (err) {
+    if (isClickupNotConfigured(err)) {
+      return res.status(503).json({
+        error: "Integração ClickUp não configurada.",
+        code: "CLICKUP_NOT_CONFIGURED",
+      });
+    }
+
+    console.error("Erro ao criar chamado no ClickUp:", err);
+    return res.status(502).json({
+      error: "Falha ao criar chamado no ClickUp.",
+      code: "CLICKUP_CREATE_FAILED",
+    });
+  }
+});
+
+router.patch("/tickets/:id/status", async (req, res) => {
+  try {
+    if (!canManageTickets(req)) {
+      return res.status(403).json({ error: "Apenas TI pode alterar status dos chamados." });
+    }
+
+    if (!clickupTickets.isClickUpTicketsEnabled()) {
+      return res.status(503).json({
+        error: "Integração ClickUp não configurada.",
+        code: "CLICKUP_NOT_CONFIGURED",
+      });
+    }
+
+    const ticketId = String(req.params?.id || "").trim();
+    const status = String(req.body?.status || "").trim().toLowerCase();
+    if (!ticketId || !status) {
+      return res.status(400).json({ error: "Chamado e status são obrigatórios." });
+    }
+
+    await clickupTickets.updateTicketStatus(ticketId, status);
+    return res.json({ success: true });
+  } catch (err) {
+    if (isClickupNotConfigured(err)) {
+      return res.status(503).json({
+        error: "Integração ClickUp não configurada.",
+        code: "CLICKUP_NOT_CONFIGURED",
+      });
+    }
+
+    console.error("Erro ao atualizar status do chamado no ClickUp:", err);
+    return res.status(502).json({
+      error: "Falha ao atualizar status do chamado no ClickUp.",
+      code: "CLICKUP_UPDATE_FAILED",
+    });
+  }
+});
+
+router.delete("/tickets/:id", async (req, res) => {
+  try {
+    if (!canManageTickets(req)) {
+      return res.status(403).json({ error: "Apenas TI pode excluir chamados." });
+    }
+
+    if (!clickupTickets.isClickUpTicketsEnabled()) {
+      return res.status(503).json({
+        error: "Integração ClickUp não configurada.",
+        code: "CLICKUP_NOT_CONFIGURED",
+      });
+    }
+
+    const ticketId = String(req.params?.id || "").trim();
+    if (!ticketId) {
+      return res.status(400).json({ error: "Chamado inválido." });
+    }
+
+    await clickupTickets.deleteTicket(ticketId);
+    return res.json({ success: true });
+  } catch (err) {
+    if (isClickupNotConfigured(err)) {
+      return res.status(503).json({
+        error: "Integração ClickUp não configurada.",
+        code: "CLICKUP_NOT_CONFIGURED",
+      });
+    }
+
+    console.error("Erro ao excluir chamado no ClickUp:", err);
+    return res.status(502).json({
+      error: "Falha ao excluir chamado no ClickUp.",
+      code: "CLICKUP_DELETE_FAILED",
+    });
+  }
+});
+
+router.post("/tickets/clear-closed", async (req, res) => {
+  try {
+    if (!canManageTickets(req)) {
+      return res.status(403).json({ error: "Apenas TI pode limpar chamados concluídos." });
+    }
+
+    if (!clickupTickets.isClickUpTicketsEnabled()) {
+      return res.status(503).json({
+        error: "Integração ClickUp não configurada.",
+        code: "CLICKUP_NOT_CONFIGURED",
+      });
+    }
+
+    const items = await clickupTickets.listAllTasks();
+    const closed = Array.isArray(items)
+      ? items.filter((ticket) => String(ticket?.status || "").trim().toLowerCase() === "concluido")
+      : [];
+
+    await Promise.all(
+      closed.map((ticket) => clickupTickets.deleteTicket(String(ticket.id || "").trim()))
+    );
+
+    return res.json({
+      success: true,
+      deleted: closed.length,
+    });
+  } catch (err) {
+    if (isClickupNotConfigured(err)) {
+      return res.status(503).json({
+        error: "Integração ClickUp não configurada.",
+        code: "CLICKUP_NOT_CONFIGURED",
+      });
+    }
+
+    console.error("Erro ao limpar chamados concluídos no ClickUp:", err);
+    return res.status(502).json({
+      error: "Falha ao limpar chamados concluídos no ClickUp.",
+      code: "CLICKUP_CLEAR_FAILED",
+    });
   }
 });
 
