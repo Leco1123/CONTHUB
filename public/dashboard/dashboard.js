@@ -8,6 +8,7 @@
   let MODULE_ACCESS_MAP = {};
   const dashboardTicketsState = {
     selectedFunction: "",
+    searchTerm: "",
     imageDataUrl: "",
     doc: null,
     lastSignature: "",
@@ -167,6 +168,23 @@
     } catch {
       return date.toISOString();
     }
+  }
+
+  function formatRelativeOrDate(value) {
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return "--";
+    const diffMs = Date.now() - date.getTime();
+    const diffMin = Math.max(0, Math.round(diffMs / 60000));
+    if (diffMin < 1) return "Agora";
+    if (diffMin < 60) return `${diffMin} min atrás`;
+    const diffHours = Math.round(diffMin / 60);
+    if (diffHours < 24) return `${diffHours}h atrás`;
+    return date.toLocaleString("pt-BR", {
+      day: "2-digit",
+      month: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
   }
 
   function getNotificationSupport() {
@@ -971,7 +989,24 @@
 
   function filteredTicketsForSelectedFunction() {
     const items = Array.isArray(dashboardTicketsState.doc?.data) ? dashboardTicketsState.doc.data : [];
-    return sortTickets(items.filter((ticket) => ticket.funcao === dashboardTicketsState.selectedFunction));
+    const searchTerm = String(dashboardTicketsState.searchTerm || "").trim().toLowerCase();
+    return sortTickets(
+      items.filter((ticket) => {
+        const isAll = dashboardTicketsState.selectedFunction === "__all__";
+        if (!isAll && ticket.funcao !== dashboardTicketsState.selectedFunction) return false;
+        if (!searchTerm) return true;
+        const haystack = [
+          ticket.descricao,
+          ticket.solicitanteNome,
+          ticket.solicitanteEmail,
+          ticket.status,
+          ticket.urgencia,
+        ]
+          .map((value) => String(value || "").toLowerCase())
+          .join(" ");
+        return haystack.includes(searchTerm);
+      })
+    );
   }
 
   function getTicketCode(index) {
@@ -1004,13 +1039,14 @@
     const el = document.getElementById("ticketFunctionTabs");
     if (!el) return;
 
-    el.innerHTML = TICKET_FUNCTIONS.map((funcao) => `
+    const items = ["__all__", ...TICKET_FUNCTIONS];
+    el.innerHTML = items.map((funcao) => `
       <button
         class="ticketTab ${funcao === dashboardTicketsState.selectedFunction ? "is-active" : ""}"
         type="button"
         data-ticket-function="${escapeHTML(funcao)}"
       >
-        ${escapeHTML(funcao)}
+        ${escapeHTML(funcao === "__all__" ? "Todos" : funcao)}
       </button>
     `).join("");
   }
@@ -1019,24 +1055,45 @@
     const functionEl = document.getElementById("ticketSelectedFunction");
     const authorEl = document.getElementById("ticketOpenedBy");
     const boardTitleEl = document.getElementById("ticketBoardTitle");
-    if (functionEl) functionEl.textContent = `Função: ${dashboardTicketsState.selectedFunction}`;
+    const functionSelectEl = document.getElementById("ticketFunctionSelect");
+    const searchEl = document.querySelector(".ticketSearch");
+    const descriptionEl = document.getElementById("ticketDescription");
+    const countEl = document.getElementById("ticketDescriptionCount");
+    const selectedLabel = dashboardTicketsState.selectedFunction === "__all__" ? "Todas as funções" : dashboardTicketsState.selectedFunction;
+    if (functionEl) functionEl.textContent = `Função: ${selectedLabel}`;
     if (authorEl) authorEl.textContent = `Solicitante: ${currentTicketAuthorName()}${currentTicketAuthorEmail() ? ` • ${currentTicketAuthorEmail()}` : ""}`;
-    if (boardTitleEl) boardTitleEl.textContent = `${dashboardTicketsState.selectedFunction} • fila de chamados`;
+    if (boardTitleEl) boardTitleEl.textContent = `${selectedLabel} • fila de chamados`;
+    if (functionSelectEl && dashboardTicketsState.selectedFunction !== "__all__") functionSelectEl.value = dashboardTicketsState.selectedFunction;
+    if (searchEl && searchEl.value !== dashboardTicketsState.searchTerm) searchEl.value = dashboardTicketsState.searchTerm;
+    if (countEl) countEl.textContent = `${String(descriptionEl?.value || "").length}/1000`;
   }
 
   function renderTicketImagePreview() {
     const wrap = document.getElementById("ticketImagePreviewWrap");
     const img = document.getElementById("ticketImagePreview");
+    const statusEl = document.getElementById("ticketImageStatus");
     if (!wrap || !img) return;
 
     if (!dashboardTicketsState.imageDataUrl) {
       wrap.classList.add("is-hidden");
       img.removeAttribute("src");
+      if (statusEl) statusEl.textContent = "Sem imagem anexada";
       return;
     }
 
     img.src = dashboardTicketsState.imageDataUrl;
     wrap.classList.remove("is-hidden");
+    if (statusEl) statusEl.textContent = "Imagem pronta para envio";
+  }
+
+  function currentTicketFunctionForCreate() {
+    const functionSelectEl = document.getElementById("ticketFunctionSelect");
+    const selectedFromField = String(functionSelectEl?.value || "").trim();
+    if (selectedFromField) return selectedFromField;
+    if (dashboardTicketsState.selectedFunction && dashboardTicketsState.selectedFunction !== "__all__") {
+      return dashboardTicketsState.selectedFunction;
+    }
+    return TICKET_FUNCTIONS[0];
   }
 
   function renderTickets() {
@@ -1047,67 +1104,50 @@
     const el = document.getElementById("ticketsList");
     const queueCountEl = document.getElementById("ticketQueueCount");
     const functionCountEl = document.getElementById("ticketFunctionCount");
+    const summaryEl = document.getElementById("ticketDeskSummary");
     if (!el) return;
 
     const allTickets = sortTickets(Array.isArray(dashboardTicketsState.doc?.data) ? dashboardTicketsState.doc.data : []);
     const tickets = filteredTicketsForSelectedFunction();
     if (queueCountEl) queueCountEl.textContent = `${allTickets.length} chamados`;
-    if (functionCountEl) functionCountEl.textContent = `${tickets.length} em ${dashboardTicketsState.selectedFunction}`;
+    const selectedLabel = dashboardTicketsState.selectedFunction === "__all__" ? "Todas" : dashboardTicketsState.selectedFunction;
+    if (functionCountEl) functionCountEl.textContent = `${tickets.length} em ${selectedLabel}`;
+    if (summaryEl) {
+      const openCount = tickets.filter((ticket) => ticket.status === "aberto").length;
+      const progressCount = tickets.filter((ticket) => ticket.status === "em_andamento").length;
+      const waitingCount = tickets.filter((ticket) => ticket.status === "aguardando").length;
+      const urgentCount = tickets.filter((ticket) => ticket.urgencia === "critica" || ticket.urgencia === "alta").length;
+      summaryEl.innerHTML = `
+        <span class="ticketDeskSummary__item"><strong>${tickets.length}</strong><span>na fila</span></span>
+        <span class="ticketDeskSummary__item"><strong>${openCount}</strong><span>abertos</span></span>
+        <span class="ticketDeskSummary__item"><strong>${progressCount}</strong><span>em andamento</span></span>
+        <span class="ticketDeskSummary__item"><strong>${waitingCount}</strong><span>aguardando</span></span>
+        <span class="ticketDeskSummary__item ${urgentCount ? "is-hot" : ""}"><strong>${urgentCount}</strong><span>prioridade alta</span></span>
+      `;
+    }
     if (!tickets.length) {
-      el.innerHTML = `<div class="tickets__empty">Nenhum chamado aberto para ${escapeHTML(dashboardTicketsState.selectedFunction)} ainda.</div>`;
+      el.innerHTML = `<div class="tickets__empty">Nenhum chamado aberto para ${escapeHTML(selectedLabel)} ainda.</div>`;
       return;
     }
 
     el.innerHTML = tickets.map((ticket) => `
-      <article class="ticket" data-ticket-id="${escapeHTML(ticket.id)}" data-status="${escapeHTML(ticket.status)}">
-        <div class="ticket__rail">
-          <div class="ticket__code">${escapeHTML(getTicketCodeById(ticket.id))}</div>
-          <div class="ticket__railLabel">${escapeHTML(ticket.funcao)}</div>
-        </div>
-
-        <div class="ticket__content">
-          <div class="ticket__header">
-            <div class="ticket__meta">
-              <span class="ticket__badge ${escapeHTML(ticketStatusClass(ticket.status))}">${escapeHTML(ticketStatusLabel(ticket.status))}</span>
-              <span class="ticket__badge ticket__badge--urgency-${escapeHTML(ticket.urgencia)}">${escapeHTML(ticketPriorityLabel(ticket.urgencia))}</span>
-              <span class="ticket__badge">ClickUp</span>
-            </div>
-          </div>
-
-          <div class="ticket__title">${escapeHTML(getTicketTitle(ticket))}</div>
-          ${getTicketSummary(ticket) ? `<div class="ticket__summary">${escapeHTML(getTicketSummary(ticket))}</div>` : ""}
-
-          <div class="ticket__facts">
-            <div class="ticket__fact">
-              <span class="ticket__factLabel">Solicitante</span>
-              <strong>${escapeHTML(ticket.solicitanteNome || "Usuário")}</strong>
-            </div>
-            <div class="ticket__fact">
-              <span class="ticket__factLabel">Abertura</span>
-              <strong>${escapeHTML(formatDateTimeBR(ticket.createdAt))}</strong>
-            </div>
-            <div class="ticket__fact">
-              <span class="ticket__factLabel">Atualização</span>
-              <strong>${escapeHTML(formatDateTimeBR(ticket.updatedAt))}</strong>
-            </div>
-          </div>
-
-          <div class="ticket__author">
-            ${ticket.solicitanteEmail ? escapeHTML(ticket.solicitanteEmail) : "Sem e-mail informado"}
+      <article class="ticket ticket--desk" data-ticket-id="${escapeHTML(ticket.id)}" data-status="${escapeHTML(ticket.status)}">
+        <div class="ticketDeskRow__task">
+          <div class="ticketDeskRow__check" aria-hidden="true"></div>
+          <div class="ticketDeskRow__copy">
+            <div class="ticketDeskRow__title">${escapeHTML(getTicketTitle(ticket))}</div>
+            ${getTicketSummary(ticket) ? `<div class="ticketDeskRow__summary">${escapeHTML(getTicketSummary(ticket))}</div>` : ""}
           </div>
         </div>
-
-        <div class="ticket__side">
-          ${ticket.imagem ? `
-            <img class="ticket__thumb" src="${ticket.imagem}" alt="Anexo do chamado" />
-            <a class="ticket__link" href="${escapeHTML(ticket.imagem)}" target="_blank" rel="noreferrer">Abrir anexo</a>
-          ` : `
-            <div class="ticket__ghost">
-              <span class="ticket__ghostIcon">🗂</span>
-              <span>Sem anexo</span>
-            </div>
-          `}
+        <div class="ticketDeskRow__status">
+          <span class="ticket__badge ${escapeHTML(ticketStatusClass(ticket.status))}">${escapeHTML(ticketStatusLabel(ticket.status))}</span>
         </div>
+        <div class="ticketDeskRow__priority">
+          <span class="ticket__badge ticket__badge--urgency-${escapeHTML(ticket.urgencia)}">${escapeHTML(ticketPriorityLabel(ticket.urgencia))}</span>
+        </div>
+        <div class="ticketDeskRow__owner">${escapeHTML(ticket.solicitanteNome || "Usuário")}</div>
+        <div class="ticketDeskRow__assignee">${escapeHTML(ticket.assigneeName || "Central TI")}</div>
+        <div class="ticketDeskRow__updated">${escapeHTML(formatRelativeOrDate(ticket.updatedAt))}</div>
       </article>
     `).join("");
   }
@@ -1262,7 +1302,7 @@
     }
 
     const ticketPayload = {
-      funcao: dashboardTicketsState.selectedFunction,
+      funcao: currentTicketFunctionForCreate(),
       descricao,
       urgencia: String(priorityEl?.value || "media").trim().toLowerCase(),
       imagem: dashboardTicketsState.imageDataUrl,
@@ -1368,7 +1408,10 @@
     const btnRefreshTi = document.getElementById("btnRefreshTiTickets");
     const shortcutTi = document.getElementById("shortcutTiTickets");
     const fileInput = document.getElementById("ticketImageInput");
+    const btnPickImage = document.getElementById("btnPickTicketImage");
     const tiList = document.getElementById("tiTicketsList");
+    const functionSelect = document.getElementById("ticketFunctionSelect");
+    const searchInput = document.querySelector(".ticketSearch");
 
     if (tabsEl && !tabsEl.__bound) {
       tabsEl.__bound = true;
@@ -1376,6 +1419,31 @@
         const tab = e.target.closest("[data-ticket-function]");
         if (!tab) return;
         dashboardTicketsState.selectedFunction = String(tab.getAttribute("data-ticket-function") || "").trim() || TICKET_FUNCTIONS[0];
+        renderTickets();
+      });
+    }
+
+    if (functionSelect && !functionSelect.__bound) {
+      functionSelect.__bound = true;
+      functionSelect.addEventListener("change", () => {
+        const nextFunction = String(functionSelect.value || "").trim();
+        dashboardTicketsState.selectedFunction = nextFunction || TICKET_FUNCTIONS[0];
+        renderTickets();
+      });
+    }
+
+    const descriptionInput = document.getElementById("ticketDescription");
+    if (descriptionInput && !descriptionInput.__bound) {
+      descriptionInput.__bound = true;
+      descriptionInput.addEventListener("input", () => {
+        renderTicketComposerMeta();
+      });
+    }
+
+    if (searchInput && !searchInput.__bound) {
+      searchInput.__bound = true;
+      searchInput.addEventListener("input", () => {
+        dashboardTicketsState.searchTerm = String(searchInput.value || "");
         renderTickets();
       });
     }
@@ -1400,6 +1468,13 @@
       btnClearImage.__bound = true;
       btnClearImage.addEventListener("click", () => {
         clearTicketComposer();
+      });
+    }
+
+    if (btnPickImage && !btnPickImage.__bound) {
+      btnPickImage.__bound = true;
+      btnPickImage.addEventListener("click", () => {
+        fileInput?.click();
       });
     }
 
@@ -1476,7 +1551,6 @@
   function startTicketsSyncLoop() {
     if (dashboardTicketsState.pollTimer) clearInterval(dashboardTicketsState.pollTimer);
     dashboardTicketsState.pollTimer = setInterval(() => {
-      if (document.hidden) return;
       refreshTickets().catch((err) => console.warn("Falha ao sincronizar chamados:", err));
     }, TICKETS_POLL_INTERVAL_MS);
 
@@ -1484,9 +1558,7 @@
       dashboardTicketsState.visibilityBound = true;
       ensureTicketNotificationPermission().catch(() => {});
       document.addEventListener("visibilitychange", () => {
-        if (!document.hidden) {
-          refreshTickets().catch((err) => console.warn("Falha ao sincronizar chamados:", err));
-        }
+        refreshTickets().catch((err) => console.warn("Falha ao sincronizar chamados:", err));
       });
     }
   }
@@ -2468,16 +2540,24 @@
     const u = getSessionUser();
     const name = String(u?.nome || u?.name || "Usuário").trim();
     const role = String(u?.role || "user").toUpperCase();
+    const initials = name
+      .split(/\s+/)
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((part) => part.charAt(0).toUpperCase())
+      .join("") || "U";
 
     const elName = document.getElementById("userName");
     const elRole = document.getElementById("userRole");
     const elToday = document.getElementById("todayText");
     const elYear = document.getElementById("yearText");
+    const elInitials = document.getElementById("userInitials");
 
     if (elName) elName.textContent = name;
     if (elRole) elRole.textContent = role;
     if (elToday) elToday.textContent = fmtToday();
     if (elYear) elYear.textContent = String(new Date().getFullYear());
+    if (elInitials) elInitials.textContent = initials;
   }
 
   function fillModulesStats() {
@@ -2544,6 +2624,16 @@
         if (src) goto(src);
       });
     });
+
+    const btnGoChamados = document.getElementById("btnGoChamados");
+    if (btnGoChamados && !btnGoChamados.__bound) {
+      btnGoChamados.__bound = true;
+      btnGoChamados.addEventListener("click", () => {
+        const panel = document.getElementById("dashboardChamadosPanel");
+        if (!panel) return;
+        panel.scrollIntoView({ behavior: "smooth", block: "start" });
+      });
+    }
   }
 
   async function renderQuickAutoCard() {

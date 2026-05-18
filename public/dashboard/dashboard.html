@@ -9,512 +9,283 @@
     />
     <title>ContHub • Boas-vindas</title>
 
-    <link rel="stylesheet" href="./dashboard.css?v=20260515-05" />
+    <link rel="stylesheet" href="./dashboard.css?v=20260516-16" />
   </head>
 
   <body>
-    <main class="wrap">
-
-      <!-- HERO -->
-      <section class="hero glass">
-        <div class="hero__left">
-          <div class="badge">CONTHUB • HOME</div>
-
-          <h1 class="title">
-            Bem-vindo(a), <span id="userName">Usuário</span> 👋
-          </h1>
-
-          <p class="subtitle" id="heroText">
-            Aqui é o seu painel central: atalhos, status e próximas ações.
-          </p>
-
-          <div class="hero__meta">
-            <div class="meta">
-              <div class="meta__label">Hoje</div>
-              <div class="meta__value" id="todayText">--</div>
-            </div>
-
-            <div class="meta">
-              <div class="meta__label">Perfil</div>
-              <div class="meta__value" id="userRole">USER</div>
-            </div>
-
-            <div class="meta">
-              <div class="meta__label">Status</div>
-              <div class="meta__value ok" id="sessionStatus">
-                Sessão ativa
-              </div>
-            </div>
+    <div class="app dashboardApp">
+      <aside class="sidebar dashboardSidebar">
+        <div class="profileCard">
+          <div class="profileCard__avatar" id="userInitials">U</div>
+          <div class="profileCard__body">
+            <strong id="userName">Usuário</strong>
+            <span id="userRole">USER</span>
           </div>
-
-          <div class="hero__actions">
-            <button
-              class="btn btn--primary"
-              type="button"
-              data-goto="../contflow/contflow.html"
-            >
-              Abrir ContFlow
-            </button>
-
-            <button
-              class="btn btn--ghost"
-              type="button"
-              data-goto="../perfil/perfil.html"
-            >
-              Meu Perfil
-            </button>
+          <div class="profileCard__actions">
+            <div class="profileCard__status" id="sessionStatus">Sessão ativa</div>
+            <button class="ghost-btn ghost-btn--sidebar" type="button" data-goto="../contconfig/contconfig.html">Abrir config</button>
           </div>
         </div>
 
-        <div class="hero__right">
-          <div class="cardBig">
-            <div class="cardBig__header">
-              <div class="cardBig__icon">📌</div>
-
-              <div class="cardBig__titles">
-                <div class="cardBig__title">Resumo rápido</div>
-
-                <div class="cardBig__sub">
-                  O que está acontecendo agora no seu ContHub
-                </div>
-              </div>
-            </div>
-
-            <div class="stats">
-              <div class="stat">
-                <div class="stat__label">Módulos online</div>
-                <div class="stat__value" id="statOnline">0</div>
-              </div>
-
-              <div class="stat">
-                <div class="stat__label">Em DEV</div>
-                <div class="stat__value" id="statDev">0</div>
-              </div>
-
-              <div class="stat">
-                <div class="stat__label">Offline</div>
-                <div class="stat__value danger" id="statOff">0</div>
-              </div>
-            </div>
-
-            <div class="divider"></div>
-
-            <div class="tips">
-              <div class="tips__title">Dicas rápidas</div>
-
-              <ul class="tips__list">
-                <li>
-                  Use o <b>ContFlow</b> para controlar rotinas e SLA.
-                </li>
-                <li>
-                  No <b>ContAnalytics</b> você vê indicadores e painéis.
-                </li>
-                <li>
-                  Em <b>ContDocs</b> você centraliza e encontra documentos.
-                </li>
-              </ul>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <!-- GRID -->
-      <section class="grid">
-
-        <!-- ATALHOS -->
-        <div class="panel panel--atalhos glass">
-          <div class="panel__header">
-            <h2 class="h2">Atalhos</h2>
-            <p class="muted">Clique para navegar rápido.</p>
-          </div>
-
-          <div class="cards">
-
+        <div class="sidebar__group">
+          <div class="sidebar__label">Atalhos</div>
+          <div class="cards cards--sidebar">
             <button class="card" type="button" data-module-id="contflow" data-goto="../contflow/contflow.html">
               <div class="card__icon">⚡</div>
-
               <div class="card__body">
                 <div class="card__title">ContFlow</div>
                 <div class="card__sub muted">Rotinas e fluxo</div>
               </div>
-
               <div class="pill" data-pill="contflow">ONLINE</div>
             </button>
 
             <button class="card" type="button" data-module-id="contanalytics" data-goto="../contanalytics/contanalytics.html">
               <div class="card__icon">📊</div>
-
               <div class="card__body">
                 <div class="card__title">ContAnalytics</div>
                 <div class="card__sub muted">KPIs e painel</div>
               </div>
-
-              <div class="pill" data-pill="contanalytics">ONLINE</div>
-            </button>
-
-            <button class="card" type="button" data-module-id="contdocs" data-goto="../contdocs/contdocs.html">
-              <div class="card__icon">📁</div>
-
-              <div class="card__body">
-                <div class="card__title">ContDocs</div>
-                <div class="card__sub muted">Documentos</div>
-              </div>
-
-              <div class="pill" data-pill="contdocs">ONLINE</div>
+              <div class="pill" data-pill="contanalytics">BI</div>
             </button>
 
             <button class="card" type="button" data-module-id="contrelatorios" data-goto="../contrelatorios/contrelatorios.html">
               <div class="card__icon">📈</div>
-
               <div class="card__body">
                 <div class="card__title">ContRelatórios</div>
                 <div class="card__sub muted">Exportações</div>
               </div>
-
-              <div class="pill" data-pill="contrelatorios">ONLINE</div>
+              <div class="pill" data-pill="contrelatorios">REPORT</div>
             </button>
 
             <button class="card" type="button" data-module-id="contconfig" data-goto="../contconfig/contconfig.html">
               <div class="card__icon">⚙️</div>
-
               <div class="card__body">
                 <div class="card__title">ContConfig</div>
                 <div class="card__sub muted">Parâmetros</div>
               </div>
-
-              <div class="pill" data-pill="contconfig">ONLINE</div>
+              <div class="pill" data-pill="contconfig">CFG</div>
             </button>
 
             <button class="card" type="button" data-module-id="contadmin" data-goto="../contadmin/contadmin.html">
               <div class="card__icon">🛡️</div>
-
               <div class="card__body">
                 <div class="card__title">ContAdmin</div>
                 <div class="card__sub muted">Acesso total</div>
               </div>
-
               <div class="pill" data-pill="contadmin">ADMIN</div>
             </button>
 
             <button
-              class="card card--ti-only is-hidden"
+              class="card card--ti-only"
               type="button"
               id="shortcutTiTickets"
             >
               <div class="card__icon">🧰</div>
-
               <div class="card__body">
                 <div class="card__title">Central TI</div>
                 <div class="card__sub muted">Fila de chamados</div>
               </div>
-
               <div class="pill" data-pill="ti-tickets">TI</div>
             </button>
-
           </div>
         </div>
+      </aside>
 
-
-        <!-- PRÓXIMAS AÇÕES -->
-        <div class="panel panel--acoes glass">
-          <div class="panel__header panel__header--row">
-
-            <div>
-              <h2 class="h2">Próximas ações</h2>
-              <p class="muted">Faça suas anotações aqui:</p>
-            </div>
-
-            <div class="panel__headerActions">
-              <button
-                class="btn btn--primary"
-                type="button"
-                id="btnOpenQuotaModal"
-              >
-                Concluir quota
-              </button>
-
-              <button
-                class="btn btn--ghost"
-                type="button"
-                id="btnAddNextAction"
-              >
-                + Adicionar ação
-              </button>
-
-              <button
-                class="btn"
-                type="button"
-                id="btnResetNextActions"
-              >
-                Reset
-              </button>
-
-            </div>
-          </div>
-
-          <div class="todo" id="nextActionsList"></div>
-
-          <div class="panel__footer">
-            <button
-              class="btn btn--ghost"
-              type="button"
-              id="btnResetChecks"
-            >
-              Limpar checks
-            </button>
-
-            <button
-              class="btn"
-              type="button"
-              data-goto="../contadmin/contadmin.html"
-            >
-              Ir para ContAdmin
-            </button>
-          </div>
-        </div>
-
-
-        <!-- INDICADOR SLA -->
-        <div class="panel panel--sla glass">
-
-          <div class="panel__header">
-            <h2 class="h2">Indicador de SLA</h2>
-            <p class="muted">
-              7 dias úteis antes do último dia do mês.
-            </p>
-          </div>
-
-          <div class="slaMonthCard" id="slaMonthCard">
-
-            <div class="slaMonthCard__top">
-
-              <div>
-                <div class="slaMonthCard__label">STATUS SLA</div>
-
-                <div
-                  class="slaMonthCard__status ok"
-                  id="slaStatusText"
-                >
-                  Calculando...
+      <main class="main-shell bi-shell">
+        <section class="dashboardExact">
+          <div class="dashboardExact__column dashboardExact__column--main">
+            <article class="panel exactCard exactCard--sla">
+              <div class="panel-head">
+                <div>
+                  <h2>Indicador de SLA</h2>
+                  <p>Peça de referência do turno, com mais presença visual.</p>
                 </div>
+                <span class="heroChip" id="slaMonthRef">--/----</span>
               </div>
 
-              <div
-                class="slaMonthCard__badge"
-                id="slaMonthRef"
-              >
-                --/----
-              </div>
-
-            </div>
-
-
-            <div class="slaMonthCard__meta">
-
-              <div class="slaMonthCard__item">
-                <span class="slaMonthCard__itemLabel">Prazo</span>
-                <strong id="slaDeadlineText">--</strong>
-              </div>
-
-              <div class="slaMonthCard__item">
-                <span class="slaMonthCard__itemLabel">
-                  Último dia do mês
-                </span>
-                <strong id="slaLastDayText">--</strong>
-              </div>
-
-            </div>
-
-
-            <div class="slaMonthCard__progress">
-              <div
-                class="slaMonthCard__progressBar"
-                id="slaProgressBar"
-              ></div>
-            </div>
-
-            <div
-              class="slaMonthCard__footer"
-              id="slaMetaText"
-            >
-              --
-            </div>
-
-          </div>
-        </div>
-
-
-        <!-- CHAMADOS -->
-        <div class="panel panel--chamados glass">
-          <div class="panel__header panel__header--row">
-
-            <div>
-              <h2 class="h2">Chamados</h2>
-              <p class="muted">Abra chamados por função e acompanhe o andamento em um fluxo mais próximo do ClickUp.</p>
-            </div>
-
-            <div class="panel__headerActions">
-              <div class="ticketWorkspace__pill" id="ticketQueueCount">0 chamados</div>
-              <div class="ticketWorkspace__pill ticketWorkspace__pill--soft" id="ticketFunctionCount">0 na fila</div>
-
-              <button
-                class="btn"
-                type="button"
-                id="btnResetTickets"
-              >
-                Atualizar
-              </button>
-
-            </div>
-          </div>
-
-          <div class="ticketWorkspace">
-            <aside class="ticketWorkspace__sidebar">
-              <div class="ticketWorkspace__card">
-                <div class="ticketWorkspace__cardTop">
+              <div class="slaMonthCard" id="slaMonthCard">
+                <div class="slaMonthCard__top">
                   <div>
-                    <div class="ticketWorkspace__eyebrow">Funções</div>
-                    <strong>Escolha a fila</strong>
+                    <div class="slaMonthCard__label">Status SLA</div>
+                    <div class="slaMonthCard__status ok" id="slaStatusText">Calculando...</div>
+                  </div>
+                  <div class="slaMonthCard__ok">OK</div>
+                </div>
+
+                <div class="slaMonthCard__copy">7 dias úteis antes do último dia do mês.</div>
+
+                <div class="slaMonthCard__meta">
+                  <div class="slaMonthCard__item">
+                    <span class="slaMonthCard__itemLabel">Prazo</span>
+                    <strong id="slaDeadlineText">--</strong>
+                  </div>
+                  <div class="slaMonthCard__item">
+                    <span class="slaMonthCard__itemLabel">Último dia do mês</span>
+                    <strong id="slaLastDayText">--</strong>
                   </div>
                 </div>
 
-                <div class="ticketTabs" id="ticketFunctionTabs"></div>
+                <div class="slaMonthCard__progress">
+                  <div class="slaMonthCard__progressBar" id="slaProgressBar"></div>
+                </div>
+
+                <div class="slaMonthCard__footer" id="slaMetaText">--</div>
+              </div>
+            </article>
+
+            <article class="panel exactCard exactCard--actions">
+              <div class="panel-head">
+                <div>
+                  <h2>Próximas ações</h2>
+                  <p>Faça suas anotações aqui.</p>
+                </div>
+                <div class="panel__headerActions">
+                  <button class="ghost-btn" type="button" id="btnAddNextAction">+ Adicionar ação</button>
+                  <button class="ghost-btn" type="button" id="btnResetNextActions">Reset</button>
+                </div>
               </div>
 
-              <div class="ticketComposer">
-                <div class="ticketComposer__top">
-                  <div>
-                    <div class="ticketWorkspace__eyebrow">Novo chamado</div>
-                    <strong class="ticketComposer__title">Criar tarefa</strong>
+              <div class="todo" id="nextActionsList"></div>
+
+              <div class="panel__footer">
+                <button class="ghost-btn" type="button" id="btnResetChecks">Limpar checks</button>
+                <button class="ghost-btn" type="button" data-goto="../contadmin/contadmin.html">Ir para ContAdmin</button>
+              </div>
+            </article>
+          </div>
+
+          <div class="dashboardExact__column dashboardExact__column--side">
+            <article class="panel exactCard exactCard--overview">
+              <span class="page-kicker">Executive overview</span>
+              <h1>Controle a operação com clareza, ritmo e prioridade.</h1>
+              <p class="bi-copy" id="heroText">
+                Visão central para acessar módulos, acompanhar o turno e agir rápido no que está travando a operação.
+              </p>
+
+              <div class="heroOverview__actions">
+                <button class="accent-btn" type="button" data-goto="../contflow/contflow.html">Abrir ContFlow</button>
+                <button class="ghost-btn" type="button" id="btnGoChamados">Ir para chamados</button>
+                <button class="ghost-btn" type="button" data-goto="../contconfig/contconfig.html">Abrir ContConfig</button>
+              </div>
+            </article>
+
+            <article class="panel exactCard exactCard--chamados" id="dashboardChamadosPanel">
+              <div class="panel-head">
+                <div>
+                  <h2>Chamados</h2>
+                  <p>Prévia da lista integrada com o ClickUp, com leitura limpa do que está aberto agora.</p>
+                </div>
+                <div class="panel__headerActions">
+                  <button class="ghost-btn" type="button" id="btnResetTickets">Abrir central</button>
+                </div>
+              </div>
+
+              <div class="ticketDesk">
+                <div class="ticketDesk__toolbar">
+                  <div class="ticketWorkspace__filterPills">
+                    <div class="ticketWorkspace__pill ticketWorkspace__pill--ti">TI</div>
+                    <div class="ticketWorkspace__pill ticketWorkspace__pill--user">Usuário</div>
+                    <div class="ticketWorkspace__pill ticketWorkspace__pill--soft" id="ticketQueueCount">List</div>
+                    <div class="ticketWorkspace__pill" id="ticketFunctionCount">ClickUp sync ativo</div>
                   </div>
+                  <input class="ticketSearch" type="text" placeholder="Buscar chamados" />
                 </div>
 
-                <div class="ticketComposer__meta">
-                  <div class="ticketComposer__pill" id="ticketSelectedFunction">Função: --</div>
-                  <div class="ticketComposer__pill ticketComposer__pill--soft" id="ticketOpenedBy">Solicitante: --</div>
-                </div>
+                <div class="ticketDesk__summary" id="ticketDeskSummary"></div>
 
-                <div class="ticketComposer__grid">
-                  <label class="ticketComposer__field ticketComposer__field--wide">
-                    <span class="ticketComposer__label">O que é o chamado</span>
-                    <textarea
-                      id="ticketDescription"
-                      class="ticketComposer__textarea"
-                      rows="5"
-                      maxlength="1000"
-                      placeholder="Descreva o contexto, o erro, a tela e o que precisa ser resolvido."
-                    ></textarea>
-                  </label>
+                <div class="ticketTabs ticketTabs--desk" id="ticketFunctionTabs"></div>
 
-                  <label class="ticketComposer__field">
-                    <span class="ticketComposer__label">Urgência</span>
-                    <select id="ticketPriority" class="ticketComposer__select">
-                      <option value="baixa">Baixa</option>
-                      <option value="media" selected>Média</option>
-                      <option value="alta">Alta</option>
-                      <option value="critica">Crítica</option>
-                    </select>
-                  </label>
+                <div class="ticketTable">
+                  <div class="ticketCreatePanel">
+                    <div class="ticketCreatePanel__head">
+                      <div>
+                        <div class="ticketWorkspace__eyebrow">Abrir chamado</div>
+                        <strong class="ticketCreatePanel__title">Descreva o problema de forma clara para a TI</strong>
+                      </div>
+                      <div class="ticketCreatePanel__meta">
+                        <div class="ticketComposer__pill" id="ticketSelectedFunction">Função: --</div>
+                        <div class="ticketComposer__pill ticketComposer__pill--soft" id="ticketOpenedBy">Solicitante: --</div>
+                      </div>
+                    </div>
 
-                  <label class="ticketComposer__field">
-                    <span class="ticketComposer__label">Imagem</span>
-                    <input
-                      id="ticketImageInput"
-                      class="ticketComposer__file"
-                      type="file"
-                      accept="image/*"
-                    />
-                  </label>
-                </div>
+                    <div class="ticketCreatePanel__body">
+                      <label class="ticketCreatePanel__field ticketCreatePanel__field--message">
+                        <span class="ticketCreatePanel__label">Descrição</span>
+                        <textarea
+                          id="ticketDescription"
+                          class="ticketCreatePanel__textarea"
+                          rows="4"
+                          maxlength="1000"
+                          placeholder="Explique o que aconteceu, onde travou e o que você esperava que acontecesse."
+                        ></textarea>
+                        <div class="ticketCreatePanel__hintRow">
+                          <span class="ticketCreatePanel__hint">Quanto mais objetivo, mais rápido o atendimento anda.</span>
+                          <span class="ticketCreatePanel__count" id="ticketDescriptionCount">0/1000</span>
+                        </div>
+                      </label>
 
-                <div
-                  class="ticketComposer__image is-hidden"
-                  id="ticketImagePreviewWrap"
-                >
-                  <img
-                    id="ticketImagePreview"
-                    class="ticketComposer__imagePreview"
-                    alt="Prévia da imagem do chamado"
+                      <div class="ticketCreatePanel__side">
+                        <button class="ticketCreatePanel__upload" type="button" id="btnPickTicketImage">
+                          <span class="ticketCreatePanel__uploadIcon">+</span>
+                          <span>Anexar imagem</span>
+                        </button>
+                        <div class="ticketCreatePanel__uploadHint" id="ticketImageStatus">Sem imagem anexada</div>
+                      </div>
+                    </div>
+
+                    <div class="ticketCreatePanel__footer">
+                      <div class="ticketCreatePanel__controls">
+                        <select id="ticketFunctionSelect" class="ticketCreateRow__select">
+                          <option value="Contábil">Contábil</option>
+                          <option value="Fiscal">Fiscal</option>
+                          <option value="Departamento Pessoal">Departamento Pessoal</option>
+                          <option value="Legalização">Legalização</option>
+                          <option value="Financeiro">Financeiro</option>
+                          <option value="Societário">Societário</option>
+                          <option value="Atendimento">Atendimento</option>
+                        </select>
+                        <select id="ticketPriority" class="ticketCreateRow__select">
+                          <option value="baixa">Low</option>
+                          <option value="media" selected>Medium</option>
+                          <option value="alta">High</option>
+                          <option value="critica">Urgent</option>
+                        </select>
+                      </div>
+
+                      <button class="accent-btn ticketCreatePanel__submit" type="button" id="btnCreateTicket">Criar chamado</button>
+                    </div>
+                  </div>
+
+                  <div class="ticketTable__head">
+                    <span>Task</span>
+                    <span>Status</span>
+                    <span>Priority</span>
+                    <span>Solicitante</span>
+                    <span>Assignee</span>
+                    <span>Updated</span>
+                  </div>
+
+                  <input
+                    id="ticketImageInput"
+                    class="ticketComposer__file ticketComposer__file--hidden"
+                    type="file"
+                    accept="image/*"
                   />
 
-                  <button
-                    class="btn btn--ghost"
-                    type="button"
-                    id="btnClearTicketImage"
-                  >
-                    Remover imagem
-                  </button>
-                </div>
-
-                <div class="ticketComposer__actions">
-                  <button
-                    class="btn btn--primary"
-                    type="button"
-                    id="btnCreateTicket"
-                  >
-                    Abrir chamado
-                  </button>
-                </div>
-              </div>
-            </aside>
-
-            <div class="ticketWorkspace__board">
-              <div class="ticketWorkspace__card ticketWorkspace__card--board">
-                <div class="ticketWorkspace__cardTop">
-                  <div>
-                    <div class="ticketWorkspace__eyebrow">Fila ativa</div>
-                    <strong id="ticketBoardTitle">Chamados da função</strong>
+                  <div class="ticketComposer__image is-hidden" id="ticketImagePreviewWrap">
+                    <img id="ticketImagePreview" class="ticketComposer__imagePreview" alt="Prévia da imagem do chamado" />
+                    <button class="ghost-btn" type="button" id="btnClearTicketImage">Remover imagem</button>
                   </div>
+
+                  <div class="ticketTable__body tickets tickets--exact" id="ticketsList"></div>
                 </div>
-
-                <div class="tickets" id="ticketsList"></div>
               </div>
-            </div>
+            </article>
           </div>
+        </section>
 
-          <div class="panel__footer">
-            <button
-              class="btn btn--ghost"
-              type="button"
-              id="btnClearClosedTickets"
-            >
-              Fechar concluídos
-            </button>
-          </div>
-        </div>
-
-      </section>
-
-      <section
-        class="panel panel--ti-only panel--ti-support glass is-hidden"
-        id="tiTicketsPanel"
-      >
-        <div class="panel__header panel__header--row">
-          <div>
-            <h2 class="h2">Central TI</h2>
-            <p class="muted">Veja quem abriu o chamado, a urgência, o conteúdo e os anexos.</p>
-          </div>
-
-          <div class="panel__headerActions">
-            <button
-              class="btn"
-              type="button"
-              id="btnRefreshTiTickets"
-            >
-              Atualizar chamados
-            </button>
-          </div>
-        </div>
-
-        <div class="tiTickets" id="tiTicketsList"></div>
-      </section>
-
-      <footer class="footer muted">
-        ContHub • Painel inicial —
-        <span id="yearText">2026</span>
-      </footer>
-
-    </main>
+      </main>
+    </div>
 
     <div
       class="dashboardModalBackdrop is-hidden"
@@ -623,6 +394,6 @@
       </section>
     </div>
 
-    <script src="./dashboard.js?v=20260515-05"></script>
+    <script src="./dashboard.js?v=20260516-16"></script>
   </body>
 </html>
