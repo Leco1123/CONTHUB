@@ -37,6 +37,7 @@
 
   const MODULE_CATALOG = [
     { id: "dashboard", name: "Dashboard", desc: "Visão geral do ContHub.", icon: "🏠" },
+    { id: "contcomercial", name: "ContComercial", desc: "Área comercial com foco em relacionamento, operação e acompanhamento.", icon: "💼" },
     { id: "contflow", name: "ContFlow", desc: "Controle de rotinas e fluxo contábil.", icon: "⚡" },
     { id: "contanalytics", name: "ContAnalytics", desc: "KPIs, indicadores e painéis.", icon: "📊" },
     { id: "contdocs", name: "ContDocs", desc: "Centralização e gestão de documentos.", icon: "📁" },
@@ -89,6 +90,7 @@
     if (normalized === "ti") return "TI";
     if (normalized === "gerencial") return "Gerencial";
     if (normalized === "coordenacao") return "Coordenação";
+    if (normalized === "comercial") return "Comercial";
     if (normalized === "consulta") return "Consulta";
     return "Operacional";
   }
@@ -344,6 +346,7 @@
     const rules = normalizeModuleAccess(module?.access);
 
     if (role === "ti" || accessProfile === "ti") return true;
+    if (accessProfile === "comercial") return moduleId === "dashboard" || moduleId === "contcomercial";
     if (!rules.length || rules.includes("user+admin")) return moduleId !== "contadmin";
     if (rules.includes("all") || rules.includes("*") || rules.includes("auth")) return true;
     if (rules.includes(role) || rules.includes(accessProfile)) return true;
@@ -358,6 +361,7 @@
     if (role === "ti" || accessProfile === "ti") return "Acesso técnico total";
     if (role === "admin" || accessProfile === "gerencial") return "Acesso gerencial";
     if (accessProfile === "coordenacao") return "Acesso de coordenação";
+    if (accessProfile === "comercial") return "Acesso comercial dedicado";
     if (accessProfile === "consulta") return "Acesso somente leitura";
     return "Acesso operacional";
   }

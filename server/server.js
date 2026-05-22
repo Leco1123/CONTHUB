@@ -7,6 +7,7 @@ const session = require("express-session");
 require("dotenv").config();
 
 const db = require("./db");
+const { PrismaSessionStore, ensureSessionTable } = require("./session-store");
 
 // ROTAS
 const authRoutes = require("./routes/auth.routes");
@@ -22,24 +23,77 @@ const app = express();
 const isProduction = String(process.env.NODE_ENV || "").trim().toLowerCase() === "production";
 const appBaseUrl = String(process.env.APP_BASE_URL || "").trim();
 const sessionSecret = String(process.env.SESSION_SECRET || "").trim();
+const allowedOrigins = Array.from(
+  new Set(
+    [appBaseUrl, ...(process.env.ALLOWED_ORIGINS || "").split(",")]
+      .map((value) => String(value || "").trim())
+      .filter(Boolean)
+  )
+);
 const sessionCookieSecure =
   String(process.env.SESSION_COOKIE_SECURE || "").trim() !== ""
     ? String(process.env.SESSION_COOKIE_SECURE).trim().toLowerCase() === "true"
     : isProduction && /^https:\/\//i.test(appBaseUrl);
+const sessionStore = new PrismaSessionStore();
 
 if (!sessionSecret) {
   throw new Error("SESSION_SECRET não configurado.");
 }
 
+if (isProduction && !sessionCookieSecure) {
+  throw new Error("Produção exige cookie seguro. Configure APP_BASE_URL com https:// ou SESSION_COOKIE_SECURE=true.");
+}
+
 app.set("trust proxy", 1);
+
+function isAllowedOrigin(origin) {
+  return allowedOrigins.includes(String(origin || "").trim());
+}
+
+function securityHeaders(req, res, next) {
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("X-Frame-Options", "DENY");
+  res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
+  res.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
+  res.setHeader("Cross-Origin-Opener-Policy", "same-origin");
+  res.setHeader("Cross-Origin-Resource-Policy", "same-origin");
+  res.setHeader(
+    "Content-Security-Policy",
+    [
+      "default-src 'self'",
+      "base-uri 'self'",
+      "font-src 'self' data:",
+      "form-action 'self'",
+      "frame-ancestors 'none'",
+      "img-src 'self' data: blob:",
+      "object-src 'none'",
+      "script-src 'self'",
+      "style-src 'self' 'unsafe-inline'",
+      "connect-src 'self'",
+      "worker-src 'self' blob:",
+    ].join("; ")
+  );
+
+  if (sessionCookieSecure) {
+    res.setHeader("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
+  }
+
+  next();
+}
 
 // ---------------------------------------------------
 // MIDDLEWARES
 // ---------------------------------------------------
 
+app.use(securityHeaders);
+
 app.use(
   cors({
-    origin: true,
+    origin(origin, callback) {
+      if (!origin) return callback(null, true);
+      if (isAllowedOrigin(origin)) return callback(null, true);
+      return callback(new Error("Origem não permitida pelo CORS."));
+    },
     credentials: true,
   })
 );
@@ -50,6 +104,7 @@ app.use(
   session({
     name: "conthub.sid",
     secret: sessionSecret,
+    store: sessionStore,
     resave: false,
     saveUninitialized: false,
     cookie: {
@@ -125,18 +180,44 @@ app.use((req, res) => {
   res.sendFile(loginPath);
 });
 
+app.use((err, req, res, next) => {
+  if (!err) {
+    return next();
+  }
+
+  if (err.message === "Origem não permitida pelo CORS.") {
+    return res.status(403).json({ error: "Origem não permitida." });
+  }
+
+  console.error("Erro não tratado:", err);
+  return res.status(500).json({ error: "Erro interno do servidor." });
+});
+
 // ---------------------------------------------------
 // SERVER START
 // ---------------------------------------------------
 
 const PORT = process.env.PORT ? Number(process.env.PORT) : 3000;
+let server;
 
-const server = app.listen(PORT, "0.0.0.0", () => {
-  console.log("=================================");
-  console.log("✅ ContHub rodando");
-  console.log(`🌐 http://localhost:${PORT}`);
-  console.log(`🔐 http://localhost:${PORT}/login/login.html`);
-  console.log("=================================");
+async function startServer() {
+  await ensureSessionTable();
+  await sessionStore.pruneExpiredSessions();
+  sessionStore.startCleanupTimer();
+
+  server = app.listen(PORT, "0.0.0.0", () => {
+    console.log("=================================");
+    console.log("✅ ContHub rodando");
+    console.log(`🌐 http://localhost:${PORT}`);
+    console.log(`🔐 http://localhost:${PORT}/login/login.html`);
+    console.log(`🌍 Origens liberadas: ${allowedOrigins.join(", ") || "somente localhost sem Origin"}`);
+    console.log("=================================");
+  });
+}
+
+startServer().catch((error) => {
+  console.error("Falha ao iniciar servidor:", error);
+  process.exit(1);
 });
 
 // ---------------------------------------------------
@@ -147,8 +228,15 @@ async function gracefulShutdown(signal) {
   try {
     console.log(`\n🛑 ${signal} recebido`);
 
+    sessionStore.stopCleanupTimer();
+
     if (db?.close) {
       await db.close();
+    }
+
+    if (!server) {
+      process.exit(0);
+      return;
     }
 
     server.close(() => {

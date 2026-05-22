@@ -44,7 +44,7 @@ function cleanText(value) {
 
 function normalizeAccessProfile(value, fallbackRole = "customer") {
   const normalized = cleanText(value).toLowerCase();
-  if (["ti", "gerencial", "coordenacao", "operacional", "consulta"].includes(normalized)) {
+  if (["ti", "gerencial", "coordenacao", "operacional", "consulta", "comercial"].includes(normalized)) {
     return normalized;
   }
 
@@ -52,6 +52,14 @@ function normalizeAccessProfile(value, fallbackRole = "customer") {
   if (role === "ti") return "ti";
   if (role === "admin") return "gerencial";
   return "operacional";
+}
+
+function validatePasswordStrength(password) {
+  const pass = String(password || "");
+  if (pass.length < 10) {
+    return "A senha deve ter no mínimo 10 caracteres.";
+  }
+  return null;
 }
 
 function ensureUserMetaFile() {
@@ -338,8 +346,9 @@ router.post("/", requireContAdminManage, async (req, res) => {
     if (!name || !email || !password) {
       return res.status(400).json({ error: "name, email e password são obrigatórios." });
     }
-    if (password.length < 6) {
-      return res.status(400).json({ error: "Senha mínimo 6 caracteres." });
+    const passwordError = validatePasswordStrength(password);
+    if (passwordError) {
+      return res.status(400).json({ error: passwordError });
     }
 
     const exists = await db.user.findUnique({
@@ -471,8 +480,9 @@ router.put("/:id/password", requireContAdminManage, async (req, res) => {
     const password = String(req.body?.password || "").trim();
 
     if (!Number.isFinite(id)) return res.status(400).json({ error: "ID inválido." });
-    if (!password || password.length < 6) {
-      return res.status(400).json({ error: "Senha mínimo 6 caracteres." });
+    const passwordError = validatePasswordStrength(password);
+    if (passwordError) {
+      return res.status(400).json({ error: passwordError });
     }
 
     const hash = await bcrypt.hash(password, 10);

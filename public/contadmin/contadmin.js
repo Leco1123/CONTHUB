@@ -39,6 +39,7 @@ document.addEventListener("DOMContentLoaded", () => {
     { value: "gerencial", label: "Gerencial", description: "Visão ampla, relatórios e gestão global." },
     { value: "coordenacao", label: "Coordenação", description: "Gestão da própria equipe e acompanhamento operacional." },
     { value: "operacional", label: "Operacional", description: "Rotina diária e execução dos módulos de trabalho." },
+    { value: "comercial", label: "Comercial", description: "Acesso focado no dashboard e na área comercial." },
     { value: "consulta", label: "Consulta", description: "Acompanhamento somente leitura." },
   ];
 
@@ -194,6 +195,16 @@ document.addEventListener("DOMContentLoaded", () => {
     if (!cleaned) return "";
     if (!safeCoordinator) return "";
     return matchConfiguredValue(getTeamsForCoordinator(safeCoordinator), cleaned) || cleaned;
+  }
+
+  function hasTeamInCoordinator(coordinator, value) {
+    const safeCoordinator = resolveCoordinatorName(coordinator);
+    const cleaned = cleanText(value);
+    if (!safeCoordinator || !cleaned) return false;
+
+    return getTeamsForCoordinator(safeCoordinator).some(
+      (team) => normalizeName(team) === normalizeName(cleaned)
+    );
   }
 
   function teamKey(value) {
@@ -413,6 +424,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const rules = normalizeModuleAccess(moduleAccessMap[id]);
 
     if (profile === "ti" || role === "ti") return true;
+    if (profile === "comercial") return id === "dashboard" || id === "contcomercial";
     if (id === "contadmin") return canViewAdmin(user);
     if (id === "contanalytics") return ["gerencial", "coordenacao"].includes(profile) || role === "admin";
     if (!rules.length || rules.includes("operacional")) return true;
@@ -461,6 +473,8 @@ document.addEventListener("DOMContentLoaded", () => {
     const normalizedCargo = normalizeName(cargo);
     const normalizedAccess = normalizeAccessProfile(accessProfile);
     if (normalizedAccess === "gerencial") return false;
+    if (normalizedAccess === "coordenacao") return false;
+    if (normalizedAccess === "comercial") return false;
     if (normalizedCargo === "gerente") return false;
     return true;
   }
@@ -1305,20 +1319,43 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function updateTeamAssignmentUI() {
     const accessProfileSel = document.getElementById("accessProfileSelect");
+    const structureHint = document.getElementById("estruturaHint");
     const selectedAccessProfile = normalizeAccessProfile(accessProfileSel?.value || "operacional");
     const cargo = String(fieldCargo?.value || "").trim();
+    const typedName = cleanText(fieldNome?.value);
+    const isCoordinatorProfile = selectedAccessProfile === "coordenacao";
     const needsAssignment = requiresTeamAssignment(cargo, selectedAccessProfile);
+
+    if (structureHint) {
+      structureHint.textContent = isCoordinatorProfile
+        ? "Para coordenação, o próprio usuário vira o coordenador. A equipe pode ser criada depois."
+        : "Coordenador, equipe e cargo";
+    }
 
     if (inputCoordenador) {
       inputCoordenador.required = needsAssignment;
-      inputCoordenador.classList.toggle("is-disabled", !needsAssignment);
-      inputCoordenador.disabled = !needsAssignment;
+      inputCoordenador.classList.toggle("is-disabled", !needsAssignment || isCoordinatorProfile);
+      inputCoordenador.disabled = !needsAssignment || isCoordinatorProfile;
     }
 
     if (inputEquipe) {
       inputEquipe.required = needsAssignment;
-      inputEquipe.classList.toggle("is-disabled", !needsAssignment);
-      inputEquipe.disabled = !needsAssignment;
+      inputEquipe.classList.toggle("is-disabled", !needsAssignment || isCoordinatorProfile);
+      inputEquipe.disabled = !needsAssignment || isCoordinatorProfile;
+    }
+
+    if (isCoordinatorProfile) {
+      if (inputCoordenador) {
+        inputCoordenador.innerHTML = typedName
+          ? `<option value="${escapeHtml(typedName)}">${escapeHtml(typedName)} (novo coordenador)</option>`
+          : '<option value="">Preencha o nome acima para criar o coordenador</option>';
+        inputCoordenador.value = typedName || "";
+      }
+      if (inputEquipe) {
+        inputEquipe.innerHTML = '<option value="">Equipe será criada depois no ContAdmin</option>';
+        inputEquipe.value = "";
+      }
+      return;
     }
 
     if (!needsAssignment) {
@@ -1691,7 +1728,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (!nextName) throw new Error("Informe o nome da equipe.");
 
     const existingTeams = teamConfig[safeCoordinator] || [];
-    if (resolveTeamName(safeCoordinator, nextName)) {
+    if (hasTeamInCoordinator(safeCoordinator, nextName)) {
       throw new Error("Ja existe uma equipe com esse nome nessa coordenacao.");
     }
 
@@ -1710,8 +1747,8 @@ document.addEventListener("DOMContentLoaded", () => {
     if (!safeCoordinator || !currentName) throw new Error("Equipe invalida.");
     if (!nextName) throw new Error("Informe o novo nome da equipe.");
 
-    const duplicate = resolveTeamName(safeCoordinator, nextName);
-    if (duplicate && normalizeName(duplicate) !== normalizeName(currentName)) {
+    const duplicate = hasTeamInCoordinator(safeCoordinator, nextName);
+    if (duplicate && normalizeName(nextName) !== normalizeName(currentName)) {
       throw new Error("Ja existe uma equipe com esse nome nessa coordenacao.");
     }
 
@@ -1771,7 +1808,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (!coordinators.length) {
       equipesGrid.innerHTML = `
         <div class="team-master__empty">
-          Nenhum coordenador foi encontrado. Vincule um usuario a um coordenador/equipe para a estrutura aparecer aqui.
+          Nenhum coordenador foi encontrado. Cadastre primeiro um usuário com perfil de Coordenação para começar a montar as equipes.
         </div>
       `;
       return;
@@ -1939,7 +1976,7 @@ document.addEventListener("DOMContentLoaded", () => {
         '<option value="">Selecione a equipe</option>',
         ...teams.map((team) => `<option value="${escapeHtml(team)}">${escapeHtml(team)}</option>`),
       ].join("");
-      inputEquipe.value = resolveTeamName(safeCoordinator, selected) || teams[0] || "";
+      inputEquipe.value = resolveTeamName(safeCoordinator, selected) || "";
     }
   }
 
@@ -1951,6 +1988,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   const inputCargo = document.getElementById("cargo");
   inputCargo?.addEventListener("change", () => updateTeamAssignmentUI());
+  fieldNome?.addEventListener("input", () => updateTeamAssignmentUI());
   inputCoordenador?.addEventListener("change", () => {
     syncTeamSelectors(inputCoordenador.value, "");
   });
@@ -2723,8 +2761,13 @@ document.addEventListener("DOMContentLoaded", () => {
       ? normalizeAssignment({ coordenador: rawCoordenador, equipe: rawEquipe })
       : { coordenador: "", equipe: "" };
 
-    const finalCoordenador = normalizedAssignment.coordenador;
-    const finalEquipe = normalizedAssignment.equipe;
+    let finalCoordenador = normalizedAssignment.coordenador;
+    let finalEquipe = normalizedAssignment.equipe;
+
+    if (selectedAccessProfile === "coordenacao") {
+      finalCoordenador = nome;
+      finalEquipe = "";
+    }
 
     if (needsAssignment && (!finalCoordenador || !finalEquipe)) {
       alert("Selecione um coordenador e uma equipe validos da lista.");

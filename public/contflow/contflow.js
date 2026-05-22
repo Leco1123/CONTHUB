@@ -474,6 +474,7 @@ function normalizeAccessProfile(value) {
   if (profile === "ti") return "ti";
   if (profile === "admin" || profile === "gerencial" || profile === "gerencia") return "gerencial";
   if (profile === "coordenacao" || profile === "coordenador") return "coordenacao";
+  if (profile === "comercial") return "comercial";
   if (profile === "consulta") return "consulta";
   if (profile === "operacional" || profile === "user" || profile === "usuario") return "operacional";
   return profile || "operacional";
@@ -500,6 +501,7 @@ function canAccessModule(moduleId, user = getSessionUser()) {
   const rules = normalizeModuleAccess(MODULE_ACCESS_MAP[id]);
 
   if (profile === "ti" || role === "ti") return true;
+  if (profile === "comercial") return id === "dashboard" || id === "contcomercial";
   if (id === "contadmin") return profile === "gerencial" || role === "admin";
   if (id === "contanalytics") return ["gerencial", "coordenacao"].includes(profile) || role === "admin";
   if (!rules.length || rules.includes("operacional")) return true;
@@ -6456,6 +6458,11 @@ document.addEventListener("DOMContentLoaded", async () => {
   if (!me) return;
 
   await loadModulesMap();
+  if (!canAccessModule("contflow", me)) {
+    alert("Seu perfil não possui acesso ao ContFlow.");
+    goto("../dashboard/dashboard.html");
+    return;
+  }
   syncSidebarFromStore();
   applyRoleToSidebar();
 

@@ -9,7 +9,7 @@
     />
     <title>ContHub • Admin</title>
 
-    <link rel="stylesheet" href="./contadmin.css" />
+    <link rel="stylesheet" href="./contadmin.css?v=20260521-01" />
   </head>
 
   <body>
@@ -247,47 +247,6 @@
 
                 <section class="form-usuario__section">
                   <div class="form-usuario__section-head">
-                    <strong>Estrutura</strong>
-                    <span>Coordenador, equipe e cargo</span>
-                  </div>
-                  <div class="form-grid form-grid--three">
-                    <label class="form-field">
-                      <span>Coordenador</span>
-                      <div class="select-cargo">
-                        <select
-                          id="coordenador"
-                          name="coordenador"
-                          required
-                        ></select>
-                      </div>
-                    </label>
-
-                    <label class="form-field">
-                      <span>Equipe</span>
-                      <div class="select-cargo">
-                        <select id="equipe" name="equipe" required></select>
-                      </div>
-                    </label>
-
-                    <label class="form-field">
-                      <span>Cargo</span>
-                      <div class="select-cargo">
-                        <select id="cargo" name="cargo" required>
-                          <option value="">Selecione o cargo</option>
-                          <option value="Gerente">Gerente</option>
-                          <option value="Coordenador">Coordenador</option>
-                          <option value="Analista">Analista</option>
-                          <option value="Assistente">Assistente</option>
-                          <option value="Auxiliar">Auxiliar</option>
-                          <option value="Estagiário">Estagiário</option>
-                        </select>
-                      </div>
-                    </label>
-                  </div>
-                </section>
-
-                <section class="form-usuario__section">
-                  <div class="form-usuario__section-head">
                     <strong>Segurança</strong>
                     <span>Senha inicial e confirmação</span>
                   </div>
@@ -321,6 +280,46 @@
                     <span>Defina o nível de permissão deste colaborador</span>
                   </div>
                   <div id="roleBox"></div>
+                </section>
+
+                <section class="form-usuario__section">
+                  <div class="form-usuario__section-head">
+                    <strong>Estrutura</strong>
+                    <span id="estruturaHint">Coordenador, equipe e cargo</span>
+                  </div>
+                  <div class="form-grid form-grid--three">
+                    <label class="form-field">
+                      <span>Coordenador</span>
+                      <div class="select-cargo">
+                        <select
+                          id="coordenador"
+                          name="coordenador"
+                        ></select>
+                      </div>
+                    </label>
+
+                    <label class="form-field">
+                      <span>Equipe</span>
+                      <div class="select-cargo">
+                        <select id="equipe" name="equipe"></select>
+                      </div>
+                    </label>
+
+                    <label class="form-field">
+                      <span>Cargo</span>
+                      <div class="select-cargo">
+                        <select id="cargo" name="cargo" required>
+                          <option value="">Selecione o cargo</option>
+                          <option value="Gerente">Gerente</option>
+                          <option value="Coordenador">Coordenador</option>
+                          <option value="Analista">Analista</option>
+                          <option value="Assistente">Assistente</option>
+                          <option value="Auxiliar">Auxiliar</option>
+                          <option value="Estagiário">Estagiário</option>
+                        </select>
+                      </div>
+                    </label>
+                  </div>
                 </section>
 
                 <div class="acoes-form">
@@ -447,6 +446,6 @@
     </div>
 
     <!-- Script principal da página -->
-    <script src="./contadmin.js"></script>
+    <script src="./contadmin.js?v=20260521-01"></script>
   </body>
 </html>

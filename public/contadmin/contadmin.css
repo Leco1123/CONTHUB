@@ -1991,6 +1991,19 @@ button.btn-acao {
   color-scheme: dark;
 }
 
+.form-usuario select option {
+  background: #141b28;
+  color: #eef4fb;
+}
+
+.form-usuario select option[value=""] {
+  color: rgba(238, 244, 251, 0.72);
+}
+
+.form-usuario select:disabled option {
+  color: rgba(238, 244, 251, 0.68);
+}
+
 .muted-inline {
   color: rgba(234, 238, 243, 0.58);
   font-size: 11px;

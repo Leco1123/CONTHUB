@@ -19,11 +19,6 @@
     "equipe": "Equipe Matheus",
     "accessProfile": "operacional"
   },
-  "15": {
-    "coordenador": "Cleide",
-    "equipe": "Equipe Cleide",
-    "accessProfile": "operacional"
-  },
   "16": {
     "coordenador": "Matheus",
     "equipe": "Equipe Matheus",
@@ -37,11 +32,6 @@
   "19": {
     "coordenador": "Leticia",
     "equipe": "Equipe Leticia",
-    "accessProfile": "operacional"
-  },
-  "20": {
-    "coordenador": "Cleide",
-    "equipe": "Equipe Cleide",
     "accessProfile": "operacional"
   },
   "21": {
@@ -84,19 +74,9 @@
     "equipe": "Equipe Leticia",
     "accessProfile": "operacional"
   },
-  "32": {
-    "coordenador": "Cleide",
-    "equipe": "Equipe Cleide",
-    "accessProfile": "operacional"
-  },
   "ana.mascarenhas@franco-rnc.com.br": {
     "coordenador": "Marcos",
     "equipe": "Equipe Marcos",
-    "accessProfile": "operacional"
-  },
-  "thaina.candido@franco-rnc.com.br": {
-    "coordenador": "Cleide",
-    "equipe": "Equipe Cleide",
     "accessProfile": "operacional"
   },
   "tainara.jesus@franco-rnc.com.br": {
@@ -112,16 +92,6 @@
   "jadielson.filho@franco-rnc.com.br": {
     "coordenador": "Marcos",
     "equipe": "Equipe Marcos",
-    "accessProfile": "operacional"
-  },
-  "igor.oliveira@franco-rnc.com.br": {
-    "coordenador": "Cleide",
-    "equipe": "Equipe Cleide",
-    "accessProfile": "operacional"
-  },
-  "danielle.costa@franco-rnc.com.br": {
-    "coordenador": "Cleide",
-    "equipe": "Equipe Cleide",
     "accessProfile": "operacional"
   },
   "rene.silva@franco-rnc.com.br": {

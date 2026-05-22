@@ -17,6 +17,7 @@
     pollTimer: null,
     refreshPromise: null,
     visibilityBound: false,
+    nextActionsFeed: null,
   };
   const dashboardQuotaModalState = {
     open: false,
@@ -51,6 +52,7 @@
     outro: "Outro valor",
   };
   const TICKETS_API_URL = `${API_BASE}/api/dashboard/tickets`;
+  const CLICKUP_NEXT_ACTIONS_API_URL = `${API_BASE}/api/dashboard/clickup-next-actions`;
   const TICKETS_API_SHEET_KEY = "dashboard-chamados";
   const TICKETS_API_SHEET_URL = `${API_BASE}/api/sheets/${TICKETS_API_SHEET_KEY}`;
   const TICKETS_POLL_INTERVAL_MS = 10000;
@@ -73,9 +75,12 @@
   const CF_FEED_PREFIX = "conthub:dashboard:contflow_feed:";
   const NEXT_ACTIONS_PREFIX = "conthub:dashboard:nextActions:";
   const TICKETS_PREFIX = "conthub:dashboard:tickets:";
+  const NEXT_ACTIONS_CLICKUP_PREFIX = "conthub:dashboard:clickup-next-actions:v3:";
 
-  const DEFAULT_MANUAL = ["", "", "", ""];
-  const DEFAULT_CHECKS = [false, false, false, false, false, false];
+  const NEXT_ACTIONS_MANUAL_LIMIT = 3;
+  const NEXT_ACTIONS_CLICKUP_LIMIT = 3;
+  const DEFAULT_MANUAL = Array.from({ length: NEXT_ACTIONS_MANUAL_LIMIT }, () => "");
+  const DEFAULT_CHECKS = Array.from({ length: NEXT_ACTIONS_MANUAL_LIMIT }, () => false);
   const STATUS_LABEL = {
     online: "ONLINE",
     dev: "DEV",
@@ -363,6 +368,21 @@
     }
   }
 
+  async function logoutDashboard() {
+    try {
+      await apiFetch("/api/auth/logout", { method: "POST" });
+    } catch (_) {}
+
+    AUTH_USER = null;
+
+    try {
+      localStorage.removeItem("conthub_user");
+      localStorage.removeItem("conthub_current_user_id");
+    } catch (_) {}
+
+    goto("../login/login.html");
+  }
+
   // ----------------------------
   // MODULES (BANCO)
   // ----------------------------
@@ -487,6 +507,7 @@
 
       const blocked = !canAccessModule(u, { id: moduleId, access: MODULE_ACCESS_MAP[moduleId] });
       card.setAttribute("data-noaccess", blocked ? "true" : "false");
+      card.hidden = blocked;
 
       if (blocked) {
         card.classList.add("is-disabled");
@@ -512,17 +533,136 @@
       return { manual: [...DEFAULT_MANUAL], checks: [...DEFAULT_CHECKS] };
     }
 
-    const manual = Array.isArray(data.manual) ? data.manual.slice(0, 6) : [...DEFAULT_MANUAL];
-    while (manual.length < 6) manual.push("");
+    const manual = Array.isArray(data.manual) ? data.manual.slice(0, NEXT_ACTIONS_MANUAL_LIMIT) : [...DEFAULT_MANUAL];
+    while (manual.length < NEXT_ACTIONS_MANUAL_LIMIT) manual.push("");
 
-    const checks = Array.isArray(data.checks) ? data.checks.slice(0, 6) : [...DEFAULT_CHECKS];
-    while (checks.length < 6) checks.push(false);
+    const checks = Array.isArray(data.checks) ? data.checks.slice(0, NEXT_ACTIONS_MANUAL_LIMIT) : [...DEFAULT_CHECKS];
+    while (checks.length < NEXT_ACTIONS_MANUAL_LIMIT) checks.push(false);
 
     return { manual, checks };
   }
 
   function saveNextActionsStateLegacy(state) {
     localStorage.setItem(nextActionsStorageKeyLegacy(), JSON.stringify(state));
+  }
+
+  function deriveNextActionTitle(ticket) {
+    const directTitle = String(
+      ticket?.name ||
+      ticket?.title ||
+      ticket?.taskName ||
+      ""
+    ).trim();
+    if (directTitle) return directTitle;
+
+    const descriptionFirstLine = String(ticket?.description || "")
+      .split(/\r?\n/)
+      .map((line) => String(line || "").trim())
+      .find(Boolean);
+    if (descriptionFirstLine) return descriptionFirstLine;
+
+    return "Tarefa sem título";
+  }
+
+  function normalizeNextActionTicket(ticket) {
+    const row = ticket && typeof ticket === "object" ? ticket : {};
+    const assigneeNames = Array.isArray(row.assigneeNames)
+      ? row.assigneeNames.map((item) => String(item || "").trim()).filter(Boolean)
+      : [];
+    const assigneeEmails = Array.isArray(row.assigneeEmails)
+      ? row.assigneeEmails.map((item) => String(item || "").trim().toLowerCase()).filter(Boolean)
+      : [];
+    const fallbackAssignee = String(row.assigneeName || row.assignee || "").trim();
+    if (fallbackAssignee && !assigneeNames.includes(fallbackAssignee)) {
+      assigneeNames.unshift(fallbackAssignee);
+    }
+    return {
+      id: String(row.id || row.taskId || "").trim(),
+      name: deriveNextActionTitle(row),
+      description: String(row.description || row.details || "").trim(),
+      status: String(row.status || "").trim(),
+      priority: String(row.priority || row.urgencia || "").trim().toLowerCase(),
+      assigneeName: assigneeNames[0] || fallbackAssignee,
+      assigneeNames,
+      assigneeEmails,
+      assigneeLabel: String(row.assigneeLabel || "").trim(),
+      assigneeDisplay: String(row.assigneeDisplay || "").trim(),
+      assignedToSessionUser: Boolean(row.assignedToSessionUser),
+      responsibleCount: Number(row.responsibleCount || 0) || 0,
+      dueAt: String(row.dueAt || row.due_date || "").trim(),
+      createdAt: String(row.createdAt || row.date_created || "").trim(),
+      updatedAt: String(row.updatedAt || row.date_updated || "").trim(),
+      url: String(row.url || row.link || "").trim(),
+      listName: String(row.listName || row.list || "").trim(),
+      folderName: String(row.folderName || row.folder || "").trim(),
+      spaceName: String(row.spaceName || row.space || "").trim(),
+      solicitanteNome: String(row.solicitanteNome || row.requesterName || "").trim(),
+      solicitanteEmail: String(row.solicitanteEmail || row.requesterEmail || "").trim(),
+    };
+  }
+
+  function nextActionsClickupStorageKeyLegacy() {
+    return NEXT_ACTIONS_CLICKUP_PREFIX + getUserKey();
+  }
+
+  function loadNextActionsClickupLegacy() {
+    const raw = localStorage.getItem(nextActionsClickupStorageKeyLegacy());
+    const parsed = safeJSONParse(raw, null);
+    if (!parsed || typeof parsed !== "object") {
+      return { savedAt: "", data: [], configured: false };
+    }
+    return {
+      savedAt: String(parsed.savedAt || ""),
+      configured: Boolean(parsed.configured),
+      data: Array.isArray(parsed.data) ? parsed.data.map(normalizeNextActionTicket) : [],
+      debug: parsed.debug && typeof parsed.debug === "object" ? parsed.debug : null,
+    };
+  }
+
+  function saveNextActionsClickupLegacy(payload) {
+    localStorage.setItem(nextActionsClickupStorageKeyLegacy(), JSON.stringify({
+      savedAt: String(payload?.savedAt || ""),
+      configured: Boolean(payload?.configured),
+      data: Array.isArray(payload?.data) ? payload.data.map(normalizeNextActionTicket) : [],
+      debug: payload?.debug && typeof payload.debug === "object" ? payload.debug : null,
+    }));
+  }
+
+  async function loadNextActionsClickupFeed({ force = false } = {}) {
+    if (!force && dashboardTicketsState.nextActionsFeed) {
+      return dashboardTicketsState.nextActionsFeed;
+    }
+
+    try {
+      const bust = `ts=${Date.now()}`;
+      const sep = CLICKUP_NEXT_ACTIONS_API_URL.includes("?") ? "&" : "?";
+      const resp = await apiFetch(`${CLICKUP_NEXT_ACTIONS_API_URL}${sep}${bust}`, {
+        method: "GET",
+        cache: "no-store",
+      });
+      const data = await resp?.json().catch(() => null);
+      if (!resp || !resp.ok) {
+        throw new Error(data?.error || "Falha ao carregar próximas ações do ClickUp.");
+      }
+
+      const payload = {
+        savedAt: String(data?.savedAt || new Date().toISOString()),
+        configured: true,
+        data: Array.isArray(data?.data) ? data.data.map(normalizeNextActionTicket) : [],
+        debug: data?.debug && typeof data.debug === "object" ? data.debug : null,
+      };
+      dashboardTicketsState.nextActionsFeed = payload;
+      saveNextActionsClickupLegacy(payload);
+      return payload;
+    } catch (err) {
+      const fallback = dashboardTicketsState.nextActionsFeed || {
+        savedAt: "",
+        configured: false,
+        data: [],
+      };
+      dashboardTicketsState.nextActionsFeed = fallback;
+      return fallback;
+    }
   }
 
   async function getNextActionsState({ force = false } = {}) {
@@ -536,11 +676,11 @@
 
       const data = await resp.json().catch(() => null);
 
-      const manual = Array.isArray(data?.manual) ? data.manual.slice(0, 6) : [...DEFAULT_MANUAL];
-      while (manual.length < 6) manual.push("");
+      const manual = Array.isArray(data?.manual) ? data.manual.slice(0, NEXT_ACTIONS_MANUAL_LIMIT) : [...DEFAULT_MANUAL];
+      while (manual.length < NEXT_ACTIONS_MANUAL_LIMIT) manual.push("");
 
-      const checks = Array.isArray(data?.checks) ? data.checks.slice(0, 6) : [...DEFAULT_CHECKS];
-      while (checks.length < 6) checks.push(false);
+      const checks = Array.isArray(data?.checks) ? data.checks.slice(0, NEXT_ACTIONS_MANUAL_LIMIT) : [...DEFAULT_CHECKS];
+      while (checks.length < NEXT_ACTIONS_MANUAL_LIMIT) checks.push(false);
 
       nextActionsStateCache = { manual, checks };
       return cloneState(nextActionsStateCache);
@@ -552,12 +692,12 @@
 
   async function saveNextActionsState(state) {
     const normalized = {
-      manual: Array.isArray(state?.manual) ? state.manual.slice(0, 6) : [...DEFAULT_MANUAL],
-      checks: Array.isArray(state?.checks) ? state.checks.slice(0, 6) : [...DEFAULT_CHECKS],
+      manual: Array.isArray(state?.manual) ? state.manual.slice(0, NEXT_ACTIONS_MANUAL_LIMIT) : [...DEFAULT_MANUAL],
+      checks: Array.isArray(state?.checks) ? state.checks.slice(0, NEXT_ACTIONS_MANUAL_LIMIT) : [...DEFAULT_CHECKS],
     };
 
-    while (normalized.manual.length < 6) normalized.manual.push("");
-    while (normalized.checks.length < 6) normalized.checks.push(false);
+    while (normalized.manual.length < NEXT_ACTIONS_MANUAL_LIMIT) normalized.manual.push("");
+    while (normalized.checks.length < NEXT_ACTIONS_MANUAL_LIMIT) normalized.checks.push(false);
 
     nextActionsStateCache = cloneState(normalized);
     saveNextActionsStateLegacy(normalized);
@@ -567,8 +707,8 @@
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          manual: normalized.manual.slice(0, 6),
-          checks: normalized.checks.slice(0, 6),
+          manual: normalized.manual.slice(0, NEXT_ACTIONS_MANUAL_LIMIT),
+          checks: normalized.checks.slice(0, NEXT_ACTIONS_MANUAL_LIMIT),
         }),
       });
 
@@ -577,6 +717,230 @@
     } catch (e) {
       return false;
     }
+  }
+
+  function getCurrentUserIdentity() {
+    const user = getSessionUser();
+    const email = normalizeSearchText(user?.email || "");
+    const emailLocal = email.includes("@") ? email.split("@")[0] : email;
+    return {
+      name: normalizeSearchText(user?.nome || user?.name || ""),
+      email,
+      emailLocal,
+    };
+  }
+
+  function tokenizeIdentity(value) {
+    return normalizeSearchText(value)
+      .replace(/[^\w]+/g, " ")
+      .split(/\s+/)
+      .map((item) => item.trim())
+      .filter((item) => item.length >= 2);
+  }
+
+  function getIdentityInitials(tokens) {
+    return (Array.isArray(tokens) ? tokens : [])
+      .map((token) => String(token || "").trim().charAt(0))
+      .filter(Boolean)
+      .join("");
+  }
+
+  function identitiesMatch(left, right) {
+    const a = normalizeSearchText(left);
+    const b = normalizeSearchText(right);
+    if (!a || !b) return false;
+    if (a === b) return true;
+    if (a.includes(b) || b.includes(a)) return true;
+
+    const tokensA = tokenizeIdentity(a);
+    const tokensB = tokenizeIdentity(b);
+    if (!tokensA.length || !tokensB.length) return false;
+    const initialsA = getIdentityInitials(tokensA);
+    const initialsB = getIdentityInitials(tokensB);
+    if (initialsA && initialsB && (initialsA === initialsB || initialsA.includes(initialsB) || initialsB.includes(initialsA))) {
+      return true;
+    }
+
+    const shorter = tokensA.length <= tokensB.length ? tokensA : tokensB;
+    const longer = tokensA.length <= tokensB.length ? tokensB : tokensA;
+
+    let startIndex = 0;
+    for (const shortToken of shorter) {
+      let matched = false;
+      for (let idx = startIndex; idx < longer.length; idx += 1) {
+        const longToken = longer[idx];
+        if (
+          longToken === shortToken ||
+          longToken.startsWith(shortToken) ||
+          shortToken.startsWith(longToken)
+        ) {
+          matched = true;
+          startIndex = idx + 1;
+          break;
+        }
+      }
+      if (!matched) return false;
+    }
+
+    return true;
+  }
+
+  function isTicketAssignedToCurrentUser(ticket) {
+    const identity = getCurrentUserIdentity();
+    const assignees = Array.isArray(ticket?.assigneeNames) && ticket.assigneeNames.length
+      ? ticket.assigneeNames
+      : [ticket?.assigneeName || ""];
+    const assigneeEmails = Array.isArray(ticket?.assigneeEmails)
+      ? ticket.assigneeEmails.map((item) => String(item || "").trim().toLowerCase()).filter(Boolean)
+      : [];
+
+    if (identity.email && assigneeEmails.includes(identity.email)) return true;
+    if (identity.name && assignees.some((item) => identitiesMatch(item, identity.name))) return true;
+    if (identity.emailLocal && assignees.some((item) => identitiesMatch(item, identity.emailLocal))) return true;
+    return false;
+  }
+
+  function getTicketRelationScore(ticket) {
+    const identity = getCurrentUserIdentity();
+    const assignees = Array.isArray(ticket?.assigneeNames) && ticket.assigneeNames.length
+      ? ticket.assigneeNames
+      : [ticket?.assigneeName || ""];
+    const assigneeEmails = Array.isArray(ticket?.assigneeEmails)
+      ? ticket.assigneeEmails.map((item) => String(item || "").trim().toLowerCase()).filter(Boolean)
+      : [];
+    const requesterName = normalizeSearchText(ticket?.solicitanteNome || "");
+    const requesterEmail = normalizeSearchText(ticket?.solicitanteEmail || "");
+
+    if (identity.email && assigneeEmails.includes(identity.email)) return 3;
+    if (identity.name && assignees.some((item) => identitiesMatch(item, identity.name))) return 3;
+    if (identity.emailLocal && assignees.some((item) => identitiesMatch(item, identity.emailLocal))) return 3;
+    if (identity.email && requesterEmail && requesterEmail === identity.email) return 2;
+    if (identity.name && requesterName && requesterName === identity.name) return 1;
+    return 0;
+  }
+
+  function getNextActionAssigneeLabel(ticket) {
+    if (String(ticket?.assigneeDisplay || "").trim()) {
+      return String(ticket.assigneeDisplay).trim();
+    }
+    const emails = Array.isArray(ticket?.assigneeEmails)
+      ? ticket.assigneeEmails.map((item) => String(item || "").trim().toLowerCase()).filter(Boolean)
+      : [];
+    const names = Array.isArray(ticket?.assigneeNames) ? ticket.assigneeNames.filter(Boolean) : [];
+    const responsibleCount =
+      Number(ticket?.responsibleCount || 0) ||
+      Math.max(emails.length, names.length, 1);
+    if (responsibleCount > 1) return `Você + ${responsibleCount - 1}`;
+    return "Você";
+  }
+
+  function ticketPriorityRank(priority) {
+    switch (String(priority || "").trim().toLowerCase()) {
+      case "critica":
+        return 0;
+      case "alta":
+        return 1;
+      case "media":
+        return 2;
+      default:
+        return 3;
+    }
+  }
+
+  function ticketStatusRank(status) {
+    switch (String(status || "").trim().toLowerCase()) {
+      case "aberto":
+        return 0;
+      case "em_andamento":
+        return 1;
+      case "aguardando":
+        return 2;
+      default:
+        return 3;
+    }
+  }
+
+  function getTicketDueTime(ticket) {
+    const time = new Date(ticket?.dueAt || "").getTime();
+    return Number.isFinite(time) && time > 0 ? time : Number.MAX_SAFE_INTEGER;
+  }
+
+  function ticketPriorityTone(priority) {
+    switch (String(priority || "").trim().toLowerCase()) {
+      case "critica":
+        return "danger";
+      case "alta":
+        return "warn";
+      case "baixa":
+        return "soft";
+      default:
+        return "ok";
+    }
+  }
+
+  function ticketStatusTone(status) {
+    switch (String(status || "").trim().toLowerCase()) {
+      case "aberto":
+        return "danger";
+      case "em_andamento":
+        return "warn";
+      case "aguardando":
+        return "soft";
+      default:
+        return "ok";
+    }
+  }
+
+  function getClickupNextActionItems(limit = NEXT_ACTIONS_CLICKUP_LIMIT) {
+    const items = (Array.isArray(dashboardTicketsState.nextActionsFeed?.data) ? dashboardTicketsState.nextActionsFeed.data : [])
+      .filter((ticket) => String(ticket?.status || "").trim().toLowerCase() !== "concluido")
+      .map((ticket) => ({
+        ...ticket,
+        __dueTime: getTicketDueTime(ticket),
+      }))
+      .sort((a, b) => {
+        if (ticketStatusRank(a.status) !== ticketStatusRank(b.status)) {
+          return ticketStatusRank(a.status) - ticketStatusRank(b.status);
+        }
+        if (ticketPriorityRank(a.priority) !== ticketPriorityRank(b.priority)) {
+          return ticketPriorityRank(a.priority) - ticketPriorityRank(b.priority);
+        }
+        if (a.__dueTime !== b.__dueTime) return a.__dueTime - b.__dueTime;
+        return new Date(b.updatedAt || b.createdAt || 0).getTime() - new Date(a.updatedAt || a.createdAt || 0).getTime();
+      });
+
+    return items.slice(0, limit);
+  }
+
+  function renderNextActionsClickupMeta(openCount, selectedCount) {
+    const el = document.getElementById("nextActionsClickupMeta");
+    if (!el) return;
+    const debug = dashboardTicketsState.nextActionsFeed?.debug || null;
+
+    if (!dashboardTicketsState.nextActionsFeed) {
+      el.textContent = "ClickUp sincronizando...";
+      el.dataset.tone = "soft";
+      return;
+    }
+
+    if (dashboardTicketsState.nextActionsFeed.configured === false && !openCount) {
+      el.textContent = "ClickUp sem cache disponível";
+      el.dataset.tone = "soft";
+      return;
+    }
+
+    if (!openCount) {
+      el.textContent = "ClickUp sem pendências abertas";
+      el.dataset.tone = "ok";
+      return;
+    }
+
+    const savedAt = dashboardTicketsState.nextActionsFeed?.savedAt
+      ? formatRelativeOrDate(dashboardTicketsState.nextActionsFeed.savedAt)
+      : "";
+    const sessionSuffix = debug?.sessionEmail ? ` • ${debug.sessionEmail}` : "";
+    el.textContent = `ClickUp: ${selectedCount}/${openCount} ações${savedAt ? ` • ${savedAt}` : ""}${sessionSuffix}`;
+    el.dataset.tone = openCount > 6 ? "warn" : "ok";
   }
 
   // ----------------------------
@@ -588,7 +952,7 @@
 
   function normalizeAccessProfile(value) {
     const normalized = String(value || "").trim().toLowerCase();
-    return ["ti", "gerencial", "coordenacao", "operacional", "consulta"].includes(normalized)
+    return ["ti", "gerencial", "coordenacao", "operacional", "consulta", "comercial"].includes(normalized)
       ? normalized
       : "operacional";
   }
@@ -628,6 +992,7 @@
     const rules = normalizeModuleAccess(module?.access);
 
     if (role === "ti" || accessProfile === "ti") return true;
+    if (accessProfile === "comercial") return moduleId === "dashboard" || moduleId === "contcomercial";
     if (moduleId === "contadmin") return role === "admin" || accessProfile === "gerencial";
     if (moduleId === "contanalytics") return ["gerencial", "coordenacao"].includes(accessProfile) || role === "admin";
     if (!rules.length || rules.includes("user") || rules.includes("user+admin")) return true;
@@ -653,7 +1018,9 @@
         { key: "status", label: "Status" },
         { key: "solicitanteNome", label: "Solicitante" },
         { key: "solicitanteEmail", label: "Email" },
+        { key: "assigneeName", label: "Responsável" },
         { key: "imagem", label: "Imagem" },
+        { key: "dueAt", label: "Prazo" },
         { key: "createdAt", label: "Criado em" },
         { key: "updatedAt", label: "Atualizado em" },
       ],
@@ -677,10 +1044,12 @@
       : "aberto";
     const solicitanteNome = String(raw.solicitanteNome || raw.requesterName || "").trim().slice(0, 160);
     const solicitanteEmail = String(raw.solicitanteEmail || raw.requesterEmail || "").trim().slice(0, 220);
+    const assigneeName = String(raw.assigneeName || raw.assignee || "").trim().slice(0, 160);
     const imagemRaw = String(raw.imagem || raw.imageDataUrl || "").trim();
     const imagem = /^(data:image\/|https?:\/\/)/i.test(imagemRaw)
       ? imagemRaw
       : "";
+    const dueAt = String(raw.dueAt || raw.dueDate || "").trim();
     const createdAt = String(raw.createdAt || raw.abertoEm || new Date().toISOString()).trim();
     const updatedAt = String(raw.updatedAt || createdAt || new Date().toISOString()).trim();
 
@@ -692,7 +1061,9 @@
       status,
       solicitanteNome,
       solicitanteEmail,
+      assigneeName,
       imagem,
+      dueAt,
       createdAt,
       updatedAt,
     };
@@ -766,7 +1137,9 @@
         status: row.status,
         solicitanteNome: row.solicitanteNome,
         solicitanteEmail: row.solicitanteEmail,
+        assigneeName: row.assigneeName,
         imagem: row.imagem,
+        dueAt: row.dueAt,
         createdAt: row.createdAt,
         updatedAt: row.updatedAt,
       })),
@@ -822,6 +1195,7 @@
         });
         dashboardTicketsState.doc = doc;
         saveTicketsStateLegacy(doc);
+        void saveTicketsMirrorSnapshot(doc);
         return doc;
       }
 
@@ -868,6 +1242,16 @@
       saveTicketsStateLegacy(payload);
       dashboardTicketsState.doc = payload;
       return payload;
+    }
+  }
+
+  async function saveTicketsMirrorSnapshot(doc) {
+    try {
+      await saveTicketsDocument(doc);
+      return true;
+    } catch (err) {
+      console.warn("Falha ao espelhar chamados no ContHub:", err);
+      return false;
     }
   }
 
@@ -1257,6 +1641,7 @@
     }
 
     const run = (async () => {
+      await loadNextActionsClickupFeed({ force });
       const doc = await loadTicketsDocument();
       const signature = getTicketsSignature(doc);
       const changed = force || dashboardTicketsState.lastSignature !== signature;
@@ -1274,8 +1659,10 @@
       if (changed) {
         renderTickets();
         renderTiTickets();
+        await renderNextActions();
       } else {
         renderTiTickets();
+        await renderNextActions();
       }
     })();
 
@@ -1309,7 +1696,13 @@
     };
 
     try {
-      await createTicketViaApi(ticketPayload);
+      const createdTicket = await createTicketViaApi(ticketPayload);
+      const currentDoc = normalizeTicketsDocument(dashboardTicketsState.doc || emptyTicketsDocument());
+      currentDoc.data = [
+        normalizeTicketRecord(createdTicket),
+        ...currentDoc.data.filter((ticket) => ticket.id !== createdTicket?.id),
+      ].filter(Boolean);
+      await saveTicketsMirrorSnapshot(currentDoc);
       clearTicketComposer();
       await refreshTickets({ force: true });
       return;
@@ -1338,6 +1731,9 @@
   async function clearClosedTickets() {
     try {
       await clearClosedTicketsViaApi();
+      const currentDoc = normalizeTicketsDocument(dashboardTicketsState.doc || emptyTicketsDocument());
+      currentDoc.data = currentDoc.data.filter((ticket) => ticket.status !== "concluido");
+      await saveTicketsMirrorSnapshot(currentDoc);
       await refreshTickets({ force: true });
       return;
     } catch (err) {
@@ -1361,6 +1757,15 @@
   async function updateTiTicketStatus(ticketId, nextStatus) {
     try {
       await updateTicketStatusViaApi(ticketId, nextStatus);
+      const currentDoc = normalizeTicketsDocument(dashboardTicketsState.doc || emptyTicketsDocument());
+      const target = currentDoc.data.find((ticket) => ticket.id === ticketId);
+      if (target) {
+        target.status = TICKET_STATUSES.includes(String(nextStatus || "").trim().toLowerCase())
+          ? String(nextStatus || "").trim().toLowerCase()
+          : target.status;
+        target.updatedAt = new Date().toISOString();
+        await saveTicketsMirrorSnapshot(currentDoc);
+      }
       await refreshTickets({ force: true });
       return;
     } catch (err) {
@@ -1385,6 +1790,9 @@
   async function deleteTiTicket(ticketId) {
     try {
       await deleteTicketViaApi(ticketId);
+      const currentDoc = normalizeTicketsDocument(dashboardTicketsState.doc || emptyTicketsDocument());
+      currentDoc.data = currentDoc.data.filter((ticket) => ticket.id !== ticketId);
+      await saveTicketsMirrorSnapshot(currentDoc);
       await refreshTickets({ force: true });
       return;
     } catch (err) {
@@ -2560,10 +2968,72 @@
     if (elInitials) elInitials.textContent = initials;
   }
 
+  function accessProfileLabel(profile) {
+    switch (normalizeAccessProfile(profile)) {
+      case "ti":
+        return "TI";
+      case "gerencial":
+        return "Gerencial";
+      case "coordenacao":
+        return "Coordenação";
+      case "consulta":
+        return "Consulta";
+      case "comercial":
+        return "Comercial";
+      default:
+        return "Operacional";
+    }
+  }
+
+  function applyDashboardProfileMode() {
+    const profile = getAccessProfile(getSessionUser());
+    const isCommercial = profile === "comercial";
+    document.body.classList.toggle("dashboard--commercial", isCommercial);
+
+    const roleEl = document.getElementById("userRole");
+    if (roleEl) {
+      roleEl.textContent = isCommercial ? "Comercial" : String(getSessionUser()?.role || "user").toUpperCase();
+    }
+
+    const heroTitle = document.querySelector(".exactCard--overview h1");
+    const heroText = document.getElementById("heroText");
+    const goContComercialBtn = document.getElementById("btnGoContComercial");
+    const goChamadosBtn = document.getElementById("btnGoChamados");
+    const commercialOnlyBlocks = Array.from(document.querySelectorAll("[data-commercial-only]"));
+
+    if (goContComercialBtn) {
+      goContComercialBtn.hidden = false;
+    }
+
+    commercialOnlyBlocks.forEach((block) => {
+      block.hidden = !isCommercial;
+    });
+
+    if (!isCommercial) return;
+
+    if (heroTitle) {
+      heroTitle.textContent = "Acompanhe a frente comercial com foco, leveza e direção.";
+    }
+
+    if (heroText) {
+      heroText.textContent =
+        "Seu dashboard ficou intencionalmente mais enxuto para a equipe comercial: entrada rápida, menos ruído e acesso direto ao módulo comercial.";
+    }
+
+    if (goContComercialBtn) {
+      goContComercialBtn.textContent = "Entrar no ContComercial";
+    }
+
+    if (goChamadosBtn) {
+      goChamadosBtn.hidden = true;
+    }
+  }
+
   function fillModulesStats() {
     const store = MODULES_MAP || {};
     const moduleIds = [
       "dashboard",
+      "contcomercial",
       "contflow",
       "contanalytics",
       "contdocs",
@@ -2634,6 +3104,17 @@
         panel.scrollIntoView({ behavior: "smooth", block: "start" });
       });
     }
+
+    const btnLogout = document.querySelector("[data-logout]");
+    if (btnLogout && !btnLogout.__bound) {
+      btnLogout.__bound = true;
+      btnLogout.addEventListener("click", async (e) => {
+        e.preventDefault();
+        btnLogout.disabled = true;
+        btnLogout.textContent = "Saindo...";
+        await logoutDashboard();
+      });
+    }
   }
 
   async function renderQuickAutoCard() {
@@ -2685,10 +3166,67 @@
     if (!el) return;
 
     const state = await getNextActionsState();
+    const clickupItems = getClickupNextActionItems(NEXT_ACTIONS_CLICKUP_LIMIT);
+    const allOpenTickets = (Array.isArray(dashboardTicketsState.nextActionsFeed?.data) ? dashboardTicketsState.nextActionsFeed.data : [])
+      .filter((ticket) => String(ticket?.status || "").trim().toLowerCase() !== "concluido");
+    const clickupDebug = dashboardTicketsState.nextActionsFeed?.debug || null;
+    renderNextActionsClickupMeta(allOpenTickets.length, clickupItems.length);
 
-    el.innerHTML = "";
+    const clickupHtml = !dashboardTicketsState.nextActionsFeed
+      ? `<div class="todo__empty">Sincronizando tarefas do ClickUp para montar suas próximas ações.</div>`
+      : clickupItems.length
+        ? `<div class="todo__autoList">
+            ${clickupItems.map((ticket) => {
+              const relationLabel = "Atribuído a você";
+              const whenLabel = ticket?.dueAt ? `Prazo ${formatRelativeOrDate(ticket.dueAt)}` : "Sem prazo definido";
+              return `
+                <article class="todo__auto">
+                  <div class="todo__autoHead">
+                    <div class="todo__autoTitleBlock">
+                      <div class="todo__autoTitle">${escapeHTML(deriveNextActionTitle(ticket))}</div>
+                      <div class="todo__autoSummary">${escapeHTML(String(ticket.description || "").trim() || "Sem descrição adicional nesta ação do ClickUp.")}</div>
+                    </div>
+                    <span class="todo__pill" data-tone="${ticketPriorityTone(ticket.priority)}">${escapeHTML(ticketPriorityLabel(ticket.priority))}</span>
+                  </div>
+                  <div class="todo__autoMeta">
+                    <span class="todo__pill" data-tone="${ticketStatusTone(ticket.status)}">${escapeHTML(String(ticket.status || "Sem status"))}</span>
+                    <span class="todo__pill" data-tone="soft">${escapeHTML(ticket.listName || "Sem lista")}</span>
+                    <span class="todo__pill" data-tone="soft">${escapeHTML(relationLabel)}</span>
+                    <span class="todo__pill" data-tone="${ticket?.dueAt ? "warn" : "soft"}">${escapeHTML(whenLabel)}</span>
+                    <span class="todo__pill" data-tone="soft">${escapeHTML(getNextActionAssigneeLabel(ticket))}</span>
+                  </div>
+                </article>
+              `;
+            }).join("")}
+          </div>`
+        : `<div class="todo__empty">Nenhuma tarefa do ClickUp está atribuída a você neste momento. As ações do painel continuam logo abaixo.</div>`;
 
-    for (let i = 0; i < 6; i++) {
+    const clickupDebugHtml = clickupDebug
+      ? `<div class="todo__sectionHint" style="margin-top:6px;opacity:.82;">Sessão: ${escapeHTML(String(clickupDebug.sessionEmail || clickupDebug.sessionName || "--"))} • ClickUp lidas: ${escapeHTML(String(clickupDebug.fetchedCount ?? 0))} • Compatíveis: ${escapeHTML(String(clickupDebug.matchedCount ?? 0))}</div>`
+      : "";
+
+    el.innerHTML = `
+      <section class="todo__section">
+        <div class="todo__sectionHead">
+          <div class="todo__sectionTitle">ClickUp</div>
+          <div class="todo__sectionHint">Somente tarefas atribuídas ao seu nome no ClickUp.</div>
+        </div>
+        ${clickupDebugHtml}
+        ${clickupHtml}
+      </section>
+      <section class="todo__section">
+        <div class="todo__sectionHead">
+          <div class="todo__sectionTitle">Painel</div>
+          <div class="todo__sectionHint">Três ações rápidas do seu painel pessoal.</div>
+        </div>
+        <div class="todo__list" data-manual-list></div>
+      </section>
+    `;
+
+    const manualListEl = el.querySelector("[data-manual-list]");
+    if (!manualListEl) return;
+
+    for (let i = 0; i < NEXT_ACTIONS_MANUAL_LIMIT; i++) {
       const text = String(state.manual[i] || "").trim();
       const checked = Boolean(state.checks[i]);
 
@@ -2711,14 +3249,14 @@
         </button>
       `;
 
-      el.appendChild(row);
+      manualListEl.appendChild(row);
     }
 
     el.onclick = async (e) => {
       const delBtn = e.target.closest("[data-del]");
       if (delBtn) {
         const i = Number(delBtn.getAttribute("data-del"));
-        if (!Number.isFinite(i) || i < 0 || i > 5) return;
+        if (!Number.isFinite(i) || i < 0 || i >= NEXT_ACTIONS_MANUAL_LIMIT) return;
 
         state.manual[i] = "";
         state.checks[i] = false;
@@ -2732,7 +3270,7 @@
       const chk = e.target.closest("[data-check]");
       if (chk) {
         const i = Number(chk.getAttribute("data-check"));
-        if (!Number.isFinite(i) || i < 0 || i > 5) return;
+        if (!Number.isFinite(i) || i < 0 || i >= NEXT_ACTIONS_MANUAL_LIMIT) return;
 
         state.checks[i] = Boolean(chk.checked);
         await saveNextActionsState(state);
@@ -2795,12 +3333,12 @@
     if (btnReset && !btnReset.__bound) {
       btnReset.__bound = true;
       btnReset.addEventListener("click", async () => {
-        const ok = confirm("Resetar as 6 ações manuais e checks deste usuário?");
+        const ok = confirm("Resetar as 3 ações do painel e checks deste usuário?");
         if (!ok) return;
 
         const st = {
-          manual: ["", "", "", "", "", ""],
-          checks: [false, false, false, false, false, false],
+          manual: [...DEFAULT_MANUAL],
+          checks: [...DEFAULT_CHECKS],
         };
 
         await saveNextActionsState(st);
@@ -2816,7 +3354,7 @@
     btn.__bound = true;
     btn.addEventListener("click", async () => {
       const st = await getNextActionsState();
-      st.checks = [false, false, false, false, false, false];
+      st.checks = [...DEFAULT_CHECKS];
       await saveNextActionsState(st);
       await renderNextActions();
     });
@@ -2855,6 +3393,7 @@
     await loadModulesMap();
 
     fillHeroUser();
+    applyDashboardProfileMode();
     syncSidebarFromStore();
     syncShortcutsFromStore();
     applyRoleToSidebar();

@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="ContComercial é o dashboard comercial do ContHub para rotina, relacionamento, pipeline e acompanhamento da equipe."
+    />
+    <title>ContHub • ContComercial</title>
+    <link rel="stylesheet" href="./contcomercial.css?v=20260522-01" />
+  </head>
+  <body>
+    <div class="app dashboardApp commercialDashboardApp">
+      <aside class="sidebar dashboardSidebar">
+        <div class="profileCard">
+          <button
+            class="profileCard__avatar profileCard__avatar--button"
+            id="userInitials"
+            type="button"
+            data-goto="../perfil/perfil.html"
+            aria-label="Abrir meu perfil"
+            title="Abrir meu perfil"
+          >
+            U
+          </button>
+          <div class="profileCard__body">
+            <strong id="userName">Usuário</strong>
+            <span id="userRole">Comercial</span>
+          </div>
+          <div class="profileCard__actions">
+            <div class="profileCard__status">Sessão ativa</div>
+            <div class="profileCard__links">
+              <button class="ghost-btn ghost-btn--sidebar ghost-btn--danger" type="button" data-logout>Sair</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="sidebar__group">
+          <div class="sidebar__label">Atalhos</div>
+          <div class="cards cards--sidebar">
+            <button class="card" type="button" data-module-id="dashboard" data-goto="../dashboard/dashboard.html">
+              <div class="card__icon">🏠</div>
+              <div class="card__body">
+                <div class="card__title">Dashboard</div>
+                <div class="card__sub muted">Visão geral do ContHub</div>
+              </div>
+              <div class="pill" data-pill="dashboard">HOME</div>
+            </button>
+
+            <button class="card is-commercial-active" type="button" data-module-id="contcomercial">
+              <div class="card__icon">💼</div>
+              <div class="card__body">
+                <div class="card__title">ContComercial</div>
+                <div class="card__sub muted">Operação, pipeline e relacionamento</div>
+              </div>
+              <div class="pill" data-pill="contcomercial">CRM</div>
+            </button>
+          </div>
+        </div>
+      </aside>
+
+      <main class="main-shell bi-shell commercialMainShell">
+        <section class="dashboardExact commercialExact">
+          <div class="dashboardExact__column dashboardExact__column--main">
+            <article class="panel exactCard exactCard--sla commercialPulseCard">
+              <div class="panel-head">
+                <div>
+                  <h2>Pulso comercial</h2>
+                  <p>Leitura rápida do dia para o time manter cadência, retorno e visibilidade.</p>
+                </div>
+                <span class="heroChip" id="commercialMonthRef">--/----</span>
+              </div>
+
+              <div class="slaMonthCard commercialMomentCard">
+                <div class="slaMonthCard__top">
+                  <div>
+                    <div class="slaMonthCard__label">Status do turno</div>
+                    <div class="slaMonthCard__status ok" id="commercialShiftStatus">Organizado</div>
+                  </div>
+                  <div class="slaMonthCard__ok" id="commercialShiftChip">COMERCIAL</div>
+                </div>
+
+                <div class="slaMonthCard__copy" id="commercialShiftCopy">
+                  Priorize retorno rápido, proposta em andamento e follow-up sem perder contexto.
+                </div>
+
+                <div class="slaMonthCard__meta">
+                  <div class="slaMonthCard__item">
+                    <span class="slaMonthCard__itemLabel">Hoje</span>
+                    <strong id="commercialToday">--</strong>
+                  </div>
+                  <div class="slaMonthCard__item">
+                    <span class="slaMonthCard__itemLabel">Janela do turno</span>
+                    <strong id="commercialWindow">--</strong>
+                  </div>
+                </div>
+
+                <div class="slaMonthCard__progress">
+                  <div class="slaMonthCard__progressBar" id="commercialDayProgress"></div>
+                </div>
+
+                <div class="slaMonthCard__footer" id="commercialPulseMeta">--</div>
+              </div>
+            </article>
+
+            <article class="panel exactCard exactCard--actions commercialActionsCard">
+              <div class="panel-head">
+                <div>
+                  <h2>Próximas ações</h2>
+                  <p>Checklist manual do comercial para organizar follow-ups, propostas e contatos do dia.</p>
+                </div>
+                <div class="panel__headerActions">
+                  <span class="ghost-chip" id="commercialActionMeta">0 ações preenchidas</span>
+                  <button class="ghost-btn" type="button" id="btnAddNextAction">+ Adicionar ação</button>
+                  <button class="ghost-btn" type="button" id="btnResetNextActions">Reset</button>
+                </div>
+              </div>
+
+              <div class="todo" id="nextActionsList"></div>
+
+              <div class="panel__footer">
+                <button class="ghost-btn" type="button" id="btnResetChecks">Limpar checks</button>
+                <button class="ghost-btn" type="button" data-module-id="dashboard" data-goto="../dashboard/dashboard.html">Voltar ao Dashboard</button>
+              </div>
+            </article>
+          </div>
+
+          <div class="dashboardExact__column dashboardExact__column--side">
+            <article class="panel exactCard exactCard--overview commercialOverviewCard">
+              <span class="page-kicker">Commercial overview</span>
+              <h1>Conduza a frente comercial com clareza, resposta e constância.</h1>
+              <p class="bi-copy" id="heroText">
+                Um painel enxuto para abrir o dia, priorizar contatos, mover o pipeline e manter o ritmo da operação comercial.
+              </p>
+
+              <div class="heroOverview__actions">
+                <button class="accent-btn" type="button" data-module-id="dashboard" data-goto="../dashboard/dashboard.html">Abrir Dashboard</button>
+                <button class="ghost-btn" type="button" id="btnJumpPipeline">Ir para pipeline</button>
+              </div>
+
+              <div class="heroOverview__stats">
+                <div class="summaryCardMini">
+                  <span>Área</span>
+                  <strong>CRM</strong>
+                </div>
+                <div class="summaryCardMini">
+                  <span>Perfil</span>
+                  <strong id="commercialProfileLabel">Comercial</strong>
+                </div>
+                <div class="summaryCardMini">
+                  <span>Foco</span>
+                  <strong id="commercialFocusLabel">Follow-up</strong>
+                </div>
+              </div>
+            </article>
+
+            <article class="panel exactCard commercialPipelineCard" id="commercialPipelinePanel">
+              <div class="panel-head">
+                <div>
+                  <h2>Pipeline comercial</h2>
+                  <p>Estrutura visual da rotina comercial para o time trabalhar em cima do mesmo mapa.</p>
+                </div>
+                <div class="ghost-chip" data-tone="ok">Painel base</div>
+              </div>
+
+              <div class="commercialMetricGrid">
+                <div class="commercialMetricCard">
+                  <span class="commercialMetricCard__label">Entradas</span>
+                  <strong>Leads novos</strong>
+                  <p>Espaço para concentrar novos contatos, origem e prioridade da entrada.</p>
+                </div>
+
+                <div class="commercialMetricCard">
+                  <span class="commercialMetricCard__label">Atuação</span>
+                  <strong>Follow-ups do dia</strong>
+                  <p>Use como referência do volume de retornos, mensagens e propostas em andamento.</p>
+                </div>
+
+                <div class="commercialMetricCard">
+                  <span class="commercialMetricCard__label">Conversão</span>
+                  <strong>Propostas ativas</strong>
+                  <p>Bloco pensado para acompanhar o que está quente e o que precisa de avanço agora.</p>
+                </div>
+              </div>
+            </article>
+
+            <article class="panel exactCard commercialPlaybookCard">
+              <div class="panel-head">
+                <div>
+                  <h2>Ritmo de operação</h2>
+                  <p>Sequência simples para o time comercial abrir o dia sem dispersão.</p>
+                </div>
+              </div>
+
+              <div class="bi-noteList">
+                <div class="bi-noteItem">
+                  <strong>1. Abrir e priorizar</strong>
+                  <p>Separe quem precisa de resposta rápida, quem está aguardando proposta e quem pede novo contato.</p>
+                </div>
+                <div class="bi-noteItem">
+                  <strong>2. Mover o pipeline</strong>
+                  <p>Concentre a energia nas oportunidades em negociação ativa para não deixar o funil esfriar.</p>
+                </div>
+                <div class="bi-noteItem">
+                  <strong>3. Fechar o turno com clareza</strong>
+                  <p>Atualize pendências, próximos passos e responsáveis para o comercial não depender de memória solta.</p>
+                </div>
+              </div>
+            </article>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <script src="./contcomercial.js?v=20260522-01"></script>
+  </body>
+</html>

@@ -5,6 +5,9 @@ const crypto = require("crypto");
 const db = require("../db"); // PrismaClient (Postgres)
 
 const router = express.Router();
+const LOGIN_RATE_WINDOW_MS = Number(process.env.LOGIN_RATE_WINDOW_MS || 1000 * 60 * 15);
+const LOGIN_RATE_MAX_ATTEMPTS = Number(process.env.LOGIN_RATE_MAX_ATTEMPTS || 5);
+const loginAttempts = new Map();
 
 /** Helpers */
 function normalizeEmail(email) {
@@ -25,7 +28,7 @@ function mapRoleOut(role) {
 
 function normalizeAccessProfile(value, fallbackRole = "customer") {
   const normalized = cleanText(value).toLowerCase();
-  if (["ti", "gerencial", "coordenacao", "operacional", "consulta"].includes(normalized)) {
+  if (["ti", "gerencial", "coordenacao", "operacional", "consulta", "comercial"].includes(normalized)) {
     return normalized;
   }
 
@@ -67,6 +70,68 @@ function isUniqueEmailConflict(err) {
   );
 }
 
+function getClientIp(req) {
+  return (
+    (req.headers["x-forwarded-for"] && String(req.headers["x-forwarded-for"]).split(",")[0].trim()) ||
+    req.socket?.remoteAddress ||
+    "unknown"
+  );
+}
+
+function getLoginAttemptKey(req, email) {
+  return `${getClientIp(req)}::${normalizeEmail(email)}`;
+}
+
+function getRateLimitState(key) {
+  const now = Date.now();
+  const current = loginAttempts.get(key);
+
+  if (!current || current.expiresAt <= now) {
+    const fresh = { count: 0, expiresAt: now + LOGIN_RATE_WINDOW_MS };
+    loginAttempts.set(key, fresh);
+    return fresh;
+  }
+
+  return current;
+}
+
+function registerFailedLogin(key) {
+  const state = getRateLimitState(key);
+  state.count += 1;
+  loginAttempts.set(key, state);
+  return state;
+}
+
+function clearFailedLogin(key) {
+  loginAttempts.delete(key);
+}
+
+function validatePasswordStrength(password) {
+  const pass = String(password || "");
+  if (pass.length < 10) {
+    return "A senha deve ter no mínimo 10 caracteres.";
+  }
+  return null;
+}
+
+function regenerateSession(req) {
+  return new Promise((resolve, reject) => {
+    req.session.regenerate((err) => {
+      if (err) reject(err);
+      else resolve();
+    });
+  });
+}
+
+function saveSession(req) {
+  return new Promise((resolve, reject) => {
+    req.session.save((err) => {
+      if (err) reject(err);
+      else resolve();
+    });
+  });
+}
+
 /* ===============================
    LOGIN
    POST /api/auth/login
@@ -81,6 +146,14 @@ router.post("/login", async (req, res) => {
     }
 
     const normalizedEmail = normalizeEmail(email);
+    const attemptKey = getLoginAttemptKey(req, normalizedEmail);
+    const rateLimitState = getRateLimitState(attemptKey);
+
+    if (rateLimitState.count >= LOGIN_RATE_MAX_ATTEMPTS) {
+      const retryAfterSeconds = Math.max(1, Math.ceil((rateLimitState.expiresAt - Date.now()) / 1000));
+      res.setHeader("Retry-After", String(retryAfterSeconds));
+      return res.status(429).json({ error: "Muitas tentativas de login. Tente novamente em alguns minutos." });
+    }
 
     const user = await db.user.findUnique({
       where: { email: normalizedEmail },
@@ -94,28 +167,27 @@ router.post("/login", async (req, res) => {
       },
     });
 
-    if (!user) return res.status(401).json({ error: "Credenciais inválidas." });
+    if (!user) {
+      registerFailedLogin(attemptKey);
+      return res.status(401).json({ error: "Credenciais inválidas." });
+    }
 
     if (typeof user.active === "boolean" && user.active === false) {
       return res.status(403).json({ error: "Usuário desativado." });
     }
 
     const ok = await bcrypt.compare(String(password), user.password);
-    if (!ok) return res.status(401).json({ error: "Credenciais inválidas." });
+    if (!ok) {
+      registerFailedLogin(attemptKey);
+      return res.status(401).json({ error: "Credenciais inválidas." });
+    }
 
     const safe = toSafeUser(user);
-
-    // ✅ CRIA SESSÃO (isso é o que gera o cookie conthub.sid)
+    clearFailedLogin(attemptKey);
+    await regenerateSession(req);
     req.session.user = safe;
-
-    // ✅ GARANTE persistir antes de responder (evita login ok mas sem cookie)
-    req.session.save((err) => {
-      if (err) {
-        console.error("Erro ao salvar sessão:", err);
-        return res.status(500).json({ error: "Erro ao criar sessão." });
-      }
-      return res.json({ user: safe });
-    });
+    await saveSession(req);
+    return res.json({ user: safe });
   } catch (err) {
     console.error("Erro no login:", err);
     return res.status(500).json({ error: "Erro interno no login." });
@@ -139,8 +211,9 @@ router.post("/signup", async (req, res) => {
       return res.status(400).json({ error: "Nome, email e senha são obrigatórios." });
     }
 
-    if (pass.length < 6) {
-      return res.status(400).json({ error: "A senha deve ter no mínimo 6 caracteres." });
+    const passwordError = validatePasswordStrength(pass);
+    if (passwordError) {
+      return res.status(400).json({ error: passwordError });
     }
 
     const exists = await db.user.findUnique({
@@ -172,17 +245,14 @@ router.post("/signup", async (req, res) => {
     });
 
     const safe = toSafeUser(user);
-
-    // ✅ opcional: já cria sessão após cadastro (melhor UX)
+    await regenerateSession(req);
     req.session.user = safe;
-    req.session.save((err) => {
-      if (err) {
-        console.error("Erro ao salvar sessão no signup:", err);
-        // se falhar sessão, ainda devolve user (cadastro feito)
-        return res.status(201).json({ user: safe });
-      }
-      return res.status(201).json({ user: safe });
-    });
+    try {
+      await saveSession(req);
+    } catch (sessionError) {
+      console.error("Erro ao salvar sessão no signup:", sessionError);
+    }
+    return res.status(201).json({ user: safe });
   } catch (err) {
     if (isUniqueEmailConflict(err)) {
       return res.status(409).json({ error: "Já existe um usuário com esse email." });
@@ -255,8 +325,9 @@ router.post("/reset", async (req, res) => {
       return res.status(400).json({ error: "Token e nova senha são obrigatórios." });
     }
 
-    if (pass.length < 6) {
-      return res.status(400).json({ error: "A senha deve ter no mínimo 6 caracteres." });
+    const passwordError = validatePasswordStrength(pass);
+    if (passwordError) {
+      return res.status(400).json({ error: passwordError });
     }
 
     const tokenHash = crypto.createHash("sha256").update(rawToken).digest("hex");
@@ -358,7 +429,17 @@ router.post("/logout", (req, res) => {
         console.error("Erro ao destruir sessão:", err);
         return res.status(500).json({ error: "Erro ao sair." });
       }
-      res.clearCookie("conthub.sid");
+      const appBaseUrl = String(process.env.APP_BASE_URL || "").trim();
+      const isProduction = String(process.env.NODE_ENV || "").trim().toLowerCase() === "production";
+      const secure =
+        String(process.env.SESSION_COOKIE_SECURE || "").trim() !== ""
+          ? String(process.env.SESSION_COOKIE_SECURE).trim().toLowerCase() === "true"
+          : isProduction && /^https:\/\//i.test(appBaseUrl);
+      res.clearCookie("conthub.sid", {
+        httpOnly: true,
+        sameSite: "lax",
+        secure,
+      });
       return res.json({ ok: true });
     });
   } catch (err) {

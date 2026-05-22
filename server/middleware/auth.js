@@ -16,7 +16,7 @@ function mapRoleOut(role) {
 
 function normalizeAccessProfile(value, fallbackRole = "customer") {
   const normalized = String(value || "").trim().toLowerCase();
-  if (["ti", "gerencial", "coordenacao", "operacional", "consulta"].includes(normalized)) {
+  if (["ti", "gerencial", "coordenacao", "operacional", "consulta", "comercial"].includes(normalized)) {
     return normalized;
   }
 

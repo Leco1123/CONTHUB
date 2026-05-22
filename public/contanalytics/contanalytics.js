@@ -116,6 +116,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (profile === "ti") return "ti";
     if (profile === "admin" || profile === "gerencial" || profile === "gerencia") return "gerencial";
     if (profile === "coordenacao" || profile === "coordenador") return "coordenacao";
+    if (profile === "comercial") return "comercial";
     if (profile === "consulta") return "consulta";
     return "operacional";
   }
@@ -134,6 +135,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const rules = normalizeModuleAccess(moduleAccessMap[id]);
 
     if (profile === "ti" || role === "ti") return true;
+    if (profile === "comercial") return id === "dashboard" || id === "contcomercial";
     if (id === "contadmin") return profile === "gerencial" || role === "admin";
     if (id === "contanalytics") return ["ti", "gerencial", "coordenacao"].includes(profile) || role === "admin";
     if (!rules.length || rules.includes("user") || rules.includes("user+admin")) return true;

@@ -1,0 +1,104 @@
+@import url("../dashboard/dashboard.css");
+
+:root {
+  --commercial-teal: #6be6cf;
+  --commercial-cyan: #36c4ff;
+  --commercial-ink: #09111c;
+}
+
+body {
+  background:
+    radial-gradient(900px 480px at 14% -8%, rgba(54, 196, 255, 0.16), rgba(0, 0, 0, 0) 58%),
+    radial-gradient(760px 380px at 100% 0%, rgba(107, 230, 207, 0.12), rgba(0, 0, 0, 0) 62%),
+    linear-gradient(180deg, rgba(9, 17, 28, 0.94), rgba(7, 12, 21, 0.99)),
+    #0a1019;
+}
+
+.commercialMainShell {
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+  background-size: 42px 42px;
+}
+
+.is-commercial-active {
+  border-color: rgba(107, 230, 207, 0.34);
+  background:
+    linear-gradient(180deg, rgba(107, 230, 207, 0.16), rgba(107, 230, 207, 0.06));
+}
+
+.commercialOverviewCard,
+.commercialPulseCard,
+.commercialActionsCard,
+.commercialPipelineCard,
+.commercialPlaybookCard {
+  background:
+    radial-gradient(260px 160px at 88% 12%, rgba(107, 230, 207, 0.08), rgba(0, 0, 0, 0) 62%),
+    linear-gradient(180deg, rgba(11, 19, 30, 0.98), rgba(8, 14, 24, 0.98));
+}
+
+.commercialOverviewCard h1 {
+  max-width: 9ch;
+}
+
+.commercialMomentCard {
+  background:
+    radial-gradient(720px 240px at left top, rgba(54, 196, 255, 0.12), rgba(0, 0, 0, 0) 54%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.02));
+}
+
+.commercialMetricGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.commercialMetricCard {
+  padding: 16px;
+  border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  background: rgba(255, 255, 255, 0.03);
+  display: grid;
+  gap: 8px;
+}
+
+.commercialMetricCard__label {
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0.28px;
+  color: var(--muted);
+}
+
+.commercialMetricCard strong {
+  font-size: 20px;
+  line-height: 1.15;
+}
+
+.commercialMetricCard p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+.commercialPipelineCard .ghost-chip[data-tone="ok"],
+.commercialPulseCard .slaMonthCard__ok {
+  color: #d8fff4;
+  border-color: rgba(107, 230, 207, 0.3);
+  background: rgba(107, 230, 207, 0.14);
+}
+
+.commercialPulseCard .slaMonthCard__progressBar {
+  background: linear-gradient(90deg, rgba(107, 230, 207, 0.95), rgba(54, 196, 255, 0.95));
+}
+
+.commercialActionsCard .todo__row.is-done {
+  border-color: rgba(107, 230, 207, 0.22);
+  background: rgba(107, 230, 207, 0.08);
+}
+
+@media (max-width: 920px) {
+  .commercialMetricGrid {
+    grid-template-columns: 1fr;
+  }
+}

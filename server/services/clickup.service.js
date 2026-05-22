@@ -1,6 +1,7 @@
 const CLICKUP_API_BASE_URL = String(process.env.CLICKUP_API_BASE_URL || "https://api.clickup.com/api/v2").trim().replace(/\/+$/, "");
 const CLICKUP_API_TOKEN = String(process.env.CLICKUP_API_TOKEN || "").trim();
 const CLICKUP_LIST_ID = String(process.env.CLICKUP_LIST_ID || "").trim();
+const CLICKUP_NEXT_ACTIONS_LIST_ID = String(process.env.CLICKUP_NEXT_ACTIONS_LIST_ID || "901713939274").trim();
 const CLICKUP_TICKETS_ENABLED = String(process.env.CLICKUP_TICKETS_ENABLED || "").trim().toLowerCase();
 const CLICKUP_FIELD_FUNCAO_ID = String(process.env.CLICKUP_FIELD_FUNCAO_ID || "").trim();
 const CLICKUP_FIELD_SOLICITANTE_NOME_ID = String(process.env.CLICKUP_FIELD_SOLICITANTE_NOME_ID || "").trim();
@@ -24,6 +25,8 @@ const PRIORITY_TO_CLICKUP = {
   baixa: 4,
 };
 
+const HOUR_MS = 60 * 60 * 1000;
+
 function normalizeText(value) {
   return String(value || "")
     .normalize("NFD")
@@ -41,6 +44,14 @@ function isClickUpTicketsEnabled() {
 
 function assertConfigured() {
   if (!isClickUpTicketsEnabled() || !CLICKUP_API_TOKEN || !CLICKUP_LIST_ID) {
+    const err = new Error("Integração ClickUp não configurada.");
+    err.code = "CLICKUP_NOT_CONFIGURED";
+    throw err;
+  }
+}
+
+function assertListConfigured(listId) {
+  if (!isClickUpTicketsEnabled() || !CLICKUP_API_TOKEN || !String(listId || "").trim()) {
     const err = new Error("Integração ClickUp não configurada.");
     err.code = "CLICKUP_NOT_CONFIGURED";
     throw err;
@@ -100,6 +111,52 @@ function mapStatusFromClickUp(status) {
   const normalized = normalizeText(status);
   const entry = Object.entries(STATUS_MAP).find(([, label]) => normalizeText(label) === normalized);
   return entry ? entry[0] : "aberto";
+}
+
+function cloneDate(value = new Date()) {
+  return new Date(value.getTime());
+}
+
+function setLocalTime(date, hours, minutes = 0, seconds = 0, ms = 0) {
+  const next = cloneDate(date);
+  next.setHours(hours, minutes, seconds, ms);
+  return next;
+}
+
+function isWeekend(date) {
+  const day = date.getDay();
+  return day === 0 || day === 6;
+}
+
+function nextBusinessDay(date) {
+  const next = cloneDate(date);
+  next.setDate(next.getDate() + 1);
+  while (isWeekend(next)) {
+    next.setDate(next.getDate() + 1);
+  }
+  return next;
+}
+
+function computeTicketDueDate(priority, now = new Date()) {
+  const normalized = String(priority || "").trim().toLowerCase();
+
+  if (normalized === "critica") {
+    return new Date(now.getTime() + 3 * HOUR_MS);
+  }
+
+  if (normalized === "alta") {
+    const todayAtFive = setLocalTime(now, 17, 0, 0, 0);
+    if (todayAtFive.getTime() - now.getTime() > 4 * HOUR_MS) {
+      return todayAtFive;
+    }
+    return setLocalTime(nextBusinessDay(now), 17, 0, 0, 0);
+  }
+
+  if (normalized === "baixa") {
+    return setLocalTime(nextBusinessDay(now), 17, 0, 0, 0);
+  }
+
+  return setLocalTime(nextBusinessDay(now), 12, 0, 0, 0);
 }
 
 function formatIsoFromUnixMs(value) {
@@ -255,6 +312,8 @@ function mapTaskToTicket(task) {
   const firstAttachment = attachments[0] || null;
   const imagem =
     String(firstAttachment?.thumbnail_small || firstAttachment?.thumbnail_medium || firstAttachment?.url || "").trim();
+  const assignees = Array.isArray(task?.assignees) ? task.assignees : [];
+  const firstAssignee = assignees[0] || null;
 
   return {
     id: String(task?.id || "").trim(),
@@ -273,7 +332,9 @@ function mapTaskToTicket(task) {
       getCustomFieldDisplayValue(task, CLICKUP_FIELD_SOLICITANTE_EMAIL_ID) ||
       meta.solicitanteEmail ||
       "",
+    assigneeName: String(firstAssignee?.username || firstAssignee?.email || "").trim(),
     imagem,
+    dueAt: formatIsoFromUnixMs(task?.due_date),
     createdAt: formatIsoFromUnixMs(task?.date_created),
     updatedAt: formatIsoFromUnixMs(task?.date_updated || task?.date_created),
   };
@@ -283,19 +344,24 @@ async function getTaskDetails(taskId) {
   return clickupFetch(`/task/${encodeURIComponent(taskId)}`);
 }
 
-async function listAllTasks() {
+async function listTasksFromList(listId, options = {}) {
+  assertListConfigured(listId);
+  const includeClosed = options.includeClosed !== false;
+  const detailed = options.detailed !== false;
   let page = 0;
   const tasks = [];
 
   while (true) {
     const payload = await clickupFetch(
-      `/list/${encodeURIComponent(CLICKUP_LIST_ID)}/task?archived=false&page=${page}&include_closed=true&subtasks=true`
+      `/list/${encodeURIComponent(String(listId).trim())}/task?archived=false&page=${page}&include_closed=${includeClosed ? "true" : "false"}&subtasks=true`
     );
     const chunk = Array.isArray(payload?.tasks) ? payload.tasks : [];
     tasks.push(...chunk);
     if (chunk.length < 100) break;
     page += 1;
   }
+
+  if (!detailed) return tasks;
 
   const detailedTasks = await Promise.all(
     tasks.map(async (task) => {
@@ -309,7 +375,54 @@ async function listAllTasks() {
     })
   );
 
-  return detailedTasks.map(mapTaskToTicket);
+  return detailedTasks;
+}
+
+async function listAllTasks() {
+  const tasks = await listTasksFromList(CLICKUP_LIST_ID, { includeClosed: true, detailed: true });
+  return tasks.map(mapTaskToTicket);
+}
+
+function mapTaskToNextAction(task) {
+  const assignees = Array.isArray(task?.assignees) ? task.assignees : [];
+  const assigneeNames = assignees
+    .map((assignee) => String(assignee?.username || assignee?.email || "").trim())
+    .filter(Boolean);
+  const assigneeEmails = assignees
+    .map((assignee) => String(assignee?.email || "").trim().toLowerCase())
+    .filter(Boolean);
+  const statusRaw = String(task?.status?.status || task?.status || "").trim();
+  const priorityRaw = String(task?.priority?.priority || task?.priority || "").trim();
+  const updatedAt = formatIsoFromUnixMs(task?.date_updated || task?.date_created);
+  const createdAt = formatIsoFromUnixMs(task?.date_created);
+
+  return {
+    id: String(task?.id || "").trim(),
+    name: String(task?.name || "").trim() || "Tarefa sem título",
+    description: String(task?.description || task?.text_content || "").trim(),
+    status: statusRaw,
+    priority: mapPriorityFromClickUp(priorityRaw),
+    assigneeName: assigneeNames[0] || "",
+    assigneeNames,
+    assigneeEmails,
+    assigneeLabel: assigneeNames.join(" • "),
+    dueAt: formatIsoFromUnixMs(task?.due_date),
+    createdAt,
+    updatedAt,
+    url: String(task?.url || "").trim(),
+    listName: String(task?.list?.name || "").trim(),
+    folderName: String(task?.folder?.name || "").trim(),
+    spaceName: String(task?.space?.name || "").trim(),
+  };
+}
+
+async function listNextActionsTasks() {
+  const tasks = await listTasksFromList(CLICKUP_NEXT_ACTIONS_LIST_ID, {
+    includeClosed: false,
+    detailed: true,
+  });
+
+  return tasks.map(mapTaskToNextAction);
 }
 
 async function createTaskAttachment(taskId, imageDataUrl) {
@@ -333,6 +446,7 @@ async function createTicket(input) {
   const solicitanteNome = String(input?.solicitanteNome || "").trim();
   const solicitanteEmail = String(input?.solicitanteEmail || "").trim();
   const imagem = String(input?.imagem || "").trim();
+  const dueDate = computeTicketDueDate(urgencia);
 
   const payload = {
     name: buildTaskName(funcao, descricao),
@@ -344,6 +458,8 @@ async function createTicket(input) {
     }),
     priority: mapPriorityToClickUp(urgencia),
     status: mapStatusToClickUp("aberto"),
+    due_date: dueDate.getTime(),
+    due_date_time: true,
   };
 
   if (CLICKUP_ASSIGNEE_IDS.length) {
@@ -405,6 +521,7 @@ module.exports = {
   isClickUpTicketsEnabled,
   createTicket,
   listAllTasks,
+  listNextActionsTasks,
   updateTicketStatus,
   deleteTicket,
 };

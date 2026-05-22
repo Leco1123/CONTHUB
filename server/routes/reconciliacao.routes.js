@@ -25,6 +25,15 @@ const PYTHON_FORNECEDORES_SCRIPT = path.join(
 fs.mkdirSync(UPLOADS_DIR, { recursive: true });
 fs.mkdirSync(RECON_DIR, { recursive: true });
 
+const ALLOWED_EXTENSIONS = new Set([".csv", ".xls", ".xlsx"]);
+const ALLOWED_MIME_TYPES = new Set([
+  "text/csv",
+  "application/csv",
+  "application/vnd.ms-excel",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  "application/octet-stream",
+]);
+
 const storage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, UPLOADS_DIR),
   filename: (req, file, cb) => {
@@ -38,7 +47,19 @@ const storage = multer.diskStorage({
 
 const upload = multer({
   storage,
-  limits: { fileSize: 30 * 1024 * 1024 },
+  limits: { fileSize: 10 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    const ext = String(path.extname(file.originalname || "")).toLowerCase();
+    const mime = String(file.mimetype || "").toLowerCase();
+    const isAllowedExtension = ALLOWED_EXTENSIONS.has(ext);
+    const isAllowedMime = !mime || ALLOWED_MIME_TYPES.has(mime);
+
+    if (!isAllowedExtension || !isAllowedMime) {
+      return cb(new multer.MulterError("LIMIT_UNEXPECTED_FILE", file.fieldname));
+    }
+
+    return cb(null, true);
+  },
 });
 
 function cleanupFile(file) {
@@ -119,9 +140,9 @@ router.post(
 
     py.on("error", (err) => {
       cleanupFiles(uploadedFiles);
+      console.error("Erro ao iniciar Python da reconciliação:", err);
       return res.status(500).json({
-        error: "Erro ao iniciar Python",
-        detail: err.message,
+        error: "Erro interno ao iniciar o processamento.",
       });
     });
 
@@ -129,19 +150,16 @@ router.post(
       cleanupFiles(uploadedFiles);
 
       if (code !== 0) {
+        console.error("Falha ao processar reconciliação:", { code, stdout, stderr });
         return res.status(500).json({
           error: "Falha ao processar reconciliação.",
-          code,
-          stdout,
-          stderr,
         });
       }
 
       if (!fs.existsSync(outputPath)) {
+        console.error("Reconciliação sem arquivo de saída:", { code, stdout, stderr, outputPath });
         return res.status(500).json({
           error: "O arquivo final não foi gerado.",
-          stdout,
-          stderr,
         });
       }
 
@@ -207,9 +225,9 @@ router.post(
 
     py.on("error", (err) => {
       cleanupFiles(uploadedFiles);
+      console.error("Erro ao iniciar Python da reconciliação de fornecedores:", err);
       return res.status(500).json({
-        error: "Erro ao iniciar Python",
-        detail: err.message,
+        error: "Erro interno ao iniciar o processamento.",
       });
     });
 
@@ -217,19 +235,16 @@ router.post(
       cleanupFiles(uploadedFiles);
 
       if (code !== 0) {
+        console.error("Falha ao processar reconciliação de fornecedores:", { code, stdout, stderr });
         return res.status(500).json({
           error: "Falha ao processar reconciliação de fornecedores.",
-          code,
-          stdout,
-          stderr,
         });
       }
 
       if (!fs.existsSync(outputPath)) {
+        console.error("Reconciliação de fornecedores sem arquivo de saída:", { code, stdout, stderr, outputPath });
         return res.status(500).json({
           error: "O arquivo final não foi gerado.",
-          stdout,
-          stderr,
         });
       }
 
@@ -237,5 +252,17 @@ router.post(
     });
   }
 );
+
+router.use((err, req, res, next) => {
+  if (!(err instanceof multer.MulterError)) {
+    return next(err);
+  }
+
+  if (err.code === "LIMIT_FILE_SIZE") {
+    return res.status(400).json({ error: "Arquivo excede o limite de 10 MB." });
+  }
+
+  return res.status(400).json({ error: "Tipo de arquivo não permitido. Use CSV, XLS ou XLSX." });
+});
 
 module.exports = router;

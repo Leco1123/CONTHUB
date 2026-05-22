@@ -61,7 +61,7 @@ function normalizeChecks(arr) {
 
 function normalizeAccessProfile(value) {
   const normalized = String(value || "").trim().toLowerCase();
-  return ["ti", "gerencial", "coordenacao", "operacional", "consulta"].includes(normalized)
+  return ["ti", "gerencial", "coordenacao", "operacional", "consulta", "comercial"].includes(normalized)
     ? normalized
     : "operacional";
 }
@@ -98,6 +98,34 @@ function getRequesterName(req) {
 
 function getRequesterEmail(req) {
   return String(req?.session?.user?.email || "").trim();
+}
+
+function normalizeIdentity(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
+function isNextActionForSessionUser(req, item) {
+  const currentUser = req?.currentUser || req?.session?.user || {};
+  const sessionEmail = normalizeIdentity(currentUser.email || "");
+
+  const assigneeEmails = Array.isArray(item?.assigneeEmails)
+    ? item.assigneeEmails.map((entry) => normalizeIdentity(entry)).filter(Boolean)
+    : [];
+
+  return Boolean(sessionEmail) && assigneeEmails.includes(sessionEmail);
+}
+
+function decorateNextActionForSessionUser(item) {
+  const assigneeEmails = Array.isArray(item?.assigneeEmails) ? item.assigneeEmails.filter(Boolean) : [];
+  const assigneeNames = Array.isArray(item?.assigneeNames) ? item.assigneeNames.filter(Boolean) : [];
+  const responsibleCount = Math.max(assigneeEmails.length, assigneeNames.length, 1);
+
+  return {
+    ...item,
+    assignedToSessionUser: true,
+    responsibleCount,
+    assigneeDisplay: responsibleCount > 1 ? `Você + ${responsibleCount - 1}` : "Você",
+  };
 }
 
 function isClickupNotConfigured(err) {
@@ -238,6 +266,63 @@ router.get("/tickets", async (req, res) => {
     return res.status(502).json({
       error: "Falha ao sincronizar chamados com o ClickUp.",
       code: "CLICKUP_SYNC_FAILED",
+    });
+  }
+});
+
+router.get("/clickup-next-actions", async (req, res) => {
+  try {
+    res.set({
+      "Cache-Control": "private, no-store, no-cache, must-revalidate",
+      Pragma: "no-cache",
+      Expires: "0",
+      Vary: "Cookie",
+    });
+
+    if (!clickupTickets.isClickUpTicketsEnabled()) {
+      return res.status(503).json({
+        error: "Integração ClickUp não configurada.",
+        code: "CLICKUP_NOT_CONFIGURED",
+      });
+    }
+
+    const items = await clickupTickets.listNextActionsTasks();
+    const filteredItems = (Array.isArray(items) ? items : [])
+      .filter((item) => isNextActionForSessionUser(req, item))
+      .map(decorateNextActionForSessionUser);
+    const currentUser = req?.currentUser || req?.session?.user || {};
+    return res.json({
+      provider: "clickup",
+      configured: true,
+      savedAt: new Date().toISOString(),
+      data: filteredItems,
+      debug: {
+        sessionEmail: String(currentUser.email || "").trim().toLowerCase(),
+        sessionName: String(currentUser.nome || currentUser.name || "").trim(),
+        fetchedCount: Array.isArray(items) ? items.length : 0,
+        matchedCount: filteredItems.length,
+        assigneeEmails: Array.from(
+          new Set(
+            (Array.isArray(items) ? items : [])
+              .flatMap((item) => (Array.isArray(item?.assigneeEmails) ? item.assigneeEmails : []))
+              .map((entry) => String(entry || "").trim().toLowerCase())
+              .filter(Boolean)
+          )
+        ),
+      },
+    });
+  } catch (err) {
+    if (isClickupNotConfigured(err)) {
+      return res.status(503).json({
+        error: "Integração ClickUp não configurada.",
+        code: "CLICKUP_NOT_CONFIGURED",
+      });
+    }
+
+    console.error("Erro ao listar próximas ações no ClickUp:", err);
+    return res.status(502).json({
+      error: "Falha ao sincronizar próximas ações com o ClickUp.",
+      code: "CLICKUP_NEXT_ACTIONS_SYNC_FAILED",
     });
   }
 });

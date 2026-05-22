@@ -47,6 +47,27 @@ document.addEventListener("DOMContentLoaded", () => {
     return "USER";
   }
 
+  function normalizeAccessProfile(value) {
+    const normalized = String(value || "")
+      .trim()
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "");
+
+    if (normalized === "ti") return "ti";
+    if (normalized === "admin" || normalized === "gerencial" || normalized === "gerencia") return "gerencial";
+    if (normalized === "coordenacao" || normalized === "coordenador") return "coordenacao";
+    if (normalized === "comercial") return "comercial";
+    if (normalized === "consulta") return "consulta";
+    return "operacional";
+  }
+
+  function getAccessProfile(user) {
+    return normalizeAccessProfile(
+      user?.accessProfile || user?.access_profile || user?.perfilAcesso || user?.perfil_acesso || user?.role
+    );
+  }
+
   function avatarFromName(name) {
     const t = String(name || "").trim();
     return t ? t[0].toUpperCase() : "U";
@@ -412,6 +433,12 @@ document.addEventListener("DOMContentLoaded", () => {
       }
 
       await loadModulesFromApi();
+
+      if (getAccessProfile(currentUser) === "comercial") {
+        alert("Seu perfil não possui acesso ao ContConfig.");
+        goto("../dashboard/dashboard.html");
+        return;
+      }
 
       fillPageTexts();
       bindMenu();

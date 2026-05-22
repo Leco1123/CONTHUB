@@ -264,6 +264,7 @@ document.addEventListener("DOMContentLoaded", () => {
         .normalize("NFD")
         .replace(/[\u0300-\u036f]/g, "");
       const blocked =
+        (accessProfile === "comercial" && !["dashboard", "contcomercial"].includes(moduleId)) ||
         (moduleId === "contadmin" && role === "user") ||
         (moduleId === "contanalytics" &&
           !["ti", "admin", "gerencial", "coordenacao"].includes(accessProfile) &&
