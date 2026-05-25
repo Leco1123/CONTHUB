@@ -72,6 +72,13 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function canAccessModule(moduleId, user = getSessionUser()) {
     const id = normalizeAccessToken(moduleId);
+    if (Array.isArray(user?.permissions)) {
+      const matched = user.permissions.find((entry) => normalizeAccessToken(entry?.moduleId) === id);
+      if (matched) return Boolean(matched.view);
+    }
+    if (Array.isArray(user?.visibleModules) && user.visibleModules.length) {
+      return user.visibleModules.map((item) => normalizeAccessToken(item)).includes(id);
+    }
     const profile = getAccessProfile(user);
     const role = normalizeAccessToken(user?.role);
     const rules = normalizeModuleAccess(moduleAccessMap[id]);

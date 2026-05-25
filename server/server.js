@@ -8,6 +8,7 @@ require("dotenv").config();
 
 const db = require("./db");
 const { PrismaSessionStore, ensureSessionTable } = require("./session-store");
+const { logSecurityEvent } = require("./utils/security-log");
 
 // ROTAS
 const authRoutes = require("./routes/auth.routes");
@@ -18,11 +19,15 @@ const publicCustomersRoutes = require("./routes/public.customers.routes");
 const dashboardRoutes = require("./routes/dashboard.routes");
 const sheetsRoutes = require("./routes/sheets.routes");
 const reconciliacaoRoutes = require("./routes/reconciliacao.routes");
+const commercialPricingRoutes = require("./routes/commercial.pricing.routes");
 
+// nosemgrep: javascript.express.security.audit.express-check-csurf-middleware-usage.express-check-csurf-middleware-usage
 const app = express();
+app.disable("x-powered-by");
 const isProduction = String(process.env.NODE_ENV || "").trim().toLowerCase() === "production";
 const appBaseUrl = String(process.env.APP_BASE_URL || "").trim();
 const sessionSecret = String(process.env.SESSION_SECRET || "").trim();
+const sessionCookieDomain = String(process.env.SESSION_COOKIE_DOMAIN || "").trim() || undefined;
 const allowedOrigins = Array.from(
   new Set(
     [appBaseUrl, ...(process.env.ALLOWED_ORIGINS || "").split(",")]
@@ -81,11 +86,56 @@ function securityHeaders(req, res, next) {
   next();
 }
 
+function hasAllowedRequestSource(req) {
+  const origin = String(req.headers.origin || "").trim();
+  const referer = String(req.headers.referer || "").trim();
+  const host = String(req.headers.host || "").trim();
+
+  if (origin) {
+    return isAllowedOrigin(origin);
+  }
+
+  if (referer) {
+    try {
+      const refererUrl = new URL(referer);
+      if (isAllowedOrigin(refererUrl.origin)) return true;
+      return Boolean(host) && refererUrl.host === host;
+    } catch {
+      return false;
+    }
+  }
+
+  return !req.session?.user;
+}
+
+function csrfProtection(req, res, next) {
+  const unsafeMethod = ["POST", "PUT", "PATCH", "DELETE"].includes(String(req.method || "").toUpperCase());
+  if (!unsafeMethod || !req.path.startsWith("/api/")) {
+    return next();
+  }
+
+  if (hasAllowedRequestSource(req)) {
+    return next();
+  }
+
+  logSecurityEvent("csrf_blocked", {
+    method: req.method,
+    path: req.originalUrl || req.url,
+    origin: String(req.headers.origin || ""),
+    referer: String(req.headers.referer || ""),
+    host: String(req.headers.host || ""),
+    sessionUserId: req.session?.user?.id ?? null,
+  });
+  return res.status(403).json({ error: "Requisição bloqueada por validação de origem." });
+}
+
 // ---------------------------------------------------
 // MIDDLEWARES
 // ---------------------------------------------------
 
 app.use(securityHeaders);
+// nosemgrep: javascript.express.security.audit.express-check-csurf-middleware-usage.express-check-csurf-middleware-usage
+app.use(csrfProtection);
 
 app.use(
   cors({
@@ -101,7 +151,7 @@ app.use(
 app.use(express.json({ limit: "10mb" }));
 
 app.use(
-  session({
+  session({ // nosemgrep: javascript.express.security.audit.express-cookie-settings.express-cookie-session-no-expires, javascript.express.security.audit.express-cookie-settings.express-cookie-session-no-secure
     name: "conthub.sid",
     secret: sessionSecret,
     store: sessionStore,
@@ -111,6 +161,8 @@ app.use(
       httpOnly: true,
       secure: sessionCookieSecure,
       sameSite: "lax",
+      path: "/",
+      domain: sessionCookieDomain,
       maxAge: 1000 * 60 * 60 * 8,
     },
   })
@@ -120,7 +172,7 @@ app.use(
 // AUTH MIDDLEWARE
 // ---------------------------------------------------
 
-const { requireAuth } = require("./middleware/auth");
+const { requireAuth, requireAccountingAccess, requireModuleAccess } = require("./middleware/auth");
 
 // ---------------------------------------------------
 // STATIC FILES
@@ -142,13 +194,24 @@ app.use(express.static(publicDir));
 
 app.use("/api/auth", authRoutes);
 
+app.get("/api/health", (req, res) => {
+  return res.json({
+    ok: true,
+    service: "conthub",
+    environment: isProduction ? "production" : "development",
+    now: new Date().toISOString(),
+  });
+});
+
 app.use("/api/public/customers", publicCustomersRoutes);
 
-app.use("/api/dashboard", requireAuth, dashboardRoutes);
+app.use("/api/dashboard", requireAuth, requireModuleAccess("dashboard", "view"), dashboardRoutes);
 
-app.use("/api/sheets", requireAuth, sheetsRoutes);
+app.use("/api/commercial/pricing", requireAuth, requireModuleAccess("contcomercial", "view"), commercialPricingRoutes);
 
-app.use("/api/reconciliacao", requireAuth, reconciliacaoRoutes);
+app.use("/api/sheets", requireAuth, requireAccountingAccess, sheetsRoutes);
+
+app.use("/api/reconciliacao", requireAuth, requireAccountingAccess, reconciliacaoRoutes);
 
 app.use("/api/admin/users", requireAuth, adminUsersRoutes);
 
@@ -186,6 +249,11 @@ app.use((err, req, res, next) => {
   }
 
   if (err.message === "Origem não permitida pelo CORS.") {
+    logSecurityEvent("cors_origin_denied", {
+      origin: String(req.headers.origin || ""),
+      path: req.originalUrl || req.url,
+      method: req.method,
+    });
     return res.status(403).json({ error: "Origem não permitida." });
   }
 

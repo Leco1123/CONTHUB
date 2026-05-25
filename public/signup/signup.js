@@ -8,14 +8,18 @@ eye?.addEventListener("click", () => {
   const hidden = pass.type === "password";
   pass.type = hidden ? "text" : "password";
   eye.textContent = hidden ? "🙈" : "👁";
+  eye.setAttribute("aria-pressed", hidden ? "true" : "false");
 });
 
 function showError(msg) {
   err.textContent = msg;
+  err.classList.remove("message--success");
+  err.classList.add("message--error");
   err.classList.remove("hidden");
 }
 function clearError() {
   err.textContent = "";
+  err.classList.remove("message--error", "message--success");
   err.classList.add("hidden");
 }
 
@@ -29,7 +33,7 @@ form?.addEventListener("submit", async (e) => {
   const password2 = String(form.password2?.value || "").trim();
 
   if (!name || !email || !password || !password2) return showError("Preencha todos os campos.");
-  if (password.length < 6) return showError("A senha deve ter no mínimo 6 caracteres.");
+  if (password.length < 10) return showError("A senha deve ter no mínimo 10 caracteres.");
   if (password !== password2) return showError("As senhas não conferem.");
 
   try {

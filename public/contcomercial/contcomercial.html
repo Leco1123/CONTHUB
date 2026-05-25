@@ -8,6 +8,8 @@
       content="ContComercial é o dashboard comercial do ContHub para rotina, relacionamento, pipeline e acompanhamento da equipe."
     />
     <title>ContHub • ContComercial</title>
+    <script src="../shared/theme-boot.js"></script>
+    <link rel="stylesheet" href="../shared/theme.css" />
     <link rel="stylesheet" href="./contcomercial.css?v=20260522-01" />
   </head>
   <body>
@@ -33,6 +35,13 @@
             <div class="profileCard__links">
               <button class="ghost-btn ghost-btn--sidebar ghost-btn--danger" type="button" data-logout>Sair</button>
             </div>
+          </div>
+        </div>
+
+        <div class="sidebar__group">
+          <div class="theme-switcher theme-switcher--dashboard" aria-label="Alternar tema">
+            <button type="button" class="theme-switcher__button" data-theme-choice="dark">Preto</button>
+            <button type="button" class="theme-switcher__button" data-theme-choice="light">Branco</button>
           </div>
         </div>
 
@@ -124,6 +133,229 @@
                 <button class="ghost-btn" type="button" data-module-id="dashboard" data-goto="../dashboard/dashboard.html">Voltar ao Dashboard</button>
               </div>
             </article>
+
+            <article class="panel exactCard commercialPricingCard" id="commercialPricingPanel">
+              <div class="panel-head">
+                <div>
+                  <h2>Automação de ficha de preço</h2>
+                  <p>Motor comercial baseado na automação original, agora operado dentro do ContHub com cálculo, resumo e salvamento de proposta.</p>
+                </div>
+                <div class="panel__headerActions">
+                  <span class="ghost-chip" id="pricingHealthChip">Carregando motor...</span>
+                  <button class="ghost-btn" type="button" id="btnPricingReset">Limpar</button>
+                  <button class="ghost-btn" type="button" id="btnPricingCalculate">Calcular</button>
+                  <button class="accent-btn" type="button" id="btnPricingSave">Salvar proposta</button>
+                </div>
+              </div>
+
+              <div class="commercialPricingGrid">
+                <section class="commercialPricingSection">
+                  <div class="commercialPricingSection__title">1. Dados da empresa</div>
+                  <div class="commercialFormGrid commercialFormGrid--three">
+                    <label class="commercialField">
+                      <span>Ficha</span>
+                      <select id="pricingFichaName" data-pricing-field="ficha_name"></select>
+                    </label>
+                    <label class="commercialField">
+                      <span>Razão social</span>
+                      <input id="pricingCompanyName" type="text" data-pricing-field="company_name" maxlength="120" />
+                    </label>
+                    <label class="commercialField">
+                      <span>CNPJ</span>
+                      <input id="pricingCnpj" type="text" data-pricing-field="cnpj" maxlength="32" />
+                    </label>
+                    <label class="commercialField">
+                      <span>Faturamento bruto mensal</span>
+                      <input id="pricingRevenue" type="text" data-pricing-field="annual_gross_revenue" />
+                    </label>
+                    <label class="commercialField">
+                      <span>Status</span>
+                      <select id="pricingStatus"></select>
+                    </label>
+                  </div>
+                </section>
+
+                <section class="commercialPricingSection">
+                  <div class="commercialPricingSection__title">2. Enquadramento</div>
+                  <div class="commercialFormGrid commercialFormGrid--three">
+                    <label class="commercialField">
+                      <span>Segmento</span>
+                      <select id="pricingSegment" data-pricing-field="segment"></select>
+                    </label>
+                    <label class="commercialField">
+                      <span>Tabela</span>
+                      <select id="pricingTable" data-pricing-field="table"></select>
+                    </label>
+                    <label class="commercialField">
+                      <span>Tributação</span>
+                      <select id="pricingTax" data-pricing-field="tax"></select>
+                    </label>
+                    <label class="commercialField">
+                      <span>Qtde. tributação</span>
+                      <input type="number" min="0" step="1" data-pricing-field="tax_qty" />
+                    </label>
+                    <label class="commercialField">
+                      <span>Empresa com filiais</span>
+                      <select data-pricing-field="branches">
+                        <option value="Não">Não</option>
+                        <option value="Sim">Sim</option>
+                      </select>
+                    </label>
+                    <label class="commercialField">
+                      <span>Qtde. filiais</span>
+                      <input type="number" min="0" step="1" data-pricing-field="branch_qty" />
+                    </label>
+                  </div>
+                </section>
+
+                <section class="commercialPricingSection">
+                  <div class="commercialPricingSection__title">3. Estrutura operacional</div>
+                  <div class="commercialFormGrid commercialFormGrid--ops">
+                    <label class="commercialField">
+                      <span>Lançamento contábil</span>
+                      <select data-pricing-field="accounting_mode" data-pricing-mode></select>
+                    </label>
+                    <label class="commercialField">
+                      <span>Qtde.</span>
+                      <input type="number" min="0" step="1" data-pricing-field="accounting_qty" />
+                    </label>
+                    <label class="commercialField">
+                      <span>Funcionários</span>
+                      <select data-pricing-field="employees_mode" data-pricing-mode></select>
+                    </label>
+                    <label class="commercialField">
+                      <span>Qtde.</span>
+                      <input type="number" min="0" step="1" data-pricing-field="employees_qty" />
+                    </label>
+                    <label class="commercialField">
+                      <span>Sócios</span>
+                      <select data-pricing-field="partners_mode" data-pricing-mode></select>
+                    </label>
+                    <label class="commercialField">
+                      <span>Qtde.</span>
+                      <input type="number" min="0" step="1" data-pricing-field="partners_qty" />
+                    </label>
+                  </div>
+                </section>
+
+                <section class="commercialPricingSection">
+                  <div class="commercialPricingSection__title">4. Movimentação fiscal</div>
+                  <div class="commercialFormGrid commercialFormGrid--ops">
+                    <label class="commercialField">
+                      <span>NF entrada</span>
+                      <select data-pricing-field="nf_in_mode" data-pricing-mode></select>
+                    </label>
+                    <label class="commercialField">
+                      <span>Qtde.</span>
+                      <input type="number" min="0" step="1" data-pricing-field="nf_in_qty" />
+                    </label>
+                    <label class="commercialField">
+                      <span>NF saída</span>
+                      <select data-pricing-field="nf_out_mode" data-pricing-mode></select>
+                    </label>
+                    <label class="commercialField">
+                      <span>Qtde.</span>
+                      <input type="number" min="0" step="1" data-pricing-field="nf_out_qty" />
+                    </label>
+                    <label class="commercialField">
+                      <span>Serv. prestados</span>
+                      <select data-pricing-field="service_out_mode" data-pricing-mode></select>
+                    </label>
+                    <label class="commercialField">
+                      <span>Qtde.</span>
+                      <input type="number" min="0" step="1" data-pricing-field="service_out_qty" />
+                    </label>
+                    <label class="commercialField">
+                      <span>Serv. tomados</span>
+                      <select data-pricing-field="service_in_mode" data-pricing-mode></select>
+                    </label>
+                    <label class="commercialField">
+                      <span>Qtde.</span>
+                      <input type="number" min="0" step="1" data-pricing-field="service_in_qty" />
+                    </label>
+                    <label class="commercialField">
+                      <span>Locação</span>
+                      <select data-pricing-field="rental_mode" data-pricing-mode></select>
+                    </label>
+                    <label class="commercialField">
+                      <span>Qtde.</span>
+                      <input type="number" min="0" step="1" data-pricing-field="rental_qty" />
+                    </label>
+                    <label class="commercialField">
+                      <span>IPI</span>
+                      <select data-pricing-field="ipi_mode" data-pricing-mode></select>
+                    </label>
+                    <label class="commercialField">
+                      <span>Qtde.</span>
+                      <input type="number" min="0" step="1" data-pricing-field="ipi_qty" />
+                    </label>
+                  </div>
+                </section>
+
+                <section class="commercialPricingSection">
+                  <div class="commercialPricingSection__title">5. Serviços complementares</div>
+                  <div class="commercialFormGrid commercialFormGrid--three">
+                    <label class="commercialField">
+                      <span>Auditoria externa</span>
+                      <select data-pricing-field="audit">
+                        <option value="Não">Não</option>
+                        <option value="Sim">Sim</option>
+                      </select>
+                    </label>
+                    <label class="commercialField">
+                      <span>Horas de auditoria</span>
+                      <input type="number" min="0" step="1" data-pricing-field="audit_hours" />
+                    </label>
+                  </div>
+                </section>
+              </div>
+
+              <div class="commercialTotalsGrid">
+                <div class="commercialTotalsCard">
+                  <span>Mensalidade cheia</span>
+                  <strong id="pricingMonthlyFull">R$ 0,00</strong>
+                </div>
+                <div class="commercialTotalsCard">
+                  <span>Mensalidade contrato</span>
+                  <strong id="pricingMonthlyContract">R$ 0,00</strong>
+                </div>
+                <div class="commercialTotalsCard">
+                  <span>Total anual cheio</span>
+                  <strong id="pricingAnnualFull">R$ 0,00</strong>
+                </div>
+                <div class="commercialTotalsCard">
+                  <span>Total anual contrato</span>
+                  <strong id="pricingAnnualContract">R$ 0,00</strong>
+                </div>
+              </div>
+
+              <div class="commercialResultsTableWrap">
+                <table class="commercialResultsTable">
+                  <thead>
+                    <tr>
+                      <th>Seq.</th>
+                      <th>Descrição</th>
+                      <th>Indicador</th>
+                      <th>Qtde.</th>
+                      <th>Unitário</th>
+                      <th>Subtotal</th>
+                      <th>Desconto</th>
+                      <th>Contrato</th>
+                    </tr>
+                  </thead>
+                  <tbody id="pricingRowsBody">
+                    <tr>
+                      <td colspan="8" class="commercialResultsTable__empty">Calcule uma proposta para ver a composição.</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+
+              <div class="commercialSummaryBox">
+                <div class="commercialPricingSection__title">Resumo executivo</div>
+                <pre id="pricingSummary">Nenhuma proposta calculada ainda.</pre>
+              </div>
+            </article>
           </div>
 
           <div class="dashboardExact__column dashboardExact__column--side">
@@ -183,6 +415,22 @@
                   <p>Bloco pensado para acompanhar o que está quente e o que precisa de avanço agora.</p>
                 </div>
               </div>
+            </article>
+
+            <article class="panel exactCard commercialProposalArchiveCard">
+              <div class="panel-head">
+                <div>
+                  <h2>Propostas salvas</h2>
+                  <p>Histórico da automação comercial com status, valor de contrato e acesso rápido ao contrato aceito.</p>
+                </div>
+                <div class="panel__headerActions">
+                  <input class="commercialSearchInput" id="pricingSearch" type="search" placeholder="Buscar empresa..." />
+                  <button class="ghost-btn" type="button" id="btnRefreshPricingList">Atualizar</button>
+                </div>
+              </div>
+
+              <div class="commercialArchiveMeta" id="pricingArchiveMeta">Carregando propostas...</div>
+              <div class="commercialArchiveList" id="pricingSavedList"></div>
             </article>
 
             <article class="panel exactCard commercialPlaybookCard">

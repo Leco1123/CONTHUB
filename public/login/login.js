@@ -19,18 +19,22 @@ eye?.addEventListener("click", () => {
   const hidden = pass.type === "password";
   pass.type = hidden ? "text" : "password";
   if (eye) eye.textContent = hidden ? "🙈" : "👁";
+  eye?.setAttribute("aria-pressed", hidden ? "true" : "false");
 });
 
 /* ===== erro ===== */
-function showError(msg) {
+function showError(msg, variant = "error") {
   if (!err) return;
   err.textContent = msg;
+  err.classList.remove("message--error", "message--success");
+  err.classList.add(variant === "success" ? "message--success" : "message--error");
   err.classList.remove("hidden");
 }
 
 function clearError() {
   if (!err) return;
   err.textContent = "";
+  err.classList.remove("message--error", "message--success");
   err.classList.add("hidden");
 }
 
@@ -45,6 +49,11 @@ function showLoading(text = "Entrando no ContHub...") {
 function hideLoading() {
   if (loading) loading.style.display = "none";
   document.body.style.pointerEvents = "";
+}
+
+const params = new URLSearchParams(window.location.search);
+if (params.get("reset") === "ok") {
+  showError("Senha redefinida com sucesso. Faça login com a nova credencial.", "success");
 }
 
 /**

@@ -1,0 +1,12 @@
+semgrep-report.json
+generated/
+server/data/sheet-backups/
+server/_backup/
+server/data/*.sqlite
+server/data/*.sqlite-shm
+server/data/*.sqlite-wal
+scripts/reconciliador/__pycache__/
+public/tools/
+public/libs/
+zap-temp/
+zap-quick-report.html

@@ -1000,7 +1000,7 @@ window.PainelTributarioLRSheet = (() => {
   }
 
   function toPercent(value) {
-    const txt = String(value == null ? "" : value).trim().replace("%", "");
+    const txt = String(value == null ? "" : value).trim().replace(/%/g, "");
     const n = toNumberBR(txt);
     return n > 1 ? n / 100 : n;
   }

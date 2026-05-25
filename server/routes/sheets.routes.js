@@ -14,6 +14,10 @@ const AUTO_BACKUP_SHEET_KEYS = new Set([
   "painel-tributario-lr",
   "painel-tributario-lra",
 ]);
+const ACCOUNTING_SHEET_KEY_PATTERNS = [
+  /^contflow(?:-[a-z0-9_-]+)?$/i,
+  /^painel-tributario(?:-[a-z0-9_-]+)?$/i,
+];
 const BASE_OWNER_EMAILS = new Set([
   "leandro.vieira@franco-rnc.com.br",
   "adminleco@franco-rnc.com.br",
@@ -42,6 +46,24 @@ function requireSheetBaseOwner(req, res) {
     error: "Apenas Leandro pode salvar, importar ou restaurar a base completa.",
   });
   return false;
+}
+
+function isAccountingSheetKey(sheetKey) {
+  return ACCOUNTING_SHEET_KEY_PATTERNS.some((pattern) => pattern.test(String(sheetKey || "").trim()));
+}
+
+function requireSheetAccess(req, res, sheetKey) {
+  if (!isAccountingSheetKey(sheetKey)) return true;
+
+  const accessProfile = String(req.currentUser?.accessProfile || "").trim().toLowerCase();
+  if (accessProfile === "comercial") {
+    res.status(403).json({
+      error: "Seu perfil não possui acesso às bases contábeis.",
+    });
+    return false;
+  }
+
+  return true;
 }
 
 function getSheetCellsQuery(sheetId, includeDeleted = false) {
@@ -141,9 +163,24 @@ function safePathPart(value, fallback = "sheet") {
 
 function getSheetBackupDir(sheetKey) {
   ensureBackupRoot();
+  // nosemgrep: javascript.lang.security.audit.path-traversal.path-join-resolve-traversal.path-join-resolve-traversal
   const dir = path.join(SHEET_BACKUP_ROOT, safePathPart(sheetKey, "sheet"));
   fs.mkdirSync(dir, { recursive: true });
   return dir;
+}
+
+function resolvePathInsideDir(baseDir, filename) {
+  // nosemgrep: javascript.lang.security.audit.path-traversal.path-join-resolve-traversal.path-join-resolve-traversal
+  const safeBaseDir = path.resolve(baseDir);
+  const safeFileName = path.basename(String(filename || "").trim());
+  // nosemgrep: javascript.lang.security.audit.path-traversal.path-join-resolve-traversal.path-join-resolve-traversal
+  const resolvedPath = path.resolve(safeBaseDir, safeFileName);
+
+  if (resolvedPath !== safeBaseDir && !resolvedPath.startsWith(`${safeBaseDir}${path.sep}`)) {
+    throw new Error("Caminho inválido fora do diretório permitido.");
+  }
+
+  return resolvedPath;
 }
 
 async function loadFullSheetPayload(sheet) {
@@ -169,8 +206,8 @@ function pruneSheetBackups(sheetKey) {
     .filter((entry) => entry.isFile() && entry.name.endsWith(".json"))
     .map((entry) => ({
       name: entry.name,
-      fullPath: path.join(dir, entry.name),
-      mtimeMs: fs.statSync(path.join(dir, entry.name)).mtimeMs,
+      fullPath: resolvePathInsideDir(dir, entry.name),
+      mtimeMs: fs.statSync(resolvePathInsideDir(dir, entry.name)).mtimeMs,
     }))
     .sort((a, b) => b.mtimeMs - a.mtimeMs);
 
@@ -188,7 +225,7 @@ function createSheetBackup(sheet, payload, actor, reason = "update") {
   const stamp = new Date().toISOString().replace(/[:.]/g, "-");
   const backupId = `${stamp}__v${Number(sheet.version || 0)}`;
   const fileName = `${backupId}.json`;
-  const fullPath = path.join(dir, fileName);
+  const fullPath = resolvePathInsideDir(dir, fileName);
 
   const backupEnvelope = {
     backupId,
@@ -225,7 +262,11 @@ function readSheetBackupEnvelope(sheetKey, backupId) {
     throw new Error("backupId obrigatório.");
   }
 
-  const filePath = path.join(getSheetBackupDir(sheetKey), `${cleanBackupId}.json`);
+  if (!/^[a-z0-9_-]+(?:__v\d+)?$/i.test(cleanBackupId)) {
+    throw new Error("backupId inválido.");
+  }
+
+  const filePath = resolvePathInsideDir(getSheetBackupDir(sheetKey), `${cleanBackupId}.json`);
   if (!fs.existsSync(filePath)) {
     throw new Error("Backup não encontrado.");
   }
@@ -249,7 +290,7 @@ function listSheetBackups(sheetKey) {
     .readdirSync(dir, { withFileTypes: true })
     .filter((entry) => entry.isFile() && entry.name.endsWith(".json"))
     .map((entry) => {
-      const fullPath = path.join(dir, entry.name);
+      const fullPath = resolvePathInsideDir(dir, entry.name);
       const stat = fs.statSync(fullPath);
       let envelope = null;
 
@@ -672,6 +713,7 @@ router.post("/", async (req, res) => {
 router.get("/:key/backups", async (req, res) => {
   try {
     const key = String(req.params.key || "").trim();
+    if (!requireSheetAccess(req, res, key)) return;
     const sheet = await db.sheet.findFirst({
       where: { key, deletedAt: null },
       select: { id: true, key: true, name: true, version: true, updatedAt: true },
@@ -697,6 +739,7 @@ router.post("/:key/backups/:backupId/restore", async (req, res) => {
     if (!requireSheetBaseOwner(req, res)) return;
 
     const key = String(req.params.key || "").trim();
+    if (!requireSheetAccess(req, res, key)) return;
     const backupId = String(req.params.backupId || "").trim();
 
     let sheet = await db.sheet.findFirst({
@@ -768,6 +811,7 @@ router.post("/:key/backups/:backupId/restore", async (req, res) => {
 router.get("/:key", async (req, res) => {
   try {
     const key = String(req.params.key || "").trim();
+    if (!requireSheetAccess(req, res, key)) return;
 
     const sheet = await db.sheet.findFirst({
       where: { key, deletedAt: null },
@@ -803,6 +847,7 @@ router.get("/:key", async (req, res) => {
 router.patch("/:key/cells", async (req, res) => {
   try {
     const key = String(req.params.key || "").trim();
+    if (!requireSheetAccess(req, res, key)) return;
     const incomingChanges = Array.isArray(req.body?.changes) ? req.body.changes : [];
 
     if (!incomingChanges.length) {
@@ -876,6 +921,7 @@ router.put("/:key", async (req, res) => {
     if (!requireSheetBaseOwner(req, res)) return;
 
     const key = String(req.params.key || "").trim();
+    if (!requireSheetAccess(req, res, key)) return;
 
     let sheet = await db.sheet.findFirst({
       where: { key, deletedAt: null },
@@ -950,6 +996,7 @@ router.post("/:key/import-local", async (req, res) => {
 
 
     const key = String(req.params.key || "").trim();
+    if (!requireSheetAccess(req, res, key)) return;
 
     const incomingRows = Array.isArray(req.body?.rows)
       ? req.body.rows

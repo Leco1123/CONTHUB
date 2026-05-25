@@ -712,7 +712,7 @@ window.PainelTributarioSheet = (() => {
   }
 
   function toPercent(value) {
-    const txt = String(value == null ? "" : value).trim().replace("%", "");
+    const txt = String(value == null ? "" : value).trim().replace(/%/g, "");
     const n = toNumberBR(txt);
     return n > 1 ? n / 100 : n;
   }
@@ -741,12 +741,20 @@ window.PainelTributarioSheet = (() => {
   }
 
   function escapeHTML(value) {
-    return String(value ?? "")
-      .replaceAll("&", "&amp;")
-      .replaceAll("<", "&lt;")
-      .replaceAll(">", "&gt;")
-      .replaceAll('"', "&quot;")
-      .replaceAll("'", "&#039;");
+    return String(value ?? "").replace(/[&<>"']/g, (char) => {
+      switch (char) {
+        case "&":
+          return "&amp;";
+        case "<":
+          return "&lt;";
+        case ">":
+          return "&gt;";
+        case '"':
+          return "&quot;";
+        default:
+          return "&#039;";
+      }
+    });
   }
 
   function formatPercent(value) {

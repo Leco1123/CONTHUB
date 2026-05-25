@@ -3,10 +3,13 @@ const msg = document.getElementById("msg");
 
 function showMsg(text) {
   msg.textContent = text;
+  msg.classList.remove("message--error");
+  msg.classList.add("message--success");
   msg.classList.remove("hidden");
 }
 function clearMsg() {
   msg.textContent = "";
+  msg.classList.remove("message--error", "message--success");
   msg.classList.add("hidden");
 }
 

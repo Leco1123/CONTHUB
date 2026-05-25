@@ -8,91 +8,79 @@
     content="Cadastro de novos usuários no ContHub para acesso ao painel contábil e módulos operacionais da Franco RNC."
   />
   <title>ContHub • Cadastro</title>
-
-  <!-- Reaproveita o CSS do login (mesmo visual garantido) -->
+  <script src="../shared/theme-boot.js"></script>
+  <link rel="stylesheet" href="../shared/theme.css" />
   <link rel="stylesheet" href="/login/login.css" />
 </head>
 
-<body class="login">
-  <main class="wrap">
-    <form class="card" id="signupForm" novalidate>
-      <header class="card__header">
-        <h1>ContHub</h1>
-        <p class="muted">Crie seu acesso:</p>
+<body class="auth-screen">
+  <main class="auth-shell">
+    <section class="auth-hero">
+      <span class="auth-kicker">Novo acesso</span>
+      <h1>Crie sua conta no mesmo padrão do painel.</h1>
+      <p>
+        Faça seu cadastro inicial para entrar no ecossistema do ContHub e seguir para o dashboard principal.
+      </p>
+
+      <div class="theme-switcher theme-switcher--auth" aria-label="Alternar tema">
+        <button type="button" class="theme-switcher__button" data-theme-choice="dark">Preto</button>
+        <button type="button" class="theme-switcher__button" data-theme-choice="light">Branco</button>
+      </div>
+
+      <div class="auth-hero__stats">
+        <article class="auth-stat">
+          <span>Perfil inicial</span>
+          <strong>Customer</strong>
+          <small>Conta criada com papel padrão de cliente.</small>
+        </article>
+        <article class="auth-stat">
+          <span>Senha</span>
+          <strong>10+ caracteres</strong>
+          <small>Requisito mínimo de segurança do sistema.</small>
+        </article>
+      </div>
+    </section>
+
+    <form class="auth-card" id="signupForm" novalidate>
+      <header class="auth-card__header">
+        <span class="auth-card__eyebrow">Cadastro</span>
+        <h2>Criar conta</h2>
+        <p class="muted">Preencha os dados básicos para abrir seu acesso.</p>
       </header>
 
       <div class="field">
         <label for="name">Nome</label>
-        <input
-          id="name"
-          name="name"
-          type="text"
-          placeholder="Seu nome"
-          autocomplete="name"
-          required
-        />
+        <input id="name" name="name" type="text" placeholder="Seu nome" autocomplete="name" required />
       </div>
 
       <div class="field">
         <label for="email">Email</label>
-        <input
-          id="email"
-          name="email"
-          type="email"
-          placeholder="voce@empresa.com"
-          autocomplete="email"
-          required
-        />
+        <input id="email" name="email" type="email" placeholder="voce@empresa.com" autocomplete="email" required />
       </div>
 
       <div class="field">
         <label for="password">Senha</label>
         <div class="password">
-          <input
-            id="password"
-            name="password"
-            type="password"
-            placeholder="mín. 6 caracteres"
-            autocomplete="new-password"
-            required
-          />
-          <button
-            class="eye"
-            id="togglePassword"
-            type="button"
-            aria-label="Mostrar senha"
-            aria-pressed="false"
-          >
-            👁
-          </button>
+          <input id="password" name="password" type="password" placeholder="Mínimo de 10 caracteres" autocomplete="new-password" required />
+          <button class="eye" id="togglePassword" type="button" aria-label="Mostrar senha" aria-pressed="false">👁</button>
         </div>
       </div>
 
       <div class="field">
         <label for="password2">Confirmar senha</label>
-        <input
-          id="password2"
-          name="password2"
-          type="password"
-          placeholder="repita a senha"
-          autocomplete="new-password"
-          required
-        />
+        <input id="password2" name="password2" type="password" placeholder="Repita a senha" autocomplete="new-password" required />
       </div>
 
-      <button class="btn btn--primary w100" type="submit">
-        Cadastrar
-      </button>
+      <button class="auth-submit" type="submit">Cadastrar</button>
 
-      <p class="hint muted">
-        Já tem conta? <a href="/login/login.html">Entrar</a>
-      </p>
+      <div class="auth-links">
+        <a href="/login/login.html">Já tenho conta</a>
+      </div>
 
-      <div id="err" class="err hidden" role="alert"></div>
-
-      <footer class="card__footer">
-        <p class="hint muted">Ao cadastrar, você cria um usuário “customer”.</p>
-      </footer>
+      <div id="err" class="message message--error hidden" role="alert"></div>
+      <div class="message" style="margin-top:12px; border-color:var(--theme-stroke); background:var(--theme-surface-2); color:var(--theme-muted);">
+        Ao cadastrar, você cria um usuário inicial com permissões básicas.
+      </div>
     </form>
   </main>
 

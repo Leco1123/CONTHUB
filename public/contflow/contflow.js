@@ -183,12 +183,20 @@ const MAX_UNDO = 150;
 const MAX_VERSIONS = 12;
 
 function escapeHTML(value) {
-  return String(value ?? "")
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
+  return String(value ?? "").replace(/[&<>"']/g, (char) => {
+    switch (char) {
+      case "&":
+        return "&amp;";
+      case "<":
+        return "&lt;";
+      case ">":
+        return "&gt;";
+      case '"':
+        return "&quot;";
+      default:
+        return "&#039;";
+    }
+  });
 }
 
 /* ===========================
@@ -496,6 +504,13 @@ function normalizeModuleAccess(access) {
 
 function canAccessModule(moduleId, user = getSessionUser()) {
   const id = String(moduleId || "").trim().toLowerCase();
+  if (Array.isArray(user?.permissions)) {
+    const matched = user.permissions.find((entry) => String(entry?.moduleId || "").trim().toLowerCase() === id);
+    if (matched) return Boolean(matched.view);
+  }
+  if (Array.isArray(user?.visibleModules) && user.visibleModules.length) {
+    return user.visibleModules.map((item) => String(item || "").trim().toLowerCase()).includes(id);
+  }
   const profile = getAccessProfile(user);
   const role = String(user?.role || "").trim().toLowerCase();
   const rules = normalizeModuleAccess(MODULE_ACCESS_MAP[id]);
@@ -935,7 +950,7 @@ async function loadCurrentContFlowSheet() {
     cacheActiveQuarterState();
     renderTable();
   } catch (err) {
-    console.error(`❌ Falha ao carregar ${getActiveContFlowSheetDef().label}:`, err);
+    console.error("❌ Falha ao carregar %s:", getActiveContFlowSheetDef().label, err);
 
     const localDraft = loadLocalDraft();
     if (localDraft) {
@@ -1020,7 +1035,7 @@ async function switchContFlowSheet(nextIndex, options = {}) {
   refreshDirtyVisuals();
 
   loadCurrentContFlowSheet().catch((err) => {
-    console.error(`Erro ao sincronizar ${getActiveContFlowSheetDef().label}:`, err);
+    console.error("Erro ao sincronizar %s:", getActiveContFlowSheetDef().label, err);
   });
 }
 

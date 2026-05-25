@@ -8,8 +8,9 @@
       content="ContAdmin é o módulo administrativo do ContHub para gestão de usuários, equipes, acessos e configurações operacionais."
     />
     <title>ContHub • Admin</title>
-
-    <link rel="stylesheet" href="./contadmin.css?v=20260521-01" />
+    <script src="../shared/theme-boot.js"></script>
+    <link rel="stylesheet" href="./contadmin.css?v=20260524-03" />
+    <link rel="stylesheet" href="../shared/theme.css" />
   </head>
 
   <body>
@@ -141,6 +142,10 @@
 
         <!-- ✅ Rodapé da sidebar / usercard COMO BOTÃO (sem botão dentro de botão) -->
         <div class="sidebar__footer">
+          <div class="theme-switcher theme-switcher--sidebar" aria-label="Alternar tema">
+            <button type="button" class="theme-switcher__button" data-theme-choice="dark">Preto</button>
+            <button type="button" class="theme-switcher__button" data-theme-choice="light">Branco</button>
+          </div>
           <!-- ✅ wrap com layout garantido (evita sobreposição e clique comido) -->
           <div class="usercard-wrap" style="display:flex; gap:10px; align-items:center;">
             <!-- ✅ Botão do usuário (clicável, igual aos módulos) -->
@@ -196,13 +201,21 @@
                 type="text"
                 id="usuariosFiltro"
                 class="usuarios-filtro"
-                placeholder="Filtrar por nome, email, cargo ou perfil"
+                placeholder="Filtrar por nome, email, cargo, perfil ou comportamental"
               />
               <button class="btn-acao bt-novo-usuario" id="btnNovoUsuario" type="button">Novo Usuário</button>
             </div>
 
             <div class="tabela-wrapper">
               <table class="tabela-usuarios">
+                <colgroup>
+                  <col style="width: 16%" />
+                  <col style="width: 24%" />
+                  <col style="width: 16%" />
+                  <col style="width: 14%" />
+                  <col style="width: 10%" />
+                  <col style="width: 20%" />
+                </colgroup>
                 <thead>
                   <tr>
                     <th>Nome</th>
@@ -276,8 +289,8 @@
 
                 <section class="form-usuario__section form-usuario__section--role">
                   <div class="form-usuario__section-head">
-                    <strong>Perfil de acesso</strong>
-                    <span>Defina o nível de permissão deste colaborador</span>
+                    <strong>Permissões</strong>
+                    <span>Defina acesso base e abra a matriz detalhada do usuário</span>
                   </div>
                   <div id="roleBox"></div>
                 </section>
@@ -285,26 +298,9 @@
                 <section class="form-usuario__section">
                   <div class="form-usuario__section-head">
                     <strong>Estrutura</strong>
-                    <span id="estruturaHint">Coordenador, equipe e cargo</span>
+                    <span id="estruturaHint">Cargo, equipe e perfil comportamental</span>
                   </div>
                   <div class="form-grid form-grid--three">
-                    <label class="form-field">
-                      <span>Coordenador</span>
-                      <div class="select-cargo">
-                        <select
-                          id="coordenador"
-                          name="coordenador"
-                        ></select>
-                      </div>
-                    </label>
-
-                    <label class="form-field">
-                      <span>Equipe</span>
-                      <div class="select-cargo">
-                        <select id="equipe" name="equipe"></select>
-                      </div>
-                    </label>
-
                     <label class="form-field">
                       <span>Cargo</span>
                       <div class="select-cargo">
@@ -317,6 +313,28 @@
                           <option value="Auxiliar">Auxiliar</option>
                           <option value="Estagiário">Estagiário</option>
                         </select>
+                      </div>
+                    </label>
+
+                    <label class="form-field">
+                      <span>Equipe</span>
+                      <div class="select-cargo">
+                        <select id="equipe" name="equipe"></select>
+                        <select id="coordenador" name="coordenador" hidden aria-hidden="true" tabindex="-1"></select>
+                      </div>
+                    </label>
+
+                    <label class="form-field">
+                      <span>Perfil Comportamental 1</span>
+                      <div class="select-cargo">
+                        <select id="behavioralProfilePrimary" name="behavioralProfilePrimary"></select>
+                      </div>
+                    </label>
+
+                    <label class="form-field">
+                      <span>Perfil Comportamental 2</span>
+                      <div class="select-cargo">
+                        <select id="behavioralProfileSecondary" name="behavioralProfileSecondary"></select>
                       </div>
                     </label>
                   </div>
@@ -334,7 +352,7 @@
             <h2>Equipes</h2>
             <p class="muted">Visualize as equipes por coordenador e edite a estrutura quando necessário.</p>
 
-            <div class="usuarios-toolbar">
+            <div class="usuarios-toolbar equipes-toolbar">
               <button class="btn-acao" id="btnGerenciarEquipes" type="button">Gerenciar Equipes</button>
             </div>
 
@@ -446,6 +464,6 @@
     </div>
 
     <!-- Script principal da página -->
-    <script src="./contadmin.js?v=20260521-01"></script>
+    <script src="./contadmin.js?v=20260524-04"></script>
   </body>
 </html>

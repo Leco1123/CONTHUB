@@ -1,7 +1,8 @@
 // server/routes/admin.modules.routes.js
 const express = require("express");
 const db = require("../db");
-const { requireAuth, requireAdmin } = require("../middleware/auth");
+const { syncCoreModules } = require("../services/module-registry.service");
+const { requireAuth, requireAdmin, canAccessModule } = require("../middleware/auth");
 
 const router = express.Router();
 
@@ -43,22 +44,12 @@ router.get("/", requireAuth, async (req, res) => {
   try {
     if (!ensureModuleModel(res)) return;
 
-    const rows = await db.module.findMany({
-      select: {
-        id: true,
-        name: true,
-        slug: true,
-        order: true,
-        status: true,
-        access: true,
-        active: true,
-        createdAt: true,
-        updatedAt: true,
-      },
-      orderBy: { order: "asc" },
-    });
+    const rows = await syncCoreModules(db);
 
-    return res.json({ modules: rows });
+    const currentUser = req.currentUser || req.session?.user || null;
+    const visibleRows = rows.filter((row) => canAccessModule(currentUser, row));
+
+    return res.json({ modules: visibleRows });
   } catch (err) {
     console.error("Erro ao listar módulos:", err);
     return res.status(500).json({ error: "Erro ao listar módulos." });
@@ -128,20 +119,7 @@ router.put("/", requireAdmin, async (req, res) => {
       )
     );
 
-    const rows = await db.module.findMany({
-      select: {
-        id: true,
-        name: true,
-        slug: true,
-        order: true,
-        status: true,
-        access: true,
-        active: true,
-        createdAt: true,
-        updatedAt: true,
-      },
-      orderBy: { order: "asc" },
-    });
+    const rows = await syncCoreModules(db);
 
     return res.json({ ok: true, modules: rows });
   } catch (err) {

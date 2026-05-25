@@ -92,7 +92,9 @@ model User {
   cargo String?
   coordenador  String?
   equipe       String?
+  behavioralProfile String?
   accessProfile String? @default("operacional")
+  permissionMode String  @default("profile")
 
   // opcional (para status online, etc.)
   lastSeenAt DateTime?
@@ -130,6 +132,7 @@ model User {
   dashboardNextActions DashboardNextAction[]
   contflowFeedCreated  ContflowFeed[]
   contflowSnapshots    ContflowDashboardSnapshot[]
+  modulePermissions    UserModulePermission[]
 
   @@index([role])
   @@index([active])
@@ -137,6 +140,8 @@ model User {
   @@index([coordenador])
   @@index([equipe])
   @@index([accessProfile])
+  @@index([behavioralProfile])
+  @@index([permissionMode])
 }
 
 model TeamConfigEntry {
@@ -243,8 +248,31 @@ model Module {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  userPermissions UserModulePermission[]
+
   @@index([order])
   @@index([active])
+}
+
+model UserModulePermission {
+  id Int @id @default(autoincrement())
+
+  userId Int
+  user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  moduleId Int
+  module   Module @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+
+  canView   Boolean @default(false)
+  canEdit   Boolean @default(false)
+  canManage Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, moduleId])
+  @@index([userId])
+  @@index([moduleId])
 }
 
 // ===================================================================

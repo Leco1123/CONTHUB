@@ -8,8 +8,9 @@
       content="ContHub centraliza os módulos da operação contábil da Franco RNC, com acesso a dashboard, fluxo, documentos, relatórios e administração."
     />
     <title>ContHub • Sidebar</title>
-
+    <script src="../shared/theme-boot.js"></script>
     <link rel="stylesheet" href="./contadmin.css" />
+    <link rel="stylesheet" href="../shared/theme.css" />
   </head>
 
   <body>
@@ -141,6 +142,10 @@
 
         <!-- Footer: usercard + sair -->
         <div class="sidebar__footer">
+          <div class="theme-switcher theme-switcher--sidebar" aria-label="Alternar tema">
+            <button type="button" class="theme-switcher__button" data-theme-choice="dark">Preto</button>
+            <button type="button" class="theme-switcher__button" data-theme-choice="light">Branco</button>
+          </div>
           <div class="usercard-wrap">
             <button
               class="cards-modulos usercard"

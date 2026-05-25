@@ -1,6 +1,7 @@
 (function () {
   const LOGIN_PAGE_URL = "../login/login.html";
   const API_MODULES = "/api/admin/modules";
+  const API_PRICING = "/api/commercial/pricing";
   const STATUS_LABEL = {
     online: "ONLINE",
     dev: "DEV",
@@ -12,6 +13,10 @@
   let currentUser = null;
   let moduleStatusMap = {};
   let moduleAccessMap = {};
+  let pricingBootstrap = null;
+  let pricingLastCalculation = null;
+  let pricingLastStatus = "Proposta em Analise";
+  let pricingActiveProposalKey = "";
 
   function goto(url) {
     const target = String(url || "").trim();
@@ -71,6 +76,13 @@
 
   function canAccessModule(moduleId, user = getSessionUser()) {
     const id = String(moduleId || "").trim().toLowerCase();
+    if (Array.isArray(user?.permissions)) {
+      const matched = user.permissions.find((entry) => String(entry?.moduleId || "").trim().toLowerCase() === id);
+      if (matched) return Boolean(matched.view);
+    }
+    if (Array.isArray(user?.visibleModules) && user.visibleModules.length) {
+      return user.visibleModules.map((item) => String(item || "").trim().toLowerCase()).includes(id);
+    }
     const role = String(user?.role || "").trim().toLowerCase();
     const profile = getAccessProfile(user);
     const rules = normalizeModuleAccess(moduleAccessMap[id]);
@@ -362,12 +374,462 @@
   }
 
   function escapeHTML(value) {
+    return String(value || "").replace(/[&<>"']/g, (char) => {
+      switch (char) {
+        case "&":
+          return "&amp;";
+        case "<":
+          return "&lt;";
+        case ">":
+          return "&gt;";
+        case '"':
+          return "&quot;";
+        default:
+          return "&#039;";
+      }
+    });
+  }
+
+  function formatMoney(value) {
+    const number = Number(value || 0);
+    try {
+      return number.toLocaleString("pt-BR", {
+        style: "currency",
+        currency: "BRL",
+      });
+    } catch (_) {
+      return `R$ ${number.toFixed(2)}`;
+    }
+  }
+
+  function normalizeText(value) {
     return String(value || "")
-      .replaceAll("&", "&amp;")
-      .replaceAll("<", "&lt;")
-      .replaceAll(">", "&gt;")
-      .replaceAll('"', "&quot;")
-      .replaceAll("'", "&#039;");
+      .trim()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase();
+  }
+
+  function pricingFieldElements() {
+    return Array.from(document.querySelectorAll("[data-pricing-field]"));
+  }
+
+  function setPricingHealth(text, tone = "soft") {
+    const chip = document.getElementById("pricingHealthChip");
+    if (!chip) return;
+    chip.textContent = text;
+    chip.dataset.tone = tone;
+  }
+
+  function setPricingArchiveMeta(text) {
+    const meta = document.getElementById("pricingArchiveMeta");
+    if (meta) meta.textContent = text;
+  }
+
+  function buildProposalKey(payload) {
+    const ficha = String(payload?.ficha_name || "").trim();
+    const company = String(payload?.company_name || payload?.payload?.company_name || "").trim();
+    const cnpj = String(payload?.cnpj || payload?.payload?.cnpj || "").trim();
+    return [ficha, company, cnpj].join("|").toLowerCase();
+  }
+
+  async function pricingFetch(pathname, options = {}) {
+    const mergedHeaders = {
+      ...(options.headers || {}),
+    };
+    if (!Object.prototype.hasOwnProperty.call(mergedHeaders, "Content-Type")) {
+      mergedHeaders["Content-Type"] = "application/json";
+    }
+    if (mergedHeaders["Content-Type"] == null) {
+      delete mergedHeaders["Content-Type"];
+    }
+
+    const response = await apiFetch(`${API_PRICING}${pathname}`, {
+      ...options,
+      headers: mergedHeaders,
+    });
+
+    if (!response.ok) {
+      const data = await response.json().catch(() => null);
+      throw new Error(data?.error || "Falha ao processar a automacao comercial.");
+    }
+
+    const contentType = String(response.headers.get("content-type") || "");
+    if (contentType.includes("application/json")) {
+      return response.json();
+    }
+
+    return response;
+  }
+
+  function fillSelect(select, values, fallback = "") {
+    if (!select) return;
+    const items = Array.isArray(values) ? values : [];
+    select.innerHTML = items
+      .map((item) => `<option value="${escapeHTML(item)}">${escapeHTML(item)}</option>`)
+      .join("");
+
+    if (fallback && items.includes(fallback)) {
+      select.value = fallback;
+    } else if (items.length) {
+      select.value = items[0];
+    }
+  }
+
+  function applyPricingValues(values = {}) {
+    pricingFieldElements().forEach((field) => {
+      const key = field.dataset.pricingField;
+      if (!key) return;
+      const nextValue = values[key];
+      if (nextValue == null) return;
+      field.value = String(nextValue);
+    });
+
+    const statusSelect = document.getElementById("pricingStatus");
+    if (statusSelect) statusSelect.value = pricingLastStatus;
+  }
+
+  function collectPricingValues() {
+    const values = {};
+    pricingFieldElements().forEach((field) => {
+      const key = field.dataset.pricingField;
+      if (!key) return;
+      values[key] = String(field.value ?? "").trim();
+    });
+    return values;
+  }
+
+  function renderPricingTotals(totals = {}) {
+    const map = {
+      pricingMonthlyFull: totals.monthly_full,
+      pricingMonthlyContract: totals.monthly_contract,
+      pricingAnnualFull: totals.annual_full,
+      pricingAnnualContract: totals.annual_contract,
+    };
+
+    Object.entries(map).forEach(([id, value]) => {
+      const node = document.getElementById(id);
+      if (node) node.textContent = formatMoney(value);
+    });
+  }
+
+  function renderPricingSummary(lines = []) {
+    const summary = document.getElementById("pricingSummary");
+    if (!summary) return;
+    summary.textContent = Array.isArray(lines) && lines.length
+      ? lines.join("\n")
+      : "Nenhuma proposta calculada ainda.";
+  }
+
+  function renderPricingRows(rows = []) {
+    const body = document.getElementById("pricingRowsBody");
+    if (!body) return;
+
+    if (!Array.isArray(rows) || !rows.length) {
+      body.innerHTML = '<tr><td colspan="8" class="commercialResultsTable__empty">Calcule uma proposta para ver a composicao.</td></tr>';
+      return;
+    }
+
+    body.innerHTML = rows
+      .map((row) => `
+        <tr>
+          <td>${escapeHTML(row.seq)}</td>
+          <td>${escapeHTML(row.desc)}</td>
+          <td>${escapeHTML(row.mode)}</td>
+          <td>${escapeHTML(row.qty)}</td>
+          <td>${formatMoney(row.unit)}</td>
+          <td>${formatMoney(row.total)}</td>
+          <td>${formatMoney(row.discount)}</td>
+          <td>${formatMoney(row.contract)}</td>
+        </tr>
+      `)
+      .join("");
+  }
+
+  function renderPricingCalculation(data) {
+    pricingLastCalculation = data;
+    renderPricingRows(data?.rows || []);
+    renderPricingTotals(data?.totals || {});
+    renderPricingSummary(data?.summary_lines || []);
+  }
+
+  function resetPricingPanel() {
+    if (!pricingBootstrap) return;
+    pricingLastCalculation = null;
+    pricingLastStatus = "Proposta em Analise";
+    pricingActiveProposalKey = "";
+    applyPricingValues(pricingBootstrap.defaults || {});
+    renderPricingRows([]);
+    renderPricingTotals({});
+    renderPricingSummary([]);
+    document.querySelectorAll(".commercialArchiveItem").forEach((item) => item.classList.remove("is-active"));
+  }
+
+  async function loadPricingBootstrap() {
+    setPricingHealth("Conectando motor...", "soft");
+    const health = await pricingFetch("/health", { method: "GET", headers: { "Content-Type": undefined } });
+    if (!health?.scriptExists) {
+      setPricingHealth("Motor ausente", "danger");
+      throw new Error("Motor comercial nao encontrado no servidor.");
+    }
+
+    const bootstrap = await pricingFetch("/bootstrap", { method: "GET", headers: { "Content-Type": undefined } });
+    pricingBootstrap = bootstrap;
+
+    fillSelect(document.getElementById("pricingFichaName"), bootstrap.fichas, bootstrap.fichas?.[0]);
+    fillSelect(document.getElementById("pricingSegment"), bootstrap.segments, bootstrap.defaults?.segment);
+    fillSelect(document.getElementById("pricingTable"), bootstrap.tables, bootstrap.defaults?.table);
+    fillSelect(document.getElementById("pricingTax"), bootstrap.taxes, bootstrap.defaults?.tax);
+    fillSelect(document.getElementById("pricingStatus"), bootstrap.statuses, pricingLastStatus);
+    document.querySelectorAll("[data-pricing-mode]").forEach((select) => {
+      fillSelect(select, bootstrap.modes, select.value || bootstrap.modes?.[0]);
+    });
+
+    applyPricingValues(bootstrap.defaults || {});
+    setPricingHealth("Motor pronto", "ok");
+  }
+
+  async function calculatePricing() {
+    const values = collectPricingValues();
+    pricingLastStatus = String(document.getElementById("pricingStatus")?.value || pricingLastStatus).trim();
+    setPricingHealth("Calculando proposta...", "soft");
+    const result = await pricingFetch("/calculate", {
+      method: "POST",
+      body: JSON.stringify({ values }),
+    });
+    renderPricingCalculation(result);
+    setPricingHealth("Calculo atualizado", "ok");
+    return result;
+  }
+
+  async function savePricingProposal() {
+    const values = collectPricingValues();
+    const fichaName = String(document.getElementById("pricingFichaName")?.value || "").trim();
+    const status = String(document.getElementById("pricingStatus")?.value || "Proposta em Analise").trim();
+    if (!String(values.company_name || "").trim()) {
+      window.alert("Preencha a razao social antes de salvar.");
+      return;
+    }
+
+    const saved = await pricingFetch("/proposals", {
+      method: "POST",
+      body: JSON.stringify({
+        ficha_name: fichaName,
+        status,
+        values,
+      }),
+    });
+
+    pricingLastStatus = status;
+    pricingActiveProposalKey = buildProposalKey(saved);
+    if (saved?.payload) {
+      renderPricingCalculation({
+        rows: saved.payload._rows || [],
+        totals: saved.payload._totals || {},
+        summary_lines: saved.payload._summary_lines || [],
+      });
+      applyPricingValues(saved.payload);
+    }
+
+    await loadPricingProposals();
+    setPricingHealth("Proposta salva", "ok");
+  }
+
+  function createPricingArchiveActions(item) {
+    const hasContract = Boolean(item?.payload?.signed_contract_path);
+    return `
+      <div class="commercialArchiveItem__actions">
+        <button class="ghost-btn" type="button" data-pricing-open="${escapeHTML(buildProposalKey(item))}">Abrir</button>
+        ${hasContract ? `<button class="ghost-btn" type="button" data-pricing-contract="${escapeHTML(buildProposalKey(item))}">Contrato</button>` : ""}
+        <button class="ghost-btn ghost-btn--danger" type="button" data-pricing-delete="${escapeHTML(buildProposalKey(item))}">Excluir</button>
+      </div>
+    `;
+  }
+
+  function renderPricingProposalList(items = [], counts = {}) {
+    const host = document.getElementById("pricingSavedList");
+    if (!host) return;
+
+    if (!Array.isArray(items) || !items.length) {
+      host.innerHTML = '<div class="commercialArchiveEmpty">Nenhuma proposta salva encontrada.</div>';
+      setPricingArchiveMeta("Nenhuma proposta salva.");
+      return;
+    }
+
+    const total = items.length;
+    const aceitas = Number(counts?.["Proposta Aceita"] || 0);
+    const analise = Number(counts?.["Proposta em Analise"] || 0);
+    setPricingArchiveMeta(`${total} proposta(s) • ${analise} em analise • ${aceitas} aceita(s)`);
+
+    host.innerHTML = items
+      .map((item) => {
+        const key = buildProposalKey(item);
+        const activeClass = key === pricingActiveProposalKey ? " is-active" : "";
+        return `
+          <article class="commercialArchiveItem${activeClass}" data-pricing-item="${escapeHTML(key)}">
+            <div class="commercialArchiveItem__head">
+              <div>
+                <strong>${escapeHTML(item.company_name || "Empresa sem nome")}</strong>
+                <span>${escapeHTML(item.ficha_name || "Ficha")} • ${escapeHTML(item.status || "-")}</span>
+              </div>
+              <div class="commercialArchiveItem__value">${formatMoney(item.monthly_contract)}</div>
+            </div>
+            <div class="commercialArchiveItem__meta">
+              <span>CNPJ: ${escapeHTML(item.cnpj || "Nao informado")}</span>
+              <span>Atualizacao: ${escapeHTML(item.updated_at || "-")}</span>
+            </div>
+            ${createPricingArchiveActions(item)}
+          </article>
+        `;
+      })
+      .join("");
+
+    const lookup = new Map(items.map((item) => [buildProposalKey(item), item]));
+    host.onclick = async (event) => {
+      const openButton = event.target.closest("[data-pricing-open]");
+      const deleteButton = event.target.closest("[data-pricing-delete]");
+      const contractButton = event.target.closest("[data-pricing-contract]");
+
+      if (openButton) {
+        const item = lookup.get(openButton.getAttribute("data-pricing-open"));
+        if (item) openPricingProposal(item);
+        return;
+      }
+
+      if (contractButton) {
+        const item = lookup.get(contractButton.getAttribute("data-pricing-contract"));
+        if (item) downloadPricingContract(item);
+        return;
+      }
+
+      if (deleteButton) {
+        const item = lookup.get(deleteButton.getAttribute("data-pricing-delete"));
+        if (item) await deletePricingProposal(item);
+      }
+    };
+  }
+
+  function openPricingProposal(item) {
+    const payload = item?.payload || {};
+    pricingActiveProposalKey = buildProposalKey(item);
+    pricingLastStatus = String(item?.status || "Proposta em Analise").trim();
+    applyPricingValues(payload);
+    const statusSelect = document.getElementById("pricingStatus");
+    if (statusSelect) statusSelect.value = pricingLastStatus;
+    renderPricingCalculation({
+      rows: payload._rows || [],
+      totals: payload._totals || {},
+      summary_lines: payload._summary_lines || [],
+    });
+    document.querySelectorAll(".commercialArchiveItem").forEach((card) => {
+      card.classList.toggle("is-active", card.dataset.pricingItem === pricingActiveProposalKey);
+    });
+  }
+
+  async function downloadPricingContract(item) {
+    const query = new URLSearchParams({
+      ficha_name: item.ficha_name || "",
+      company_name: item.company_name || "",
+      cnpj: item.cnpj || "",
+    });
+    const response = await pricingFetch(`/proposals/contract?${query.toString()}`, {
+      method: "GET",
+      headers: { "Content-Type": undefined },
+    });
+    const blob = await response.blob();
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = item?.payload?.signed_contract_name || "contrato.docx";
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(url);
+  }
+
+  async function deletePricingProposal(item) {
+    if (!window.confirm(`Excluir a proposta de ${item.company_name}?`)) return;
+    await pricingFetch("/proposals", {
+      method: "DELETE",
+      body: JSON.stringify({
+        ficha_name: item.ficha_name || "",
+        company_name: item.company_name || "",
+        cnpj: item.cnpj || "",
+      }),
+    });
+
+    if (pricingActiveProposalKey === buildProposalKey(item)) {
+      resetPricingPanel();
+    }
+    await loadPricingProposals();
+  }
+
+  async function loadPricingProposals() {
+    const search = String(document.getElementById("pricingSearch")?.value || "").trim();
+    setPricingArchiveMeta("Atualizando propostas...");
+    const query = search ? `?search=${encodeURIComponent(search)}` : "";
+    const data = await pricingFetch(`/proposals${query}`, {
+      method: "GET",
+      headers: { "Content-Type": undefined },
+    });
+    renderPricingProposalList(data?.items || [], data?.counts || {});
+  }
+
+  function bindPricingPanel() {
+    document.getElementById("btnPricingCalculate")?.addEventListener("click", async () => {
+      try {
+        await calculatePricing();
+      } catch (error) {
+        setPricingHealth("Falha no calculo", "danger");
+        window.alert(error.message || "Falha ao calcular a proposta.");
+      }
+    });
+
+    document.getElementById("btnPricingSave")?.addEventListener("click", async () => {
+      try {
+        if (!pricingLastCalculation) {
+          await calculatePricing();
+        }
+        await savePricingProposal();
+      } catch (error) {
+        setPricingHealth("Falha ao salvar", "danger");
+        window.alert(error.message || "Falha ao salvar a proposta.");
+      }
+    });
+
+    document.getElementById("btnPricingReset")?.addEventListener("click", () => {
+      resetPricingPanel();
+      setPricingHealth("Formulario limpo", "soft");
+    });
+
+    document.getElementById("btnRefreshPricingList")?.addEventListener("click", async () => {
+      try {
+        await loadPricingProposals();
+      } catch (error) {
+        setPricingArchiveMeta(error.message || "Falha ao atualizar propostas.");
+      }
+    });
+
+    document.getElementById("pricingSearch")?.addEventListener("input", async () => {
+      try {
+        await loadPricingProposals();
+      } catch (error) {
+        setPricingArchiveMeta(error.message || "Falha ao filtrar propostas.");
+      }
+    });
+
+    pricingFieldElements().forEach((field) => {
+      field.addEventListener("input", () => {
+        pricingLastCalculation = null;
+        if (field.dataset.pricingField === "company_name" || field.dataset.pricingField === "cnpj") {
+          pricingActiveProposalKey = "";
+        }
+      });
+    });
+
+    document.getElementById("pricingStatus")?.addEventListener("change", (event) => {
+      pricingLastStatus = String(event.target.value || "").trim();
+    });
   }
 
   function formatDateLong(date) {
@@ -485,5 +947,14 @@
     renderNextActions();
     bindActionButtons();
     bindNavigation();
+    bindPricingPanel();
+
+    try {
+      await loadPricingBootstrap();
+      await loadPricingProposals();
+    } catch (error) {
+      setPricingHealth("Falha no motor", "danger");
+      setPricingArchiveMeta(error.message || "Falha ao iniciar a automacao comercial.");
+    }
   });
 })();

@@ -1,92 +1,110 @@
-// public/perfil/perfil.js
-// PERFIL • JS (100% SESSION + API)
-// ✅ Sessão real via /api/auth/me
-// ✅ Perfil atualizado via /api/auth/profile
-// ✅ Logs do backend via /api/admin/users/:id/logs
-// ✅ Módulos do backend via /api/admin/modules
-
 (function () {
   const LOGIN_PAGE_URL = "../login/login.html";
-  const API_BASE = "";
-  const API_MODULES = `${API_BASE}/api/admin/modules`;
-  const API_USER_LOGS = (id) => `${API_BASE}/api/admin/users/${id}/logs?limit=50`;
-
-  let AUTH_USER = null;
-  let MODULES_ROWS = [];
-
-  const elAvatar = document.getElementById("avatar");
-  const elNome = document.getElementById("nome");
-  const elEmail = document.getElementById("email");
-  const elNivelAcesso = document.getElementById("nivelAcesso");
-  const elPerfilAcesso = document.getElementById("perfilAcesso");
-  const elCargo = document.getElementById("cargo");
-  const elStatus = document.getElementById("status");
-  const elCoordenador = document.getElementById("coordenador");
-  const elEquipe = document.getElementById("equipe");
-  const elUpdatedAt = document.getElementById("updatedAt");
-
-  const elRoleBadge = document.getElementById("roleBadge");
-  const elCargoBadge = document.getElementById("cargoBadge");
-  const elStatusBadge = document.getElementById("statusBadge");
-
-  const elModulesList = document.getElementById("modulesList");
-  const elLogsList = document.getElementById("logsList");
-
-  const btnVoltar = document.getElementById("btnVoltar");
-  const btnSair = document.getElementById("btnSair");
-
+  const DASHBOARD_PAGE_URL = "../dashboard/dashboard.html";
   const MODULE_CATALOG = [
     { id: "dashboard", name: "Dashboard", desc: "Visão geral do ContHub.", icon: "🏠" },
-    { id: "contcomercial", name: "ContComercial", desc: "Área comercial com foco em relacionamento, operação e acompanhamento.", icon: "💼" },
-    { id: "contflow", name: "ContFlow", desc: "Controle de rotinas e fluxo contábil.", icon: "⚡" },
-    { id: "contanalytics", name: "ContAnalytics", desc: "KPIs, indicadores e painéis.", icon: "📊" },
-    { id: "contdocs", name: "ContDocs", desc: "Centralização e gestão de documentos.", icon: "📁" },
-    { id: "contrelatorios", name: "ContRelatórios", desc: "Geração de relatórios e exportações.", icon: "📈" },
-    { id: "contconfig", name: "ContConfig", desc: "Parâmetros e configurações gerais.", icon: "⚙️" },
-    { id: "contadmin", name: "ContAdmin Hub", desc: "Área administrativa e controle total.", icon: "🛡️" },
+    { id: "contcomercial", name: "ContComercial", desc: "Operação comercial e propostas.", icon: "💼" },
+    { id: "contflow", name: "ContFlow", desc: "Fluxo e rotinas contábeis.", icon: "⚡" },
+    { id: "contanalytics", name: "ContAnalytics", desc: "Indicadores e análise.", icon: "📊" },
+    { id: "contdocs", name: "ContDocs", desc: "Documentos e reconciliações.", icon: "📁" },
+    { id: "contrelatorios", name: "ContRelatórios", desc: "Exportações e relatórios.", icon: "📈" },
+    { id: "contconfig", name: "ContConfig", desc: "Configurações do ecossistema.", icon: "⚙️" },
+    { id: "contadmin", name: "ContAdmin", desc: "Usuários, equipes e permissões.", icon: "🛡️" },
   ];
+
+  let authUser = null;
+
+  const el = {
+    avatar: document.getElementById("avatar"),
+    nome: document.getElementById("nome"),
+    email: document.getElementById("email"),
+    perfilAcesso: document.getElementById("perfilAcesso"),
+    nivelAcesso: document.getElementById("nivelAcesso"),
+    cargo: document.getElementById("cargo"),
+    status: document.getElementById("status"),
+    coordenador: document.getElementById("coordenador"),
+    equipe: document.getElementById("equipe"),
+    behavioralProfile: document.getElementById("behavioralProfile"),
+    createdAt: document.getElementById("createdAt"),
+    roleBadge: document.getElementById("roleBadge"),
+    cargoBadge: document.getElementById("cargoBadge"),
+    statusBadge: document.getElementById("statusBadge"),
+    updatedAtPill: document.getElementById("updatedAtPill"),
+    summaryBehavioral: document.getElementById("perfilBehavioral"),
+    summaryEquipe: document.getElementById("perfilEquipe"),
+    summaryPermissionMode: document.getElementById("perfilPermissionMode"),
+    modulesList: document.getElementById("modulesList"),
+    logsList: document.getElementById("logsList"),
+    profileForm: document.getElementById("profileForm"),
+    profileFeedback: document.getElementById("profileFeedback"),
+    profileName: document.getElementById("profileName"),
+    profileEmail: document.getElementById("profileEmail"),
+    profileCurrentPassword: document.getElementById("profileCurrentPassword"),
+    profileNewPassword: document.getElementById("profileNewPassword"),
+    profileConfirmPassword: document.getElementById("profileConfirmPassword"),
+    btnVoltar: document.getElementById("btnVoltar"),
+    btnSair: document.getElementById("btnSair"),
+  };
 
   function goto(url) {
     const target = String(url || "").trim();
     if (!target) return;
-
     try {
       if (window.top && window.top !== window) {
         window.top.location.href = target;
         return;
       }
     } catch (_) {}
-
     window.location.href = target;
   }
 
-  function getSessionUser() {
-    return AUTH_USER;
+  function cleanText(value) {
+    return String(value ?? "").trim();
   }
 
-  async function logout() {
-    try {
-      await fetch("/api/auth/logout", {
-        method: "POST",
-        credentials: "include",
-      });
-    } catch (err) {
-      console.warn("Falha ao encerrar sessão:", err);
-    }
+  function escapeHtml(value) {
+    return String(value ?? "").replace(/[&<>"']/g, (char) => {
+      switch (char) {
+        case "&": return "&amp;";
+        case "<": return "&lt;";
+        case ">": return "&gt;";
+        case '"': return "&quot;";
+        default: return "&#039;";
+      }
+    });
+  }
 
-    AUTH_USER = null;
-    goto(LOGIN_PAGE_URL);
+  function normalizeName(value) {
+    return cleanText(value)
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase();
+  }
+
+  function avatarFromName(name) {
+    const text = cleanText(name);
+    return text ? text[0].toUpperCase() : "U";
+  }
+
+  function fmtTime(iso) {
+    if (!iso) return "—";
+    try {
+      return new Date(iso).toLocaleString("pt-BR");
+    } catch {
+      return "—";
+    }
   }
 
   function roleLabel(role) {
-    const normalized = String(role || "user").trim().toLowerCase();
+    const normalized = cleanText(role).toLowerCase();
     if (normalized === "ti") return "TI";
     if (normalized === "admin") return "ADMIN";
+    if (normalized === "customer") return "CLIENTE";
     return "USER";
   }
 
   function accessProfileLabel(profile) {
-    const normalized = String(profile || "").trim().toLowerCase();
+    const normalized = cleanText(profile).toLowerCase();
     if (normalized === "ti") return "TI";
     if (normalized === "gerencial") return "Gerencial";
     if (normalized === "coordenacao") return "Coordenação";
@@ -95,374 +113,297 @@
     return "Operacional";
   }
 
-  function normalizeName(value) {
-    return String(value || "")
-      .normalize("NFD")
-      .replace(/[\u0300-\u036f]/g, "")
-      .trim()
-      .toLowerCase();
+  function permissionModeLabel(mode) {
+    return cleanText(mode).toLowerCase() === "custom" ? "Matriz personalizada" : "Perfil padrão";
   }
 
-  function avatarFromName(name) {
-    const text = String(name || "").trim();
-    return text ? text[0].toUpperCase() : "U";
+  function splitBehavioralProfile(profile) {
+    const raw = cleanText(profile);
+    if (!raw) return [];
+    return raw
+      .split(/[\/|,;]+/)
+      .map((item) => item.trim())
+      .filter(Boolean)
+      .slice(0, 2);
   }
 
-  function fmtTime(iso) {
-    try {
-      const date = new Date(iso);
-      return date.toLocaleString("pt-BR");
-    } catch {
-      return "—";
-    }
+  function behavioralChipLabel(profile) {
+    const normalized = normalizeName(profile);
+    if (normalized.includes("execut")) return "Executor";
+    if (normalized.includes("comunic")) return "Comunicador";
+    if (normalized.includes("anal")) return "Analista";
+    if (normalized.includes("planej")) return "Planejador";
+    return cleanText(profile);
   }
 
-  function escapeHtml(value) {
-    return String(value ?? "")
-      .replaceAll("&", "&amp;")
-      .replaceAll("<", "&lt;")
-      .replaceAll(">", "&gt;")
-      .replaceAll('"', "&quot;")
-      .replaceAll("'", "&#039;");
+  function showFeedback(message, variant = "success") {
+    if (!el.profileFeedback) return;
+    el.profileFeedback.textContent = message;
+    el.profileFeedback.classList.remove("hidden", "message--error", "message--success");
+    el.profileFeedback.classList.add(variant === "error" ? "message--error" : "message--success");
   }
 
-  function cleanText(value) {
-    return String(value ?? "").trim();
-  }
-
-  function getDisplayValue(value, fallback = "—") {
-    const text = cleanText(value);
-    return text || fallback;
-  }
-
-  function normalizeModuleStatus(status, active) {
-    const normalized = String(status || "").trim().toLowerCase();
-
-    if (active === false) return "offline";
-    if (normalized === "offline" || normalized === "off") return "offline";
-    if (normalized === "dev") return "dev";
-    if (normalized === "admin") return "admin";
-    return "online";
-  }
-
-  function getSessionUserId(user) {
-    if (!user || typeof user !== "object") return null;
-    if (user.id == null || String(user.id).trim() === "") return null;
-
-    const numeric = Number(user.id);
-    return Number.isFinite(numeric) ? numeric : null;
+  function clearFeedback() {
+    if (!el.profileFeedback) return;
+    el.profileFeedback.textContent = "";
+    el.profileFeedback.classList.add("hidden");
+    el.profileFeedback.classList.remove("message--error", "message--success");
   }
 
   async function fetchJson(url, opts = {}) {
-    const session = getSessionUser();
-
-    const res = await fetch(url, {
+    const resp = await fetch(url, {
       method: opts.method || "GET",
       credentials: "include",
       headers: {
         "Content-Type": "application/json",
-        ...(session?.id != null ? { "x-user-id": String(session.id) } : {}),
-        ...(session?.email ? { "x-user-email": String(session.email) } : {}),
         ...(opts.headers || {}),
       },
       body: opts.body ? JSON.stringify(opts.body) : undefined,
     });
 
-    const text = await res.text();
-    let data = null;
-
-    try {
-      data = text ? JSON.parse(text) : null;
-    } catch {
-      data = { raw: text };
-    }
-
-    if (!res.ok) {
-      if (res.status === 401) {
-        AUTH_USER = null;
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok) {
+      if (resp.status === 401) {
+        authUser = null;
         goto(LOGIN_PAGE_URL);
         return null;
       }
-
-      const message = (data && (data.error || data.message)) || `HTTP ${res.status}`;
-      const err = new Error(message);
-      err.status = res.status;
-      err.payload = data;
-      throw err;
+      throw new Error(data?.error || data?.message || `HTTP ${resp.status}`);
     }
-
     return data;
   }
 
-  async function requireAuthOrRedirect() {
-    try {
-      const data = await fetchJson("/api/auth/me", { method: "GET" });
-      const me = data && typeof data === "object" ? data.user || data : null;
-
-      if (!me || typeof me !== "object") {
-        goto(LOGIN_PAGE_URL);
-        return null;
-      }
-
-      AUTH_USER = me;
-      return me;
-    } catch (err) {
-      console.warn("Falha ao validar sessão:", err?.message || err);
+  async function requireSession() {
+    const payload = await fetchJson("/api/auth/me");
+    const user = payload?.user || payload || null;
+    if (!user) {
       goto(LOGIN_PAGE_URL);
       return null;
     }
-  }
-
-  async function loadProfileFromApi() {
-    const payload = await fetchJson("/api/auth/me", { method: "GET" });
-    return payload && typeof payload === "object" ? payload.user || payload : null;
-  }
-
-  async function loadModulesFromApi() {
-    try {
-      const payload = await fetchJson(API_MODULES, { method: "GET" });
-      MODULES_ROWS = Array.isArray(payload?.modules) ? payload.modules : [];
-      return MODULES_ROWS;
-    } catch (err) {
-      console.warn("Falha ao carregar módulos:", err?.message || err);
-      MODULES_ROWS = [];
-      return MODULES_ROWS;
-    }
-  }
-
-  async function loadLogsFromApi(userId) {
-    const payload = await fetchJson(API_USER_LOGS(userId), { method: "GET" });
-    const list = payload?.logs || payload?.items || payload?.data || payload;
-    return Array.isArray(list) ? list : [];
-  }
-
-  function normalizeLogLine(log) {
-    const when = log.createdAt || log.timestamp || log.at || log.date || null;
-    const action = log.action || log.event || log.type || "LOG";
-    const by = log.actorEmail || log.actor || log.by || "";
-    const msg = log.message || log.detail || "";
-
-    return {
-      when: when ? fmtTime(when) : "—",
-      action: String(action),
-      by: String(by || ""),
-      msg: String(msg || ""),
-    };
-  }
-
-  function renderLogsMessage(message) {
-    if (!elLogsList) return;
-    elLogsList.innerHTML = `<div class="muted" style="font-size:12px;">${escapeHtml(message)}</div>`;
-  }
-
-  async function renderLogs(userId) {
-    if (!elLogsList) return;
-
-    if (!userId) {
-      renderLogsMessage("Sem identificação de usuário para carregar atividade.");
-      return;
-    }
-
-    renderLogsMessage("Carregando atividade…");
-
-    try {
-      const logs = await loadLogsFromApi(userId);
-
-      if (!logs.length) {
-        renderLogsMessage("Sem logs no servidor ainda.");
-        return;
-      }
-
-      elLogsList.innerHTML = logs
-        .map(normalizeLogLine)
-        .map(
-          (line) => `
-            <div class="log">
-              <div class="log__msg">
-                <strong>${escapeHtml(line.action)}</strong>
-                ${line.msg ? " - " + escapeHtml(line.msg) : ""}
-                ${line.by ? `<span class="muted" style="margin-left:8px;">(${escapeHtml(line.by)})</span>` : ""}
-              </div>
-              <div class="log__time">${escapeHtml(line.when)}</div>
-            </div>
-          `
-        )
-        .join("");
-    } catch (err) {
-      console.warn("Falha ao carregar logs do perfil:", err?.message || err);
-      renderLogsMessage("Não foi possível carregar a atividade agora.");
-    }
-  }
-
-  function getModuleCatalogMap() {
-    return Object.fromEntries(MODULE_CATALOG.map((module) => [module.id, module]));
-  }
-
-  function getRenderableModules() {
-    const catalogMap = getModuleCatalogMap();
-    const rows = MODULES_ROWS.map((row) => {
-      const id = cleanText(row.slug).toLowerCase();
-      return {
-        id,
-        slug: id,
-        name: cleanText(row.name) || catalogMap[id]?.name || id,
-        desc: catalogMap[id]?.desc || "Módulo do ecossistema ContHub.",
-        icon: catalogMap[id]?.icon || "•",
-        status: row.status,
-        active: row.active,
-        access: row.access,
-        order: row.order,
-      };
-    });
-
-    const merged = new Map(rows.map((row) => [row.id, row]));
-    MODULE_CATALOG.forEach((module, index) => {
-      if (!merged.has(module.id)) {
-        merged.set(module.id, {
-          ...module,
-          slug: module.id,
-          status: "online",
-          active: true,
-          access: "user+admin",
-          order: index + 1,
-        });
-      }
-    });
-
-    return Array.from(merged.values()).sort((a, b) => Number(a.order || 0) - Number(b.order || 0));
-  }
-
-  function normalizeModuleAccess(access) {
-    return String(access || "")
-      .split("+")
-      .map((item) => cleanText(item).toLowerCase())
-      .filter(Boolean);
-  }
-
-  function canAccessModule(user, module) {
-    const role = cleanText(user?.role).toLowerCase();
-    const accessProfile = cleanText(user?.accessProfile).toLowerCase();
-    const moduleId = cleanText(module?.id || module?.slug).toLowerCase();
-    const rules = normalizeModuleAccess(module?.access);
-
-    if (role === "ti" || accessProfile === "ti") return true;
-    if (accessProfile === "comercial") return moduleId === "dashboard" || moduleId === "contcomercial";
-    if (!rules.length || rules.includes("user+admin")) return moduleId !== "contadmin";
-    if (rules.includes("all") || rules.includes("*") || rules.includes("auth")) return true;
-    if (rules.includes(role) || rules.includes(accessProfile)) return true;
-    if (rules.includes("admin") && role === "admin") return true;
-    return false;
-  }
-
-  function roleDescription(user) {
-    const role = cleanText(user?.role).toLowerCase();
-    const accessProfile = cleanText(user?.accessProfile).toLowerCase();
-
-    if (role === "ti" || accessProfile === "ti") return "Acesso técnico total";
-    if (role === "admin" || accessProfile === "gerencial") return "Acesso gerencial";
-    if (accessProfile === "coordenacao") return "Acesso de coordenação";
-    if (accessProfile === "comercial") return "Acesso comercial dedicado";
-    if (accessProfile === "consulta") return "Acesso somente leitura";
-    return "Acesso operacional";
+    authUser = user;
+    return user;
   }
 
   function renderProfile(user) {
-    const nome = getDisplayValue(user?.nome || user?.name, "Usuário");
-    const email = getDisplayValue(user?.email);
-    const cargo = getDisplayValue(user?.cargo);
-    const active =
-      typeof user?.active === "boolean"
-        ? user.active
-        : typeof user?.ativo === "boolean"
-        ? user.ativo
-        : true;
+    if (!user) return;
 
-    if (elAvatar) elAvatar.textContent = avatarFromName(nome);
-    if (elNome) elNome.textContent = nome;
-    if (elEmail) elEmail.textContent = email;
-    if (elPerfilAcesso) elPerfilAcesso.textContent = accessProfileLabel(user?.accessProfile);
-    if (elNivelAcesso) elNivelAcesso.textContent = roleDescription(user);
-    if (elCargo) elCargo.textContent = cargo;
-    if (elStatus) elStatus.textContent = active ? "Ativo" : "Inativo";
-    if (elCoordenador) elCoordenador.textContent = getDisplayValue(user?.coordenador);
-    if (elEquipe) elEquipe.textContent = getDisplayValue(user?.equipe);
-    if (elUpdatedAt) elUpdatedAt.textContent = user?.updatedAt ? fmtTime(user.updatedAt) : "—";
+    const displayName = cleanText(user.nome) || cleanText(user.email) || "Usuário";
+    const statusLabel = user.ativo ? "Ativo" : "Inativo";
+    const behavioralProfiles = splitBehavioralProfile(user.behavioralProfile);
+    const behavioralText = behavioralProfiles.length
+      ? behavioralProfiles.map(behavioralChipLabel).join(" • ")
+      : "Sem perfil comportamental";
 
-    if (elRoleBadge) elRoleBadge.textContent = roleLabel(user?.role);
-    if (elCargoBadge) elCargoBadge.textContent = cargo;
-    if (elStatusBadge) {
-      elStatusBadge.textContent = active ? "ATIVO" : "INATIVO";
-      elStatusBadge.classList.toggle("badge--off", !active);
+    if (el.avatar) el.avatar.textContent = avatarFromName(displayName);
+    if (el.nome) el.nome.textContent = displayName;
+    if (el.email) el.email.textContent = cleanText(user.email) || "—";
+    if (el.perfilAcesso) el.perfilAcesso.textContent = accessProfileLabel(user.accessProfile);
+    if (el.nivelAcesso) el.nivelAcesso.textContent = permissionModeLabel(user.permissionMode);
+    if (el.cargo) el.cargo.textContent = cleanText(user.cargo) || "Não informado";
+    if (el.status) el.status.textContent = statusLabel;
+    if (el.coordenador) el.coordenador.textContent = cleanText(user.coordenador) || "Sem coordenação";
+    if (el.equipe) el.equipe.textContent = cleanText(user.equipe) || "Sem equipe";
+    if (el.behavioralProfile) el.behavioralProfile.textContent = behavioralText;
+    if (el.createdAt) el.createdAt.textContent = fmtTime(user.createdAt);
+    if (el.updatedAtPill) el.updatedAtPill.textContent = `Atualização ${fmtTime(user.updatedAt)}`;
+    if (el.roleBadge) el.roleBadge.textContent = roleLabel(user.role);
+    if (el.cargoBadge) el.cargoBadge.textContent = cleanText(user.cargo) || "Sem cargo";
+    if (el.statusBadge) {
+      el.statusBadge.textContent = statusLabel.toUpperCase();
+      el.statusBadge.classList.toggle("badge--off", !user.ativo);
     }
+
+    if (el.summaryBehavioral) el.summaryBehavioral.textContent = behavioralText;
+    if (el.summaryEquipe) {
+      el.summaryEquipe.textContent = cleanText(user.equipe)
+        ? `${cleanText(user.coordenador) || "Sem coord."} / ${cleanText(user.equipe)}`
+        : "Sem equipe";
+    }
+    if (el.summaryPermissionMode) el.summaryPermissionMode.textContent = permissionModeLabel(user.permissionMode);
+
+    if (el.profileName) el.profileName.value = displayName;
+    if (el.profileEmail) el.profileEmail.value = cleanText(user.email);
+  }
+
+  function getModuleCatalogMap() {
+    return Object.fromEntries(MODULE_CATALOG.map((item) => [item.id, item]));
+  }
+
+  function normalizeModuleStatus(permission) {
+    const raw = cleanText(permission?.status || permission?.moduleStatus).toLowerCase();
+    if (raw === "offline") return "offline";
+    if (raw === "dev") return "dev";
+    if (raw === "admin") return "online";
+    return "online";
   }
 
   function renderModules(user) {
-    if (!elModulesList) return;
+    if (!el.modulesList) return;
+    const catalog = getModuleCatalogMap();
+    const permissions = Array.isArray(user?.permissions) ? user.permissions : [];
 
-    const modules = getRenderableModules();
-    elModulesList.innerHTML = modules
-      .map((module) => {
-        const allowed = canAccessModule(user, module);
-        const status = normalizeModuleStatus(module.status, module.active);
+    if (!permissions.length) {
+      el.modulesList.innerHTML = '<div class="message message--error">Nenhuma permissão encontrada para este usuário.</div>';
+      return;
+    }
 
-        const pillClass =
-          status === "dev" ? "pill--dev" : status === "offline" ? "pill--off" : "pill--online";
-
-        const pillText =
-          status === "dev"
-            ? "DEV"
-            : status === "offline"
-            ? "OFF"
-            : status === "admin"
-            ? "ADMIN"
-            : "ONLINE";
+    el.modulesList.innerHTML = permissions
+      .filter((entry) => entry?.view)
+      .map((entry) => {
+        const moduleId = cleanText(entry.moduleId).toLowerCase();
+        const catalogRow = catalog[moduleId] || {};
+        const status = normalizeModuleStatus(entry);
+        const permissionPills = [
+          entry.view ? '<span class="pill pill--permission">Ver</span>' : "",
+          entry.edit ? '<span class="pill pill--permission">Editar</span>' : "",
+          entry.manage ? '<span class="pill pill--permission">Gerenciar</span>' : "",
+        ].filter(Boolean).join("");
 
         return `
-          <div class="module ${allowed ? "" : "module--blocked"}">
+          <article class="module">
             <div class="module__left">
-              <div class="module__icon">${escapeHtml(module.icon)}</div>
+              <span class="module__icon">${catalogRow.icon || "•"}</span>
               <div class="module__text">
-                <div class="module__name">${escapeHtml(module.name)}</div>
-                <div class="module__desc">${escapeHtml(module.desc)}</div>
+                <p class="module__name">${escapeHtml(catalogRow.name || moduleId || "Módulo")}</p>
+                <p class="module__desc">${escapeHtml(catalogRow.desc || "Permissão herdada da sua matriz de acesso.")}</p>
               </div>
             </div>
-
             <div class="module__right">
-              <span class="pill ${pillClass}">${escapeHtml(pillText)}</span>
-              <span class="lock">${allowed ? "Liberado" : "Bloqueado"}</span>
+              <span class="pill pill--${status === "offline" ? "off" : status === "dev" ? "dev" : "online"}">${status.toUpperCase()}</span>
+              ${permissionPills}
             </div>
-          </div>
+          </article>
         `;
       })
       .join("");
   }
 
-  async function init() {
-    const session = await requireAuthOrRedirect();
-    if (!session) return;
+  function normalizeLogLine(log) {
+    return {
+      when: fmtTime(log.createdAt || log.timestamp),
+      action: cleanText(log.action || "LOG"),
+      by: cleanText(log.actorEmail),
+      message: cleanText(log.message),
+    };
+  }
 
-    renderProfile(session);
-    await loadModulesFromApi();
-    renderModules(session);
-    await renderLogs(getSessionUserId(session));
-
+  async function renderLogs() {
+    if (!el.logsList) return;
+    el.logsList.innerHTML = '<div class="message">Carregando atividade...</div>';
     try {
-      const profile = await loadProfileFromApi();
-      if (profile) {
-        AUTH_USER = { ...session, ...profile };
-        renderProfile(AUTH_USER);
-        renderModules(AUTH_USER);
-        await renderLogs(getSessionUserId(AUTH_USER));
+      const payload = await fetchJson("/api/auth/logs?limit=20");
+      const logs = Array.isArray(payload?.logs) ? payload.logs : [];
+      if (!logs.length) {
+        el.logsList.innerHTML = '<div class="message">Sem atividade registrada até agora.</div>';
+        return;
       }
+
+      el.logsList.innerHTML = logs
+        .map(normalizeLogLine)
+        .map(
+          (line) => `
+            <article class="log">
+              <div class="log__msg">
+                <strong>${escapeHtml(line.action)}</strong>
+                ${line.message ? ` • ${escapeHtml(line.message)}` : ""}
+                ${line.by ? `<span class="muted">(${escapeHtml(line.by)})</span>` : ""}
+              </div>
+              <div class="log__time">${escapeHtml(line.when)}</div>
+            </article>
+          `
+        )
+        .join("");
     } catch (err) {
-      console.warn("Falha ao carregar perfil atualizado:", err?.message || err);
+      el.logsList.innerHTML = `<div class="message message--error">${escapeHtml(err?.message || "Não foi possível carregar os logs.")}</div>`;
     }
   }
 
-  btnVoltar?.addEventListener("click", () => history.back());
-  btnSair?.addEventListener("click", async () => {
-    await logout();
+  async function logout() {
+    try {
+      await fetch("/api/auth/logout", { method: "POST", credentials: "include" });
+    } catch (_) {}
+    authUser = null;
+    goto(LOGIN_PAGE_URL);
+  }
+
+  document.querySelectorAll("[data-password-toggle]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const targetId = cleanText(button.getAttribute("data-password-toggle"));
+      const input = targetId ? document.getElementById(targetId) : null;
+      if (!input) return;
+      const showing = input.type === "text";
+      input.type = showing ? "password" : "text";
+      button.textContent = showing ? "👁" : "🙈";
+    });
   });
 
-  init();
+  el.btnVoltar?.addEventListener("click", () => goto(DASHBOARD_PAGE_URL));
+  el.btnSair?.addEventListener("click", logout);
+
+  el.profileForm?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    clearFeedback();
+
+    const name = cleanText(el.profileName?.value);
+    const currentPassword = cleanText(el.profileCurrentPassword?.value);
+    const newPassword = cleanText(el.profileNewPassword?.value);
+    const confirmPassword = cleanText(el.profileConfirmPassword?.value);
+
+    if (!name) {
+      showFeedback("O nome não pode ficar vazio.", "error");
+      return;
+    }
+
+    if (newPassword || currentPassword || confirmPassword) {
+      if (!currentPassword || !newPassword || !confirmPassword) {
+        showFeedback("Preencha senha atual, nova senha e confirmação.", "error");
+        return;
+      }
+      if (newPassword.length < 10) {
+        showFeedback("A nova senha deve ter no mínimo 10 caracteres.", "error");
+        return;
+      }
+      if (newPassword !== confirmPassword) {
+        showFeedback("A confirmação da senha não confere.", "error");
+        return;
+      }
+    }
+
+    try {
+      const payload = await fetchJson("/api/auth/profile", {
+        method: "PATCH",
+        body: {
+          name,
+          currentPassword,
+          newPassword,
+        },
+      });
+
+      authUser = payload?.user || authUser;
+      renderProfile(authUser);
+      renderModules(authUser);
+      await renderLogs();
+
+      if (el.profileCurrentPassword) el.profileCurrentPassword.value = "";
+      if (el.profileNewPassword) el.profileNewPassword.value = "";
+      if (el.profileConfirmPassword) el.profileConfirmPassword.value = "";
+
+      showFeedback(payload?.unchanged ? "Nenhuma alteração foi necessária." : "Perfil atualizado com sucesso.");
+    } catch (err) {
+      showFeedback(err?.message || "Não foi possível salvar o perfil.", "error");
+    }
+  });
+
+  (async function init() {
+    try {
+      const user = await requireSession();
+      if (!user) return;
+      renderProfile(user);
+      renderModules(user);
+      await renderLogs();
+    } catch (err) {
+      console.warn("Falha ao abrir o perfil:", err);
+      goto(LOGIN_PAGE_URL);
+    }
+  })();
 })();

@@ -12,6 +12,129 @@ body {
   min-height: 100%;
 }
 
+body[data-theme="light"] .sidebar,
+body[data-theme="light"] .topbar,
+body[data-theme="light"] .glass,
+body[data-theme="light"] .analytics-single-focus__head,
+body[data-theme="light"] .summary-kpi,
+body[data-theme="light"] .source-check,
+body[data-theme="light"] .analytics-hero,
+body[data-theme="light"] .panel-card,
+body[data-theme="light"] .metric-card,
+body[data-theme="light"] .analytics-table,
+body[data-theme="light"] .analytics-board,
+body[data-theme="light"] .analytics-list-card,
+body[data-theme="light"] .analytics-chart-card,
+body[data-theme="light"] .analytics-detail-card,
+body[data-theme="light"] .delivery-card,
+body[data-theme="light"] .distribution-card,
+body[data-theme="light"] .timeline-card,
+body[data-theme="light"] .quality-card,
+body[data-theme="light"] .activity-card,
+body[data-theme="light"] .tributacao-card,
+body[data-theme="light"] .status-card,
+body[data-theme="light"] .groups-card,
+body[data-theme="light"] .num-quotas-card,
+body[data-theme="light"] .support-card,
+body[data-theme="light"] .responsaveis-card,
+body[data-theme="light"] .pendencia-card {
+  background: linear-gradient(180deg, #ffffff, #f1f6fc) !important;
+  border-color: rgba(15, 23, 42, 0.18) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.95),
+    0 18px 38px rgba(15, 23, 42, 0.12) !important;
+}
+
+body[data-theme="light"] {
+  background:
+    radial-gradient(circle at top right, rgba(37, 99, 235, 0.14), transparent 28%),
+    linear-gradient(180deg, #f4f7fb, #e7edf5) !important;
+}
+
+body[data-theme="light"] .sidebar {
+  background: linear-gradient(180deg, #f7faff, #eef4fb) !important;
+}
+
+body[data-theme="light"] .analytics-single-focus__head,
+body[data-theme="light"] .analytics-hero {
+  background:
+    radial-gradient(circle at top right, rgba(37, 99, 235, 0.14), transparent 28%),
+    linear-gradient(180deg, #ffffff, #eef5fd) !important;
+}
+
+body[data-theme="light"] .cards-modulos,
+body[data-theme="light"] .btn,
+body[data-theme="light"] .iconbtn,
+body[data-theme="light"] .summary-kpi,
+body[data-theme="light"] .source-check,
+body[data-theme="light"] .analytics-chip,
+body[data-theme="light"] .chip,
+body[data-theme="light"] .tag {
+  background: rgba(255, 255, 255, 0.98) !important;
+  border-color: rgba(15, 23, 42, 0.16) !important;
+  color: #08111f !important;
+}
+
+body[data-theme="light"] .cards-modulos:hover,
+body[data-theme="light"] .btn:hover,
+body[data-theme="light"] .iconbtn:hover {
+  background: rgba(37, 99, 235, 0.12) !important;
+  border-color: rgba(37, 99, 235, 0.26) !important;
+}
+
+body[data-theme="light"] .cards-modulos.is-active,
+body[data-theme="light"] .btn--primary,
+body[data-theme="light"] .status[data-status="online"] {
+  background: linear-gradient(180deg, #2563eb, #1d4ed8) !important;
+  border-color: transparent !important;
+  color: #ffffff !important;
+}
+
+body[data-theme="light"] .brand__name,
+body[data-theme="light"] .titulo-sidebar,
+body[data-theme="light"] .placeholder-titulo,
+body[data-theme="light"] .topbar__title h1,
+body[data-theme="light"] .topbar__title strong,
+body[data-theme="light"] h2,
+body[data-theme="light"] h3,
+body[data-theme="light"] h4,
+body[data-theme="light"] strong,
+body[data-theme="light"] .summary-kpi__value,
+body[data-theme="light"] .analytics-single-focus__head h2,
+body[data-theme="light"] .analytics-focus-section__head h3,
+body[data-theme="light"] .source-check__head,
+body[data-theme="light"] .btn,
+body[data-theme="light"] .cards-modulos {
+  color: #08111f !important;
+}
+
+body[data-theme="light"] .muted,
+body[data-theme="light"] .placeholder,
+body[data-theme="light"] .summary-kpi__label,
+body[data-theme="light"] .summary-kpi__hint,
+body[data-theme="light"] .source-check__head span,
+body[data-theme="light"] .source-check__meta,
+body[data-theme="light"] p,
+body[data-theme="light"] .topbar__title p,
+body[data-theme="light"] .analytics-single-focus__head p,
+body[data-theme="light"] .analytics-focus-section__head p {
+  color: rgba(8, 17, 31, 0.8) !important;
+}
+
+body[data-theme="light"] .status,
+body[data-theme="light"] .analytics-chip,
+body[data-theme="light"] .chip,
+body[data-theme="light"] .tag {
+  color: #08111f !important;
+}
+
+body[data-theme="light"] .iconbtn,
+body[data-theme="light"] .icone-modulo {
+  background: rgba(37, 99, 235, 0.08) !important;
+  border-color: rgba(15, 23, 42, 0.14) !important;
+  color: #12305f !important;
+}
+
 body {
   margin: 0;
   font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial;
@@ -32,20 +155,53 @@ body {
 :root {
   --bg: #0b0d13;
   --panel: rgba(18, 22, 34, 0.72);
+  --panel-strong: rgba(18, 22, 34, 0.9);
   --panel-soft: rgba(255, 255, 255, 0.04);
   --stroke: rgba(255, 255, 255, 0.08);
 
   --text: #e8edf6;
   --muted: rgba(232, 237, 246, 0.65);
 
-  --brand: #4ecca3;
+  --brand: #2563eb;
   --danger: #ff6b6b;
   --warn: #ffd166;
 
   --radius: 18px;
   --shadow: 0 20px 60px rgba(0, 0, 0, 0.55);
   --shadow-soft: 0 12px 30px rgba(0, 0, 0, 0.35);
-  --ring: 0 0 0 4px rgba(78, 204, 163, 0.18);
+  --ring: 0 0 0 4px rgba(37, 99, 235, 0.18);
+}
+
+body[data-theme="dark"] {
+  --bg: #0b0d13;
+  --panel: rgba(18, 22, 34, 0.72);
+  --panel-strong: rgba(18, 22, 34, 0.9);
+  --panel-soft: rgba(255, 255, 255, 0.04);
+  --stroke: rgba(255, 255, 255, 0.08);
+  --text: #e8edf6;
+  --muted: rgba(232, 237, 246, 0.65);
+  --brand: #2563eb;
+  --danger: #ff6b6b;
+  --warn: #ffd166;
+  --shadow: 0 20px 60px rgba(0, 0, 0, 0.55);
+  --shadow-soft: 0 12px 30px rgba(0, 0, 0, 0.35);
+  --ring: 0 0 0 4px rgba(37, 99, 235, 0.22);
+}
+
+body[data-theme="light"] {
+  --bg: #eaf0f8;
+  --panel: rgba(255, 255, 255, 0.96);
+  --panel-strong: rgba(246, 250, 255, 0.98);
+  --panel-soft: rgba(15, 23, 42, 0.035);
+  --stroke: rgba(15, 23, 42, 0.16);
+  --text: #08111f;
+  --muted: rgba(8, 17, 31, 0.8);
+  --brand: #2563eb;
+  --danger: #dc2626;
+  --warn: #d97706;
+  --shadow: 0 20px 60px rgba(15, 23, 42, 0.12);
+  --shadow-soft: 0 12px 30px rgba(15, 23, 42, 0.08);
+  --ring: 0 0 0 4px rgba(37, 99, 235, 0.16);
 }
 
 .muted {
@@ -179,10 +335,10 @@ button.btn {
 .cards-modulos.is-active {
   background: linear-gradient(
     180deg,
-    rgba(78, 204, 163, 0.22),
-    rgba(78, 204, 163, 0.12)
+    rgba(37, 99, 235, 0.22),
+    rgba(37, 99, 235, 0.12)
   );
-  border-color: rgba(78, 204, 163, 0.45);
+  border-color: rgba(37, 99, 235, 0.45);
 }
 
 .icone-modulo {
@@ -200,10 +356,10 @@ button.btn {
   color: #071014;
   background: linear-gradient(
     180deg,
-    rgba(78, 204, 163, 0.95),
-    rgba(46, 229, 157, 0.75)
+    rgba(37, 99, 235, 0.95),
+    rgba(37, 99, 235, 0.75)
   );
-  border: 1px solid rgba(78, 204, 163, 0.35);
+  border: 1px solid rgba(37, 99, 235, 0.35);
 }
 
 .plaquinha-de-nome {
@@ -266,11 +422,11 @@ button.btn {
 .status[data-status="admin"] {
   background: linear-gradient(
     180deg,
-    rgba(78, 204, 163, 0.95),
-    rgba(46, 229, 157, 0.75)
+    rgba(37, 99, 235, 0.95),
+    rgba(37, 99, 235, 0.75)
   );
   color: #071014;
-  border-color: rgba(78, 204, 163, 0.6);
+  border-color: rgba(37, 99, 235, 0.6);
 }
 
 /* =========================================================
@@ -389,9 +545,9 @@ button.btn {
 }
 
 .source-check--active {
-  background: linear-gradient(135deg, rgba(78, 204, 163, 0.16), rgba(49, 200, 255, 0.08));
-  border-color: rgba(78, 204, 163, 0.44);
-  box-shadow: 0 18px 36px rgba(78, 204, 163, 0.08);
+  background: linear-gradient(135deg, rgba(37, 99, 235, 0.16), rgba(96, 165, 250, 0.08));
+  border-color: rgba(37, 99, 235, 0.44);
+  box-shadow: 0 18px 36px rgba(37, 99, 235, 0.08);
 }
 
 .source-check__head {
@@ -477,8 +633,8 @@ button.btn {
   border-radius: 28px;
   border: 1px solid rgba(122, 210, 255, 0.14);
   background:
-    radial-gradient(circle at top right, rgba(78, 204, 163, 0.12), transparent 28%),
-    radial-gradient(circle at top left, rgba(49, 200, 255, 0.16), transparent 32%),
+    radial-gradient(circle at top right, rgba(37, 99, 235, 0.12), transparent 28%),
+    radial-gradient(circle at top left, rgba(96, 165, 250, 0.16), transparent 32%),
     linear-gradient(180deg, rgba(19, 34, 57, 0.98), rgba(13, 24, 41, 0.96));
   box-shadow: 0 26px 60px rgba(2, 8, 20, 0.36);
 }
@@ -743,7 +899,7 @@ button.btn {
   width: 260px;
   height: 260px;
   border-radius: 50%;
-  background: radial-gradient(circle, rgba(78, 204, 163, 0.16), transparent 72%);
+  background: radial-gradient(circle, rgba(37, 99, 235, 0.16), transparent 72%);
   pointer-events: none;
 }
 
@@ -801,8 +957,8 @@ button.btn {
 }
 
 .analytics-chip--brand {
-  background: rgba(78, 204, 163, 0.18);
-  border-color: rgba(78, 204, 163, 0.34);
+  background: rgba(37, 99, 235, 0.18);
+  border-color: rgba(37, 99, 235, 0.34);
   color: #bdf8e1;
 }
 
@@ -814,8 +970,8 @@ button.btn {
 }
 
 .analytics-pill[data-tone="ok"] {
-  background: rgba(78, 204, 163, 0.16);
-  border-color: rgba(78, 204, 163, 0.32);
+  background: rgba(37, 99, 235, 0.16);
+  border-color: rgba(37, 99, 235, 0.32);
   color: #bdf8e1;
 }
 
@@ -892,8 +1048,8 @@ button.btn {
 }
 
 .analytics-param__pill[data-tone="ok"] {
-  background: rgba(78, 204, 163, 0.14);
-  border-color: rgba(78, 204, 163, 0.26);
+  background: rgba(37, 99, 235, 0.14);
+  border-color: rgba(37, 99, 235, 0.26);
 }
 
 .analytics-param__pill[data-tone="warn"] {
@@ -902,8 +1058,8 @@ button.btn {
 }
 
 .analytics-param__pill[data-tone="brand"] {
-  background: rgba(49, 200, 255, 0.14);
-  border-color: rgba(49, 200, 255, 0.26);
+  background: rgba(96, 165, 250, 0.14);
+  border-color: rgba(96, 165, 250, 0.26);
 }
 
 .analytics-kpis {
@@ -978,8 +1134,8 @@ button.btn {
 
 .panel-card--executive {
   background:
-    radial-gradient(circle at top left, rgba(49, 200, 255, 0.14), transparent 30%),
-    radial-gradient(circle at top right, rgba(78, 204, 163, 0.14), transparent 32%),
+    radial-gradient(circle at top left, rgba(96, 165, 250, 0.14), transparent 30%),
+    radial-gradient(circle at top right, rgba(37, 99, 235, 0.14), transparent 32%),
     linear-gradient(180deg, rgba(15, 22, 38, 0.96), rgba(10, 16, 28, 0.92));
 }
 
@@ -1079,8 +1235,8 @@ button.btn {
 }
 
 .quota-card[data-tone="ok"] {
-  border-color: rgba(78, 204, 163, 0.2);
-  background: rgba(78, 204, 163, 0.06);
+  border-color: rgba(37, 99, 235, 0.2);
+  background: rgba(37, 99, 235, 0.06);
 }
 
 .quota-card[data-tone="warn"] {
@@ -1146,8 +1302,8 @@ button.btn {
 }
 
 .delivery-callout[data-tone="ok"] {
-  border-color: rgba(78, 204, 163, 0.22);
-  background: rgba(78, 204, 163, 0.08);
+  border-color: rgba(37, 99, 235, 0.22);
+  background: rgba(37, 99, 235, 0.08);
 }
 
 .delivery-callout[data-tone="warn"] {
@@ -1218,7 +1374,7 @@ button.btn {
 }
 
 .donut-chart {
-  --donut-gradient: conic-gradient(#1cc6ff 0deg 360deg);
+  --donut-gradient: conic-gradient(#38bdf8 0deg 360deg);
   width: 150px;
   height: 150px;
   border-radius: 50%;
@@ -1270,7 +1426,7 @@ button.btn {
   min-height: 260px;
   border-radius: 20px;
   background:
-    radial-gradient(circle at 50% 50%, rgba(78, 204, 163, 0.08), transparent 56%),
+    radial-gradient(circle at 50% 50%, rgba(37, 99, 235, 0.08), transparent 56%),
     rgba(255, 255, 255, 0.035);
   border: 1px solid rgba(255, 255, 255, 0.075);
 }
@@ -1287,13 +1443,13 @@ button.btn {
 }
 
 .operational-radar__shape {
-  fill: rgba(78, 204, 163, 0.22);
-  stroke: #4ecca3;
+  fill: rgba(37, 99, 235, 0.22);
+  stroke: #2563eb;
   stroke-width: 2;
 }
 
 .operational-radar__dot {
-  fill: #31c8ff;
+  fill: #60a5fa;
   stroke: rgba(11, 13, 19, 0.85);
   stroke-width: 3;
 }
@@ -1396,8 +1552,8 @@ button.btn {
 .tax-bi-rank[data-analytics-drill]:hover,
 .tax-bi-table tr[data-analytics-drill]:hover td {
   transform: translateY(-1px);
-  border-color: rgba(78, 204, 163, 0.34);
-  background: rgba(78, 204, 163, 0.08);
+  border-color: rgba(37, 99, 235, 0.34);
+  background: rgba(37, 99, 235, 0.08);
 }
 
 .analytics-detail-backdrop {
@@ -1642,8 +1798,8 @@ button.btn {
 }
 
 .quality-item[data-tone="ok"] {
-  border-color: rgba(78, 204, 163, 0.18);
-  background: rgba(78, 204, 163, 0.06);
+  border-color: rgba(37, 99, 235, 0.18);
+  background: rgba(37, 99, 235, 0.06);
 }
 
 .quality-item[data-tone="warn"] {
@@ -1652,8 +1808,8 @@ button.btn {
 }
 
 .quality-item[data-tone="brand"] {
-  border-color: rgba(49, 200, 255, 0.18);
-  background: rgba(49, 200, 255, 0.06);
+  border-color: rgba(96, 165, 250, 0.18);
+  background: rgba(96, 165, 250, 0.06);
 }
 
 .bar-row {
@@ -1702,7 +1858,7 @@ button.btn {
 .bar-row__fill {
   height: 100%;
   border-radius: inherit;
-  background: linear-gradient(90deg, #1cc6ff, #4ecca3);
+  background: linear-gradient(90deg, #38bdf8, #2563eb);
 }
 
 .quality-grid {
@@ -1800,7 +1956,7 @@ button.btn {
 
 .activity-chart__line {
   fill: none;
-  stroke: #31c8ff;
+  stroke: #60a5fa;
   stroke-width: 3;
   stroke-linecap: round;
   stroke-linejoin: round;
@@ -1879,7 +2035,7 @@ button.btn {
   display: block;
   height: 100%;
   border-radius: inherit;
-  background: linear-gradient(90deg, #ffb347, #31c8ff);
+  background: linear-gradient(90deg, #ffb347, #60a5fa);
 }
 
 .audit-summary {
@@ -1905,8 +2061,8 @@ button.btn {
 
 .table-badge[data-tone="ok"] {
   color: #bdf8e1;
-  border-color: rgba(78, 204, 163, 0.25);
-  background: rgba(78, 204, 163, 0.12);
+  border-color: rgba(37, 99, 235, 0.25);
+  background: rgba(37, 99, 235, 0.12);
 }
 
 .table-badge[data-tone="warn"] {
@@ -1948,7 +2104,7 @@ button.btn {
   width: 360px;
   height: 360px;
   border-radius: 999px;
-  background: radial-gradient(circle, rgba(49, 200, 255, 0.2), transparent 68%);
+  background: radial-gradient(circle, rgba(96, 165, 250, 0.2), transparent 68%);
   pointer-events: none;
 }
 
@@ -2006,9 +2162,9 @@ button.btn {
 
 .tax-bi-tab.is-active {
   color: #061016;
-  background: linear-gradient(180deg, #7ee8c9, #4ecca3);
+  background: linear-gradient(180deg, #93c5fd, #2563eb);
   border-color: rgba(126, 232, 201, 0.55);
-  box-shadow: 0 12px 28px rgba(78, 204, 163, 0.18);
+  box-shadow: 0 12px 28px rgba(37, 99, 235, 0.18);
 }
 
 .tax-bi-page {
@@ -2043,8 +2199,8 @@ button.btn {
   gap: 18px;
   align-items: stretch;
   background:
-    radial-gradient(circle at 12% 10%, rgba(78, 204, 163, 0.18), transparent 34%),
-    linear-gradient(135deg, rgba(49, 200, 255, 0.12), rgba(255, 255, 255, 0.025));
+    radial-gradient(circle at 12% 10%, rgba(37, 99, 235, 0.18), transparent 34%),
+    linear-gradient(135deg, rgba(96, 165, 250, 0.12), rgba(255, 255, 255, 0.025));
 }
 
 .tax-bi-topic--split {
@@ -2067,8 +2223,8 @@ button.btn {
   min-height: 26px;
   padding: 0 10px;
   border-radius: 999px;
-  background: rgba(49, 200, 255, 0.12);
-  border: 1px solid rgba(49, 200, 255, 0.22);
+  background: rgba(96, 165, 250, 0.12);
+  border: 1px solid rgba(96, 165, 250, 0.22);
   color: #aeeaff;
   font-size: 11px;
   font-weight: 950;
@@ -2131,9 +2287,9 @@ button.btn {
 .tax-bi-card--accent {
   min-height: 100%;
   background:
-    linear-gradient(160deg, rgba(78, 204, 163, 0.2), rgba(49, 200, 255, 0.08)),
+    linear-gradient(160deg, rgba(37, 99, 235, 0.2), rgba(96, 165, 250, 0.08)),
     rgba(255, 255, 255, 0.035);
-  border-color: rgba(78, 204, 163, 0.24);
+  border-color: rgba(37, 99, 235, 0.24);
 }
 
 .tax-bi-card--compact {
@@ -2230,7 +2386,7 @@ button.btn {
   height: 100%;
   width: var(--bar, 0%);
   border-radius: inherit;
-  background: linear-gradient(90deg, #31c8ff, #4ecca3);
+  background: linear-gradient(90deg, #60a5fa, #2563eb);
 }
 
 .tax-bi-ranking {
@@ -2256,7 +2412,7 @@ button.btn {
   display: grid;
   place-items: center;
   color: #061016;
-  background: #4ecca3;
+  background: #2563eb;
   font-weight: 950;
 }
 
@@ -2290,8 +2446,8 @@ button.btn {
 .tax-bi-insight {
   padding: 14px;
   border-radius: 18px;
-  background: rgba(78, 204, 163, 0.1);
-  border: 1px solid rgba(78, 204, 163, 0.2);
+  background: rgba(37, 99, 235, 0.1);
+  border: 1px solid rgba(37, 99, 235, 0.2);
   color: #dffbf1;
   font-size: 13px;
   line-height: 1.5;
@@ -2342,8 +2498,8 @@ button.btn {
   width: var(--bar, 0%);
   height: 100%;
   border-radius: inherit;
-  background: linear-gradient(90deg, #4ecca3, #31c8ff);
-  box-shadow: 0 0 24px rgba(78, 204, 163, 0.22);
+  background: linear-gradient(90deg, #2563eb, #60a5fa);
+  box-shadow: 0 0 24px rgba(37, 99, 235, 0.22);
 }
 
 .tax-bi-value-list {

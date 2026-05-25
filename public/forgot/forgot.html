@@ -8,15 +8,44 @@
     content="Recupere o acesso ao ContHub e solicite a redefinição de senha do seu usuário com segurança."
   />
   <title>ContHub • Recuperar senha</title>
+  <script src="../shared/theme-boot.js"></script>
+  <link rel="stylesheet" href="../shared/theme.css" />
   <link rel="stylesheet" href="/login/login.css" />
 </head>
 
-<body class="login">
-  <main class="wrap">
-    <form class="card" id="forgotForm" novalidate>
-      <header class="card__header">
-        <h1>Recuperar senha</h1>
-        <p class="muted">Informe seu email para gerar o link de redefinição.</p>
+<body class="auth-screen">
+  <main class="auth-shell">
+    <section class="auth-hero">
+      <span class="auth-kicker">Recuperação</span>
+      <h1>Recupere seu acesso sem atrito.</h1>
+      <p>
+        Informe o email vinculado à sua conta e o ContHub vai gerar o fluxo de redefinição com a mesma política de segurança do painel.
+      </p>
+
+      <div class="theme-switcher theme-switcher--auth" aria-label="Alternar tema">
+        <button type="button" class="theme-switcher__button" data-theme-choice="dark">Preto</button>
+        <button type="button" class="theme-switcher__button" data-theme-choice="light">Branco</button>
+      </div>
+
+      <div class="auth-hero__stats">
+        <article class="auth-stat">
+          <span>Proteção</span>
+          <strong>Resposta neutra</strong>
+          <small>Não expõe se o email existe ou não.</small>
+        </article>
+        <article class="auth-stat">
+          <span>Validade</span>
+          <strong>30 minutos</strong>
+          <small>Link temporário para redefinir a senha.</small>
+        </article>
+      </div>
+    </section>
+
+    <form class="auth-card" id="forgotForm" novalidate>
+      <header class="auth-card__header">
+        <span class="auth-card__eyebrow">Esqueci minha senha</span>
+        <h2>Solicitar redefinição</h2>
+        <p class="muted">Digite seu email e siga o próximo passo.</p>
       </header>
 
       <div class="field">
@@ -25,23 +54,22 @@
           id="email"
           name="email"
           type="email"
-          placeholder="voce@empresa.com"
+          placeholder="nome@empresa.com"
           autocomplete="email"
           required
         />
       </div>
 
-      <button class="btn btn--primary w100" type="submit">Enviar link</button>
+      <button class="auth-submit" type="submit">Enviar link</button>
 
-      <p class="hint muted">
+      <div class="auth-links">
         <a href="/login/login.html">Voltar ao login</a>
-      </p>
+      </div>
 
-      <div id="msg" class="err hidden" role="alert"></div>
-
-      <footer class="card__footer">
-        <p class="hint muted">Obs.: em DEV o link aparece no console do servidor.</p>
-      </footer>
+      <div id="msg" class="message message--success hidden" role="alert"></div>
+      <div class="message" style="margin-top:12px; border-color:var(--theme-stroke); background:var(--theme-surface-2); color:var(--theme-muted);">
+        Em ambiente de desenvolvimento, o link também aparece no console do servidor.
+      </div>
     </form>
   </main>
 

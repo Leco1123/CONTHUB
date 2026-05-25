@@ -3,6 +3,9 @@ const express = require("express");
 const bcrypt = require("bcryptjs");
 const crypto = require("crypto");
 const db = require("../db"); // PrismaClient (Postgres)
+const { syncCoreModules } = require("../services/module-registry.service");
+const { buildPermissionMatrix, buildVisibleModules, normalizePermissionMode } = require("../services/permissions.service");
+const { logSecurityEvent } = require("../utils/security-log");
 
 const router = express.Router();
 const LOGIN_RATE_WINDOW_MS = Number(process.env.LOGIN_RATE_WINDOW_MS || 1000 * 60 * 15);
@@ -56,7 +59,9 @@ function toSafeProfile(user) {
     cargo: cleanText(user.cargo) || null,
     coordenador: cleanText(user.coordenador) || null,
     equipe: cleanText(user.equipe) || null,
+    behavioralProfile: cleanText(user.behavioralProfile) || null,
     accessProfile: normalizeAccessProfile(user.accessProfile, user.role),
+    permissionMode: normalizePermissionMode(user.permissionMode),
     createdAt: user.createdAt ?? null,
     updatedAt: user.updatedAt ?? null,
   };
@@ -151,6 +156,11 @@ router.post("/login", async (req, res) => {
 
     if (rateLimitState.count >= LOGIN_RATE_MAX_ATTEMPTS) {
       const retryAfterSeconds = Math.max(1, Math.ceil((rateLimitState.expiresAt - Date.now()) / 1000));
+      logSecurityEvent("login_rate_limited", {
+        email: normalizedEmail,
+        ip: getClientIp(req),
+        retryAfterSeconds,
+      });
       res.setHeader("Retry-After", String(retryAfterSeconds));
       return res.status(429).json({ error: "Muitas tentativas de login. Tente novamente em alguns minutos." });
     }
@@ -169,6 +179,10 @@ router.post("/login", async (req, res) => {
 
     if (!user) {
       registerFailedLogin(attemptKey);
+      logSecurityEvent("login_failed_user_not_found", {
+        email: normalizedEmail,
+        ip: getClientIp(req),
+      });
       return res.status(401).json({ error: "Credenciais inválidas." });
     }
 
@@ -179,6 +193,11 @@ router.post("/login", async (req, res) => {
     const ok = await bcrypt.compare(String(password), user.password);
     if (!ok) {
       registerFailedLogin(attemptKey);
+      logSecurityEvent("login_failed_bad_password", {
+        email: normalizedEmail,
+        ip: getClientIp(req),
+        userId: user.id,
+      });
       return res.status(401).json({ error: "Credenciais inválidas." });
     }
 
@@ -382,15 +401,34 @@ router.get("/me", async (req, res) => {
             id: true,
             name: true,
             email: true,
-            role: true,
-            active: true,
-            cargo: true,
-            coordenador: true,
-            equipe: true,
-            accessProfile: true,
-            createdAt: true,
-            updatedAt: true,
+          role: true,
+          active: true,
+          cargo: true,
+          coordenador: true,
+          equipe: true,
+          behavioralProfile: true,
+          accessProfile: true,
+          permissionMode: true,
+          modulePermissions: {
+            select: {
+              canView: true,
+              canEdit: true,
+              canManage: true,
+              module: {
+                select: {
+                  id: true,
+                  slug: true,
+                  name: true,
+                  active: true,
+                  status: true,
+                  access: true,
+                },
+              },
+            },
           },
+          createdAt: true,
+          updatedAt: true,
+        },
         })
       : await db.user.findUnique({
           where: { email: sessionEmail },
@@ -398,23 +436,285 @@ router.get("/me", async (req, res) => {
             id: true,
             name: true,
             email: true,
-            role: true,
-            active: true,
-            cargo: true,
-            coordenador: true,
-            equipe: true,
-            accessProfile: true,
-            createdAt: true,
-            updatedAt: true,
+          role: true,
+          active: true,
+          cargo: true,
+          coordenador: true,
+          equipe: true,
+          behavioralProfile: true,
+          accessProfile: true,
+          permissionMode: true,
+          modulePermissions: {
+            select: {
+              canView: true,
+              canEdit: true,
+              canManage: true,
+              module: {
+                select: {
+                  id: true,
+                  slug: true,
+                  name: true,
+                  active: true,
+                  status: true,
+                  access: true,
+                },
+              },
+            },
           },
+          createdAt: true,
+          updatedAt: true,
+        },
         });
 
     if (!user) return res.status(404).json({ error: "Usuário não encontrado." });
 
-    return res.json({ user: toSafeProfile(user) });
+    const modules = await syncCoreModules(db);
+
+    const normalizedUser = {
+      ...user,
+      role: mapRoleOut(user.role),
+      accessProfile: normalizeAccessProfile(user.accessProfile, user.role),
+      permissionMode: normalizePermissionMode(user.permissionMode),
+      modulePermissions: Array.isArray(user.modulePermissions)
+        ? user.modulePermissions.map((entry) => ({
+            canView: Boolean(entry.canView),
+            canEdit: Boolean(entry.canEdit),
+            canManage: Boolean(entry.canManage),
+            module: entry.module || null,
+          }))
+        : [],
+    };
+
+    const safeProfile = toSafeProfile(normalizedUser);
+    safeProfile.visibleModules = buildVisibleModules(normalizedUser, modules);
+    safeProfile.permissions = buildPermissionMatrix(normalizedUser, modules);
+
+    return res.json({ user: safeProfile });
   } catch (err) {
     console.error("Erro ao buscar sessão/perfil autenticado:", err);
     return res.status(500).json({ error: "Erro ao buscar sessão." });
+  }
+});
+
+router.get("/logs", async (req, res) => {
+  try {
+    const sessionUser = req.session?.user;
+    if (!sessionUser) return res.status(401).json({ error: "Não autenticado." });
+
+    const userId = Number(sessionUser.id);
+    if (!Number.isFinite(userId) || userId <= 0) {
+      return res.status(400).json({ error: "Sessão inválida." });
+    }
+
+    const limitRaw = Number(req.query?.limit);
+    const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(limitRaw, 1), 100) : 25;
+
+    const logs = await db.userLog.findMany({
+      where: { userId },
+      orderBy: { createdAt: "desc" },
+      take: limit,
+      select: {
+        id: true,
+        action: true,
+        message: true,
+        actorEmail: true,
+        meta: true,
+        ip: true,
+        userAgent: true,
+        createdAt: true,
+      },
+    });
+
+    return res.json({ logs });
+  } catch (err) {
+    console.error("Erro ao buscar logs do usuário autenticado:", err);
+    return res.status(500).json({ error: "Erro ao buscar atividade." });
+  }
+});
+
+router.patch("/profile", async (req, res) => {
+  try {
+    const sessionUser = req.session?.user;
+    if (!sessionUser) return res.status(401).json({ error: "Não autenticado." });
+
+    const sessionId = Number(sessionUser.id);
+    if (!Number.isFinite(sessionId) || sessionId <= 0) {
+      return res.status(400).json({ error: "Sessão inválida." });
+    }
+
+    const nextName = cleanText(req.body?.name);
+    const currentPassword = String(req.body?.currentPassword || "").trim();
+    const newPassword = String(req.body?.newPassword || "").trim();
+    const wantsPasswordChange = Boolean(currentPassword || newPassword);
+
+    if (!nextName && !wantsPasswordChange) {
+      return res.status(400).json({ error: "Informe ao menos um dado para atualizar." });
+    }
+
+    const currentUser = await db.user.findUnique({
+      where: { id: sessionId },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        password: true,
+        role: true,
+        active: true,
+        cargo: true,
+        coordenador: true,
+        equipe: true,
+        behavioralProfile: true,
+        accessProfile: true,
+        permissionMode: true,
+        modulePermissions: {
+          select: {
+            canView: true,
+            canEdit: true,
+            canManage: true,
+            module: {
+              select: {
+                id: true,
+                slug: true,
+                name: true,
+                active: true,
+                status: true,
+                access: true,
+              },
+            },
+          },
+        },
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
+
+    if (!currentUser) return res.status(404).json({ error: "Usuário não encontrado." });
+
+    const data = {};
+    const changedFields = [];
+
+    if (nextName && nextName !== cleanText(currentUser.name)) {
+      data.name = nextName;
+      changedFields.push("name");
+    }
+
+    if (wantsPasswordChange) {
+      if (!currentPassword || !newPassword) {
+        return res.status(400).json({ error: "Informe a senha atual e a nova senha." });
+      }
+
+      const passwordError = validatePasswordStrength(newPassword);
+      if (passwordError) return res.status(400).json({ error: passwordError });
+
+      const passwordOk = await bcrypt.compare(currentPassword, currentUser.password);
+      if (!passwordOk) {
+        return res.status(400).json({ error: "A senha atual não confere." });
+      }
+
+      data.password = await bcrypt.hash(newPassword, 10);
+      changedFields.push("password");
+    }
+
+    const modules = await syncCoreModules(db);
+
+    if (!Object.keys(data).length) {
+      const normalizedCurrent = {
+        ...currentUser,
+        role: mapRoleOut(currentUser.role),
+        accessProfile: normalizeAccessProfile(currentUser.accessProfile, currentUser.role),
+        permissionMode: normalizePermissionMode(currentUser.permissionMode),
+        modulePermissions: Array.isArray(currentUser.modulePermissions)
+          ? currentUser.modulePermissions.map((entry) => ({
+              canView: Boolean(entry.canView),
+              canEdit: Boolean(entry.canEdit),
+              canManage: Boolean(entry.canManage),
+              module: entry.module || null,
+            }))
+          : [],
+      };
+      const safeCurrent = toSafeProfile(normalizedCurrent);
+      safeCurrent.visibleModules = buildVisibleModules(normalizedCurrent, modules);
+      safeCurrent.permissions = buildPermissionMatrix(normalizedCurrent, modules);
+      return res.json({ ok: true, user: safeCurrent, unchanged: true });
+    }
+
+    const updated = await db.user.update({
+      where: { id: sessionId },
+      data,
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        role: true,
+        active: true,
+        cargo: true,
+        coordenador: true,
+        equipe: true,
+        behavioralProfile: true,
+        accessProfile: true,
+        permissionMode: true,
+        modulePermissions: {
+          select: {
+            canView: true,
+            canEdit: true,
+            canManage: true,
+            module: {
+              select: {
+                id: true,
+                slug: true,
+                name: true,
+                active: true,
+                status: true,
+                access: true,
+              },
+            },
+          },
+        },
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
+
+    await db.userLog.create({
+      data: {
+        userId: updated.id,
+        actorId: updated.id,
+        actorEmail: updated.email,
+        action: changedFields.includes("password") ? "PASSWORD_CHANGED" : "USER_UPDATED",
+        message: changedFields.includes("password")
+          ? "Atualizou o próprio perfil e trocou a senha."
+          : "Atualizou o próprio perfil.",
+        meta: { changedFields },
+        ip: getClientIp(req),
+        userAgent: cleanText(req.headers["user-agent"]) || null,
+      },
+    });
+
+    req.session.user = toSafeUser(updated);
+    await saveSession(req);
+
+    const normalizedUpdated = {
+      ...updated,
+      role: mapRoleOut(updated.role),
+      accessProfile: normalizeAccessProfile(updated.accessProfile, updated.role),
+      permissionMode: normalizePermissionMode(updated.permissionMode),
+      modulePermissions: Array.isArray(updated.modulePermissions)
+        ? updated.modulePermissions.map((entry) => ({
+            canView: Boolean(entry.canView),
+            canEdit: Boolean(entry.canEdit),
+            canManage: Boolean(entry.canManage),
+            module: entry.module || null,
+          }))
+        : [],
+    };
+    const safeUpdated = toSafeProfile(normalizedUpdated);
+    safeUpdated.visibleModules = buildVisibleModules(normalizedUpdated, modules);
+    safeUpdated.permissions = buildPermissionMatrix(normalizedUpdated, modules);
+
+    return res.json({ ok: true, user: safeUpdated });
+  } catch (err) {
+    console.error("Erro ao atualizar perfil autenticado:", err);
+    return res.status(500).json({ error: "Erro ao atualizar o perfil." });
   }
 });
 

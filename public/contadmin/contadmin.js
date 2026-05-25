@@ -29,11 +29,11 @@ document.addEventListener("DOMContentLoaded", () => {
   const API_MODULES = `${API_BASE}/api/admin/modules`;
   const API_TEAM_CONFIG = `${API_BASE}/api/admin/team-config`;
   const API_USER_LOGS = (id) => `${API_USERS}/${id}/logs?limit=50`;
+  const API_USER_PERMISSIONS = (id) => `${API_USERS}/${id}/permissions`;
 
   const COMPANY_DOMAIN = "@franco-rnc.com.br";
   const PASSWORD_POLICY =
     /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{8,}$/;
-  const TEAM_EDITORS = ["leandro", "gabriella"];
   const ACCESS_PROFILES = [
     { value: "ti", label: "TI", description: "Controle total do sistema, usuários, módulos e configurações." },
     { value: "gerencial", label: "Gerencial", description: "Visão ampla, relatórios e gestão global." },
@@ -42,6 +42,7 @@ document.addEventListener("DOMContentLoaded", () => {
     { value: "comercial", label: "Comercial", description: "Acesso focado no dashboard e na área comercial." },
     { value: "consulta", label: "Consulta", description: "Acompanhamento somente leitura." },
   ];
+  const BEHAVIORAL_PROFILE_OPTIONS = ["Executor", "Comunicador", "Analista", "Planejador"];
 
   // =======================================
   // STATE
@@ -53,6 +54,7 @@ document.addEventListener("DOMContentLoaded", () => {
   let teamConfig = {};
   let userTeamMap = {};
   let userAccessMap = {};
+  let permissionEditorState = null;
 
   // =======================================
   // NAV (TOP SAFE)
@@ -87,6 +89,98 @@ document.addEventListener("DOMContentLoaded", () => {
   function accessProfileLabel(profile) {
     const normalized = String(profile || "").trim().toLowerCase();
     return ACCESS_PROFILES.find((item) => item.value === normalized)?.label || "Operacional";
+  }
+
+  function accessProfileBadgeClass(profile) {
+    const normalized = String(profile || "").trim().toLowerCase();
+    if (normalized === "ti") return "profile-chip--ti";
+    if (normalized === "gerencial") return "profile-chip--gerencial";
+    if (normalized === "coordenacao") return "profile-chip--coordenacao";
+    if (normalized === "comercial") return "profile-chip--comercial";
+    if (normalized === "consulta") return "profile-chip--consulta";
+    return "profile-chip--operacional";
+  }
+
+  function formatBehavioralProfile(profile) {
+    const value = String(profile || "").trim();
+    if (!value) {
+      return {
+        label: "Sem perfil comportamental",
+        className: "behavior-chip--empty",
+      };
+    }
+
+    const normalized = normalizeName(value);
+    if (normalized.includes("analit")) {
+      return { label: value, className: "behavior-chip--analitico" };
+    }
+    if (normalized.includes("comunic")) {
+      return { label: value, className: "behavior-chip--comunicador" };
+    }
+    if (normalized.includes("execut")) {
+      return { label: value, className: "behavior-chip--executor" };
+    }
+    if (normalized.includes("planej")) {
+      return { label: value, className: "behavior-chip--planejador" };
+    }
+
+    return {
+      label: value,
+      className: "behavior-chip--default",
+    };
+  }
+
+  function behavioralGradientColors(profiles = []) {
+    const normalizedProfiles = profiles.map((item) => normalizeName(item)).filter(Boolean);
+    const colorMap = {
+      executor: "rgba(255, 95, 109, 0.28)",
+      comunicador: "rgba(255, 209, 102, 0.28)",
+      analista: "rgba(0, 140, 255, 0.28)",
+      planejador: "rgba(78, 204, 163, 0.28)",
+    };
+
+    const resolveColor = (name) => {
+      if (name.includes("execut")) return colorMap.executor;
+      if (name.includes("comunic")) return colorMap.comunicador;
+      if (name.includes("anal")) return colorMap.analista;
+      if (name.includes("planej")) return colorMap.planejador;
+      return "rgba(255, 255, 255, 0.08)";
+    };
+
+    const first = resolveColor(normalizedProfiles[0] || "");
+    const second = resolveColor(normalizedProfiles[1] || normalizedProfiles[0] || "");
+
+    return { first, second };
+  }
+
+  function splitBehavioralProfile(profile) {
+    const raw = String(profile || "").trim();
+    if (!raw) return [];
+    return raw
+      .split(/[\/|,;]+/)
+      .map((item) => item.trim())
+      .filter(Boolean)
+      .slice(0, 2);
+  }
+
+  function buildBehavioralProfile(primary, secondary) {
+    return [primary, secondary]
+      .map((item) => String(item || "").trim())
+      .filter(Boolean)
+      .filter((item, index, arr) => arr.findIndex((current) => normalizeName(current) === normalizeName(item)) === index)
+      .join(" / ");
+  }
+
+  function populateBehavioralProfileSelect(select, selected = "", placeholder = "Selecione") {
+    if (!select) return;
+    const selectedValue = String(selected || "").trim();
+    select.innerHTML = [
+      `<option value="">${placeholder}</option>`,
+      ...BEHAVIORAL_PROFILE_OPTIONS.map(
+        (option) => `<option value="${escapeHtml(option)}">${escapeHtml(option)}</option>`
+      ),
+    ].join("");
+    select.value = matchConfiguredValue(BEHAVIORAL_PROFILE_OPTIONS, selectedValue) || "";
   }
 
   function legacyRoleToAccessProfile(role) {
@@ -277,18 +371,33 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function canEditTeams(user) {
     if (!user) return false;
-    if (getAccessProfile(user) === "ti") return true;
-    const name = normalizeName(user.nome);
-    const email = normalizeName(user.email);
-    return TEAM_EDITORS.some((entry) => name.includes(entry) || email.includes(entry));
+    if (Array.isArray(user?.permissions)) {
+      const adminPermission = user.permissions.find(
+        (entry) => String(entry?.moduleId || "").trim().toLowerCase() === "contadmin"
+      );
+      if (adminPermission) return Boolean(adminPermission.manage);
+    }
+    return getAccessProfile(user) === "ti";
   }
 
   function canManageUsers(user) {
-    const profile = getAccessProfile(user);
-    return profile === "ti";
+    if (!user) return false;
+    if (Array.isArray(user?.permissions)) {
+      const adminPermission = user.permissions.find(
+        (entry) => String(entry?.moduleId || "").trim().toLowerCase() === "contadmin"
+      );
+      if (adminPermission) return Boolean(adminPermission.manage);
+    }
+    return getAccessProfile(user) === "ti";
   }
 
   function canViewAdmin(user) {
+    if (Array.isArray(user?.permissions)) {
+      const adminPermission = user.permissions.find(
+        (entry) => String(entry?.moduleId || "").trim().toLowerCase() === "contadmin"
+      );
+      if (adminPermission) return Boolean(adminPermission.view);
+    }
     const profile = getAccessProfile(user);
     return profile === "ti" || profile === "gerencial";
   }
@@ -419,6 +528,13 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function canAccessModule(moduleId, user = getSessionUser()) {
     const id = String(moduleId || "").trim().toLowerCase();
+    if (Array.isArray(user?.permissions)) {
+      const matched = user.permissions.find((entry) => String(entry?.moduleId || "").trim().toLowerCase() === id);
+      if (matched) return Boolean(matched.view);
+    }
+    if (Array.isArray(user?.visibleModules) && user.visibleModules.length) {
+      return user.visibleModules.map((item) => String(item || "").trim().toLowerCase()).includes(id);
+    }
     const profile = getAccessProfile(user);
     const role = String(user?.role || "").trim().toLowerCase();
     const rules = normalizeModuleAccess(moduleAccessMap[id]);
@@ -683,6 +799,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const nome = String(u.nome ?? u.name ?? "").trim();
     const email = String(u.email ?? "").trim().toLowerCase();
     const cargo = u.cargo != null ? String(u.cargo).trim() : "";
+    const behavioralProfile = u.behavioralProfile != null ? String(u.behavioralProfile).trim() : "";
     const role = String(u.role ?? accessProfileToLegacyRole(u.accessProfile) ?? "user").toLowerCase();
     const accessProfile = getAccessProfile({ ...u, id, email, role });
 
@@ -704,8 +821,10 @@ document.addEventListener("DOMContentLoaded", () => {
       nome,
       email,
       cargo,
+      behavioralProfile,
       role,
       accessProfile,
+      permissionMode: String(u.permissionMode || "profile").trim().toLowerCase() === "custom" ? "custom" : "profile",
       ativo,
       coordenador: normalizedAssignment.coordenador,
       equipe: normalizedAssignment.equipe,
@@ -960,22 +1079,27 @@ document.addEventListener("DOMContentLoaded", () => {
       const isAdminModule = id === "contadmin";
       const current = isAdminModule ? "admin" : store[id] || "online";
 
-      const wrap = document.createElement("div");
-      wrap.className = "cards-modulos";
+      const wrap = document.createElement("article");
+      wrap.className = "acesso-module-card";
       wrap.setAttribute("data-module-id", id);
 
       wrap.innerHTML = `
-        <span class="icone-modulo">${icon}</span>
-        <span class="plaquinha-de-nome">
-          <span class="placeholder-titulo">${title}</span>
-          <span class="placeholder">${subtitle}</span>
-        </span>
-        <span class="acesso-actions">
+        <div class="acesso-module-card__head">
+          <span class="acesso-module-card__icon">${icon}</span>
+          <div class="acesso-module-card__copy">
+            <strong>${title}</strong>
+            <p>${subtitle}</p>
+          </div>
           <span class="status" data-status="${current}">${statusLabel[current] || "ONLINE"}</span>
-          <button type="button" data-set="online">ON</button>
-          <button type="button" data-set="dev">DEV</button>
-          <button type="button" data-set="offline">OFF</button>
-        </span>
+        </div>
+        <div class="acesso-module-card__footer">
+          <span class="acesso-module-card__label">Ambiente do módulo</span>
+          <div class="acesso-actions">
+            <button type="button" data-set="online">Online</button>
+            <button type="button" data-set="dev">Dev</button>
+            <button type="button" data-set="offline">Offline</button>
+          </div>
+        </div>
       `;
 
       if (isAdminModule) {
@@ -1058,6 +1182,8 @@ document.addEventListener("DOMContentLoaded", () => {
   const fieldNome = document.getElementById("nome");
   const fieldEmail = document.getElementById("email");
   const fieldCargo = document.getElementById("cargo");
+  const fieldBehavioralProfilePrimary = document.getElementById("behavioralProfilePrimary");
+  const fieldBehavioralProfileSecondary = document.getElementById("behavioralProfileSecondary");
   const fieldSenha = document.getElementById("senha");
   const fieldConfirmarSenha = document.getElementById("confirmarSenha");
   const userFormFeedback = document.getElementById("userFormFeedback");
@@ -1082,6 +1208,9 @@ document.addEventListener("DOMContentLoaded", () => {
   const fecharEquipeHeader = document.getElementById("fecharEquipeHeader");
   const inputCoordenador = document.getElementById("coordenador");
   const inputEquipe = document.getElementById("equipe");
+
+  populateBehavioralProfileSelect(fieldBehavioralProfilePrimary, "", "Selecione o perfil 1");
+  populateBehavioralProfileSelect(fieldBehavioralProfileSecondary, "", "Selecione o perfil 2");
 
   let usuarios = [];
   let modoEdicao = false;
@@ -1115,6 +1244,8 @@ document.addEventListener("DOMContentLoaded", () => {
     syncBodyModalState();
 
     if (reset) form?.reset();
+    populateBehavioralProfileSelect(fieldBehavioralProfilePrimary, "", "Selecione o perfil 1");
+    populateBehavioralProfileSelect(fieldBehavioralProfileSecondary, "", "Selecione o perfil 2");
     setUserFormFeedback("", "");
 
     modoEdicao = false;
@@ -1145,8 +1276,8 @@ document.addEventListener("DOMContentLoaded", () => {
     if (subtitle) {
       subtitle.textContent =
         mode === "edit"
-          ? "Atualize dados de acesso, equipe e permissões deste colaborador."
-          : "Cadastre acessos, vínculo com equipe e nível de permissão.";
+          ? "Atualize nome, email, senha, cargo, equipe, permissões e perfil comportamental."
+          : "Cadastre nome, email, senha, cargo, equipe, permissões e perfil comportamental.";
     }
   }
 
@@ -1294,11 +1425,17 @@ document.addEventListener("DOMContentLoaded", () => {
         PERFIL DE ACESSO
       </div>
       <select id="accessProfileSelect" class="role-select"></select>
+      <div class="permissions-inline-tools">
+        <button type="button" class="btn-acao btn-acao--ghost" id="openInlinePermissions">Abrir matriz de permissões</button>
+        <span id="permissionsInlineStatus" class="muted-inline">Usuário seguirá o perfil padrão até receber uma matriz personalizada.</span>
+      </div>
       <div id="accessProfileHint" style="margin-top:10px; color:rgba(234,238,243,.64); font-size:12px; line-height:1.5;"></div>
     `;
 
     const select = box.querySelector("#accessProfileSelect");
     const hint = box.querySelector("#accessProfileHint");
+    const inlinePermissionsButton = box.querySelector("#openInlinePermissions");
+    const inlinePermissionsStatus = box.querySelector("#permissionsInlineStatus");
     if (!select || !hint) return;
 
     select.innerHTML = ACCESS_PROFILES.map((profile) => {
@@ -1310,59 +1447,57 @@ document.addEventListener("DOMContentLoaded", () => {
     const syncHint = () => {
       const selectedProfile = ACCESS_PROFILES.find((item) => item.value === select.value) || ACCESS_PROFILES[3];
       hint.textContent = selectedProfile.description;
+      if (inlinePermissionsStatus) {
+        const targetUser = usuarios.find((user) => sameUserId(user.id, idEmEdicao)) || usuarioRef || null;
+        const permissionMode = String(targetUser?.permissionMode || "profile").trim().toLowerCase();
+        inlinePermissionsStatus.textContent =
+          permissionMode === "custom"
+            ? "Este usuário já usa uma matriz de permissões personalizada."
+            : "Este usuário está seguindo o perfil padrão no momento.";
+      }
       updateTeamAssignmentUI();
     };
 
     select.addEventListener("change", syncHint);
+    if (inlinePermissionsButton) {
+      inlinePermissionsButton.disabled = !(modoEdicao && idEmEdicao);
+      inlinePermissionsButton.addEventListener("click", () => {
+        if (!modoEdicao || !idEmEdicao) {
+          alert("Salve o usuário primeiro para editar a matriz de permissões.");
+          return;
+        }
+        openPermissionsForUser(idEmEdicao);
+      });
+    }
     syncHint();
   }
 
   function updateTeamAssignmentUI() {
-    const accessProfileSel = document.getElementById("accessProfileSelect");
     const structureHint = document.getElementById("estruturaHint");
-    const selectedAccessProfile = normalizeAccessProfile(accessProfileSel?.value || "operacional");
-    const cargo = String(fieldCargo?.value || "").trim();
-    const typedName = cleanText(fieldNome?.value);
-    const isCoordinatorProfile = selectedAccessProfile === "coordenacao";
-    const needsAssignment = requiresTeamAssignment(cargo, selectedAccessProfile);
 
     if (structureHint) {
-      structureHint.textContent = isCoordinatorProfile
-        ? "Para coordenação, o próprio usuário vira o coordenador. A equipe pode ser criada depois."
-        : "Coordenador, equipe e cargo";
+      structureHint.textContent = "Cargo, equipe e perfil comportamental";
     }
 
     if (inputCoordenador) {
-      inputCoordenador.required = needsAssignment;
-      inputCoordenador.classList.toggle("is-disabled", !needsAssignment || isCoordinatorProfile);
-      inputCoordenador.disabled = !needsAssignment || isCoordinatorProfile;
+      inputCoordenador.required = false;
+      inputCoordenador.disabled = false;
+      inputCoordenador.classList.remove("is-disabled");
     }
 
     if (inputEquipe) {
-      inputEquipe.required = needsAssignment;
-      inputEquipe.classList.toggle("is-disabled", !needsAssignment || isCoordinatorProfile);
-      inputEquipe.disabled = !needsAssignment || isCoordinatorProfile;
+      inputEquipe.required = false;
+      inputEquipe.disabled = false;
+      inputEquipe.classList.remove("is-disabled");
     }
 
-    if (isCoordinatorProfile) {
-      if (inputCoordenador) {
-        inputCoordenador.innerHTML = typedName
-          ? `<option value="${escapeHtml(typedName)}">${escapeHtml(typedName)} (novo coordenador)</option>`
-          : '<option value="">Preencha o nome acima para criar o coordenador</option>';
-        inputCoordenador.value = typedName || "";
+    if (!cleanText(inputEquipe?.value) && inputEquipe?.options?.length) {
+      const firstOption = Array.from(inputEquipe.options).find((option) => cleanText(option.value));
+      if (firstOption) {
+        inputEquipe.value = firstOption.value;
+        const selectedCoordinator = cleanText(firstOption.getAttribute("data-coordinator"));
+        if (inputCoordenador && selectedCoordinator) inputCoordenador.value = selectedCoordinator;
       }
-      if (inputEquipe) {
-        inputEquipe.innerHTML = '<option value="">Equipe será criada depois no ContAdmin</option>';
-        inputEquipe.value = "";
-      }
-      return;
-    }
-
-    if (!needsAssignment) {
-      if (inputCoordenador) inputCoordenador.value = "";
-      if (inputEquipe) inputEquipe.value = "";
-    } else if (!cleanText(inputCoordenador?.value) || !cleanText(inputEquipe?.value)) {
-      syncTeamSelectors(getDefaultCoordinator());
     }
   }
 
@@ -1386,10 +1521,12 @@ document.addEventListener("DOMContentLoaded", () => {
       return `
         <article class="equipe-card">
           <div class="equipe-card__top">
-            <div>
+            <div class="equipe-card__head">
+              <span class="equipe-card__eyebrow">Coordenador</span>
               <strong class="equipe-card__title">${coordinator}</strong>
               <span class="equipe-card__meta">${teams.length} equipes • ${totalMembers} pessoas</span>
             </div>
+            <span class="equipe-card__badge">${totalMembers}</span>
           </div>
           <div class="equipe-card__list">
             ${
@@ -1399,17 +1536,58 @@ document.addEventListener("DOMContentLoaded", () => {
                       const members = usuarios.filter(
                         (user) => isUserInTeam(user, coordinator, team)
                       );
+                      const membersPreview = members
+                        .map((user) => {
+                          const displayName = cleanText(user.nome) || cleanText(user.email) || "Pessoa";
+                          const initials = avatarFromName(displayName);
+                          const role = cleanText(user.cargo) || "Sem cargo";
+                          const email = cleanText(user.email) || "Sem email";
+                          const profiles = splitBehavioralProfile(user.behavioralProfile);
+                          const behavioralColors = behavioralGradientColors(profiles);
+                          const behavioralMarkup = profiles.length
+                            ? profiles
+                                .map((profile) => {
+                                  const behavioral = formatBehavioralProfile(profile);
+                                  return `<span class="behavior-chip ${behavioral.className}">${escapeHtml(behavioral.label)}</span>`;
+                                })
+                                .join("")
+                            : '<span class="behavior-chip behavior-chip--empty">Sem perfil comportamental</span>';
+                          return `
+                            <article
+                              class="equipe-member-bi"
+                              style="--member-behavior-a:${behavioralColors.first}; --member-behavior-b:${behavioralColors.second};"
+                            >
+                              <span class="equipe-member-bi__avatar">${escapeHtml(initials)}</span>
+                              <span class="equipe-member-bi__content">
+                                <strong>${escapeHtml(displayName)}</strong>
+                                <small>${escapeHtml(role)}</small>
+                                <span>${escapeHtml(email)}</span>
+                                <span class="equipe-member-bi__behavior">${behavioralMarkup}</span>
+                              </span>
+                            </article>
+                          `;
+                        })
+                        .join("");
+
                       return `
-                        <button
-                          type="button"
-                          class="equipe-summary-row"
-                          data-open-team-modal="true"
-                          data-coordinator="${coordinator}"
-                          data-equipe="${team}"
-                        >
-                          <strong>${team}</strong>
-                          <span>${members.length} pessoa(s)</span>
-                        </button>
+                        <section class="equipe-team-card">
+                          <button
+                            type="button"
+                            class="equipe-summary-row"
+                            data-open-team-modal="true"
+                            data-coordinator="${coordinator}"
+                            data-equipe="${team}"
+                          >
+                            <span class="equipe-summary-row__main">
+                              <strong>${team}</strong>
+                              <small>Abrir equipe</small>
+                            </span>
+                            <span class="equipe-summary-row__count">${members.length} pessoa(s)</span>
+                          </button>
+                          <div class="equipe-member-bi-list">
+                            ${membersPreview || '<div class="equipe-member-bi equipe-member-bi--empty">Nenhuma pessoa nessa equipe.</div>'}
+                          </div>
+                        </section>
                       `;
                     })
                     .join("")
@@ -1968,15 +2146,44 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
+  function getSelectableTeams() {
+    return getCoordinatorList().flatMap((coordinator) =>
+      getTeamsForCoordinator(coordinator).map((team) => ({
+        coordinator,
+        team,
+      }))
+    );
+  }
+
   function populateTeamList(coordinator, selected = "") {
     const safeCoordinator = resolveCoordinatorName(coordinator) || getDefaultCoordinator(coordinator);
-    const teams = getTeamsForCoordinator(safeCoordinator);
     if (inputEquipe) {
-      inputEquipe.innerHTML = [
-        '<option value="">Selecione a equipe</option>',
-        ...teams.map((team) => `<option value="${escapeHtml(team)}">${escapeHtml(team)}</option>`),
-      ].join("");
-      inputEquipe.value = resolveTeamName(safeCoordinator, selected) || "";
+      const hiddenCoordinatorMode = inputCoordenador?.hidden || inputCoordenador?.getAttribute("aria-hidden") === "true";
+      if (hiddenCoordinatorMode) {
+        const teams = getSelectableTeams();
+        inputEquipe.innerHTML = [
+          '<option value="">Selecione a equipe</option>',
+          ...teams.map(
+            ({ coordinator: coordinatorName, team }) =>
+              `<option value="${escapeHtml(team)}" data-coordinator="${escapeHtml(coordinatorName)}">${escapeHtml(
+                `${coordinatorName} / ${team}`
+              )}</option>`
+          ),
+        ].join("");
+        const selectedTeam = cleanText(selected);
+        inputEquipe.value = selectedTeam || "";
+        const selectedOption = inputEquipe.selectedOptions?.[0];
+        if (inputCoordenador) {
+          inputCoordenador.value = cleanText(selectedOption?.dataset?.coordinator) || safeCoordinator || "";
+        }
+      } else {
+        const teams = getTeamsForCoordinator(safeCoordinator);
+        inputEquipe.innerHTML = [
+          '<option value="">Selecione a equipe</option>',
+          ...teams.map((team) => `<option value="${escapeHtml(team)}">${escapeHtml(team)}</option>`),
+        ].join("");
+        inputEquipe.value = resolveTeamName(safeCoordinator, selected) || "";
+      }
     }
   }
 
@@ -1991,6 +2198,13 @@ document.addEventListener("DOMContentLoaded", () => {
   fieldNome?.addEventListener("input", () => updateTeamAssignmentUI());
   inputCoordenador?.addEventListener("change", () => {
     syncTeamSelectors(inputCoordenador.value, "");
+  });
+  inputEquipe?.addEventListener("change", () => {
+    const selectedOption = inputEquipe.selectedOptions?.[0];
+    const optionCoordinator = cleanText(selectedOption?.dataset?.coordinator);
+    if (optionCoordinator && inputCoordenador) {
+      inputCoordenador.value = optionCoordinator;
+    }
   });
 
   // =======================================
@@ -2130,6 +2344,7 @@ document.addEventListener("DOMContentLoaded", () => {
         nome: body.nome,
         email: body.email,
         cargo: body.cargo,
+        behavioralProfile: body.behavioralProfile,
         role: body.role,
         access_profile: body.accessProfile,
         accessProfile: body.accessProfile,
@@ -2154,6 +2369,7 @@ document.addEventListener("DOMContentLoaded", () => {
         nome: body.nome,
         email: body.email,
         cargo: body.cargo,
+        behavioralProfile: body.behavioralProfile,
         role: body.role,
         access_profile: body.accessProfile,
         accessProfile: body.accessProfile,
@@ -2191,6 +2407,282 @@ document.addEventListener("DOMContentLoaded", () => {
     const payload = await fetchJson(API_USER_LOGS(id), { method: "GET" });
     const list = payload?.logs || payload?.items || payload?.data || payload;
     return Array.isArray(list) ? list : [];
+  }
+
+  async function apiFetchUserPermissions(id) {
+    return fetchJson(API_USER_PERMISSIONS(id), { method: "GET" });
+  }
+
+  async function apiSaveUserPermissions(id, body) {
+    return fetchJson(API_USER_PERMISSIONS(id), {
+      method: "PUT",
+      body,
+    });
+  }
+
+  // =======================================
+  // PERMISSIONS MODAL
+  // =======================================
+  function ensurePermissionsModal() {
+    let modal = document.getElementById("modalPermissoesUsuario");
+    if (modal) return modal;
+
+    modal = document.createElement("div");
+    modal.id = "modalPermissoesUsuario";
+    modal.className = "modal";
+    modal.setAttribute("aria-hidden", "true");
+    modal.innerHTML = `
+      <div class="form-usuario form-usuario--wide" style="max-width: 1080px;">
+        <div class="form-usuario__header">
+          <div>
+            <span class="form-usuario__eyebrow">Matriz de permissões</span>
+            <h3 id="permissionsModalTitle">Permissões do usuário</h3>
+            <p class="form-usuario__subtitle" id="permissionsModalSubtitle">Defina exatamente o que este usuário pode ver, editar e gerenciar.</p>
+          </div>
+          <button type="button" class="form-usuario__close" data-close-permissions aria-label="Fechar modal">×</button>
+        </div>
+        <section class="form-usuario__section">
+          <div class="form-grid form-grid--two">
+            <label class="form-field">
+              <span>Modo de permissão</span>
+              <div class="select-cargo">
+                <select id="permissionModeSelect">
+                  <option value="profile">Seguir perfil padrão</option>
+                  <option value="custom">Permissão personalizada</option>
+                </select>
+              </div>
+            </label>
+            <div class="form-field">
+              <span>Leitura do modo</span>
+              <div id="permissionModeHint" class="muted-inline" style="padding-top: 12px;">
+                O usuário herdará os acessos do perfil atual.
+              </div>
+            </div>
+          </div>
+        </section>
+        <section class="form-usuario__section">
+          <div class="form-usuario__section-head">
+            <strong>Módulos</strong>
+            <span>Quando estiver em modo personalizado, cada módulo pode ser controlado sem exceção.</span>
+          </div>
+          <div id="permissionsModalFeedback" class="muted-inline" style="display:none;"></div>
+          <div class="tabela-wrapper">
+            <table class="tabela-usuarios">
+              <thead>
+                <tr>
+                  <th>Módulo</th>
+                  <th>Visualizar</th>
+                  <th>Editar</th>
+                  <th>Gerenciar</th>
+                </tr>
+              </thead>
+              <tbody id="permissionsModalRows"></tbody>
+            </table>
+          </div>
+        </section>
+        <div class="acoes-form">
+          <button type="button" class="btn-acao btn-acao--ghost" data-close-permissions>Cancelar</button>
+          <button type="button" class="btn-acao" id="savePermissionsButton">Salvar permissões</button>
+        </div>
+      </div>
+    `;
+
+    document.body.appendChild(modal);
+
+    modal.addEventListener("click", (event) => {
+      if (event.target === modal || event.target.closest("[data-close-permissions]")) {
+        closePermissionsModal();
+        return;
+      }
+
+      const checkbox = event.target.closest("input[data-permission-module]");
+      if (!checkbox) return;
+
+      const moduleId = String(checkbox.getAttribute("data-permission-module") || "").trim().toLowerCase();
+      const action = String(checkbox.getAttribute("data-permission-action") || "").trim().toLowerCase();
+      if (!moduleId || !action || !permissionEditorState) return;
+
+      const row = permissionEditorState.permissions.find((entry) => String(entry.moduleId || "").trim().toLowerCase() === moduleId);
+      if (!row) return;
+
+      if (action === "manage") {
+        row.manage = checkbox.checked;
+        if (checkbox.checked) {
+          row.edit = true;
+          row.view = true;
+        }
+      } else if (action === "edit") {
+        row.edit = checkbox.checked;
+        if (checkbox.checked) {
+          row.view = true;
+        } else {
+          row.manage = false;
+        }
+      } else {
+        row.view = checkbox.checked;
+        if (!checkbox.checked) {
+          row.edit = false;
+          row.manage = false;
+        }
+      }
+
+      renderPermissionsRows();
+    });
+
+    modal.querySelector("#permissionModeSelect")?.addEventListener("change", (event) => {
+      if (!permissionEditorState) return;
+      permissionEditorState.permissionMode = String(event.target.value || "profile").trim().toLowerCase() === "custom" ? "custom" : "profile";
+      renderPermissionsRows();
+    });
+
+    modal.querySelector("#savePermissionsButton")?.addEventListener("click", () => {
+      savePermissionsModal().catch((err) => {
+        console.error("❌ Falha ao salvar permissões:", err);
+        setPermissionsFeedback("error", err?.message || "Erro ao salvar permissões.");
+      });
+    });
+
+    return modal;
+  }
+
+  function setPermissionsFeedback(type, message) {
+    const box = document.getElementById("permissionsModalFeedback");
+    if (!box) return;
+    const safeType = String(type || "").trim().toLowerCase();
+    box.style.display = message ? "block" : "none";
+    box.className = safeType === "error" ? "muted-inline text-danger" : "muted-inline";
+    box.textContent = String(message || "").trim();
+  }
+
+  function closePermissionsModal() {
+    const modal = document.getElementById("modalPermissoesUsuario");
+    if (!modal) return;
+    modal.classList.remove("show");
+    modal.style.display = "none";
+    modal.setAttribute("aria-hidden", "true");
+    permissionEditorState = null;
+    setPermissionsFeedback("", "");
+  }
+
+  function renderPermissionsRows() {
+    const modal = ensurePermissionsModal();
+    const tbody = modal.querySelector("#permissionsModalRows");
+    const select = modal.querySelector("#permissionModeSelect");
+    const hint = modal.querySelector("#permissionModeHint");
+    const saveButton = modal.querySelector("#savePermissionsButton");
+    if (!tbody || !permissionEditorState) return;
+
+    const customMode = permissionEditorState.permissionMode === "custom";
+    if (select) select.value = permissionEditorState.permissionMode;
+    if (saveButton) saveButton.disabled = Boolean(permissionEditorState.saving);
+    if (hint) {
+      hint.textContent = customMode
+        ? "Modo personalizado ativo. Cada caixa abaixo decide o acesso real do usuário."
+        : "Modo por perfil ativo. O usuário seguirá o perfil padrão atual e a grade fica apenas para consulta.";
+    }
+
+    tbody.innerHTML = permissionEditorState.permissions
+      .map((entry) => {
+        const moduleId = String(entry.moduleId || "").trim().toLowerCase();
+        const disabled = customMode ? "" : "disabled";
+        return `
+          <tr>
+            <td>
+              <strong>${escapeHtml(entry.name || moduleId)}</strong>
+              <div class="muted-inline">${escapeHtml(moduleId)}</div>
+            </td>
+            <td><input type="checkbox" data-permission-module="${escapeHtml(moduleId)}" data-permission-action="view" ${entry.view ? "checked" : ""} ${disabled}></td>
+            <td><input type="checkbox" data-permission-module="${escapeHtml(moduleId)}" data-permission-action="edit" ${entry.edit ? "checked" : ""} ${disabled}></td>
+            <td><input type="checkbox" data-permission-module="${escapeHtml(moduleId)}" data-permission-action="manage" ${entry.manage ? "checked" : ""} ${disabled}></td>
+          </tr>
+        `;
+      })
+      .join("");
+  }
+
+  async function openPermissionsForUser(id) {
+    if (!canManageUsers(getSessionUser())) {
+      alert("Somente TI pode editar permissões.");
+      return;
+    }
+
+    const usuario = usuarios.find((item) => sameUserId(item.id, id));
+    if (!usuario) return;
+
+    const modal = ensurePermissionsModal();
+    const title = modal.querySelector("#permissionsModalTitle");
+    const subtitle = modal.querySelector("#permissionsModalSubtitle");
+    if (title) title.textContent = `Permissões de ${usuario.nome || usuario.email || "usuário"}`;
+    if (subtitle) subtitle.textContent = `Controle fino de acesso para ${usuario.email || "este usuário"}.`;
+
+    setPermissionsFeedback("", "");
+    permissionEditorState = {
+      userId: id,
+      permissionMode: usuario.permissionMode || "profile",
+      permissions: [],
+      saving: false,
+    };
+
+    modal.style.display = "flex";
+    modal.classList.add("show");
+    modal.setAttribute("aria-hidden", "false");
+
+    const payload = await apiFetchUserPermissions(id);
+    permissionEditorState.permissionMode = String(payload?.permissionMode || usuario.permissionMode || "profile").trim().toLowerCase() === "custom" ? "custom" : "profile";
+    permissionEditorState.permissions = Array.isArray(payload?.permissions)
+      ? payload.permissions.map((entry) => ({
+          moduleId: String(entry.moduleId || "").trim().toLowerCase(),
+          moduleDbId: entry.moduleDbId,
+          name: entry.name || entry.moduleId || "",
+          view: Boolean(entry.view),
+          edit: Boolean(entry.edit),
+          manage: Boolean(entry.manage),
+        }))
+      : [];
+
+    renderPermissionsRows();
+  }
+
+  async function savePermissionsModal() {
+    if (!permissionEditorState?.userId) return;
+
+    permissionEditorState.saving = true;
+    renderPermissionsRows();
+    setPermissionsFeedback("", "");
+
+    const payload = await apiSaveUserPermissions(permissionEditorState.userId, {
+      permissionMode: permissionEditorState.permissionMode,
+      permissions: permissionEditorState.permissions.map((entry) => ({
+        moduleDbId: entry.moduleDbId,
+        moduleId: entry.moduleDbId,
+        moduleSlug: entry.moduleId,
+        canView: Boolean(entry.view),
+        canEdit: Boolean(entry.edit),
+        canManage: Boolean(entry.manage),
+      })),
+    });
+
+    const updatedUser = normalizeUser(payload?.user);
+    if (updatedUser) {
+      usuarios = usuarios.map((user) =>
+        sameUserId(user.id, updatedUser.id)
+          ? {
+              ...user,
+              ...updatedUser,
+              permissionMode: String(payload?.permissionMode || updatedUser.permissionMode || "profile").trim().toLowerCase(),
+            }
+          : user
+      );
+      renderizarUsuarios();
+    }
+
+    if (sameUserId(getSessionUser()?.id, permissionEditorState.userId)) {
+      await loadSessionUser();
+      applyRoleToSidebar();
+    }
+
+    permissionEditorState.saving = false;
+    closePermissionsModal();
   }
 
   // =======================================
@@ -2300,6 +2792,7 @@ document.addEventListener("DOMContentLoaded", () => {
             usuario.email,
             usuario.cargo,
             accessProfileLabel(usuario.accessProfile),
+            usuario.behavioralProfile,
           ]
             .map((value) => String(value || "").toLowerCase())
             .some((value) => value.includes(filterTerm))
@@ -2323,33 +2816,58 @@ document.addEventListener("DOMContentLoaded", () => {
     visibleUsers.forEach((usuario) => {
       const protegido = currentAccessProfile !== "ti" && getAccessProfile(usuario) === "ti";
       const accessProfile = accessProfileLabel(usuario.accessProfile);
+      const permissionModeLabel = usuario.permissionMode === "custom" ? "Customizado" : "Perfil";
+      const permissionModeClass = usuario.permissionMode === "custom" ? "profile-mode-chip--custom" : "profile-mode-chip--profile";
+      const behavioralProfiles = splitBehavioralProfile(usuario.behavioralProfile);
+      const behavioralColors = behavioralGradientColors(behavioralProfiles);
+      const behavioralMarkup = behavioralProfiles.length
+        ? behavioralProfiles
+            .map((profile) => {
+              const behavioral = formatBehavioralProfile(profile);
+              return `<span class="behavior-chip ${behavioral.className}">${escapeHtml(behavioral.label)}</span>`;
+            })
+            .join("")
+        : `<span class="behavior-chip behavior-chip--empty">Sem perfil comportamental</span>`;
 
       listaUsuarios.innerHTML += `
-        <tr>
+        <tr class="user-row--behavioral" style="--user-behavior-a:${behavioralColors.first}; --user-behavior-b:${behavioralColors.second};">
           <td>${usuario.nome || ""}</td>
           <td>${usuario.email || ""}</td>
-          <td>${usuario.cargo || ""}</td>
-          <td><span class="muted-inline">${accessProfile}</span></td>
+          <td>
+            <div class="user-role-stack">
+              <strong class="user-role-title">${escapeHtml(usuario.cargo || "Sem cargo")}</strong>
+              <div class="behavior-chip-row">${behavioralMarkup}</div>
+            </div>
+          </td>
+          <td>
+            <div class="profile-chip-stack">
+              <span class="profile-chip ${accessProfileBadgeClass(usuario.accessProfile)}">${accessProfile}</span>
+              <span class="profile-mode-chip ${permissionModeClass}">${permissionModeLabel}</span>
+            </div>
+          </td>
           <td>
             <span class="status ${usuario.ativo ? "ativo" : "inativo"}">
               ${usuario.ativo ? "Ativo" : "Inativo"}
             </span>
           </td>
           <td>
-            ${
-              !allowManagement
-                ? `<span class="muted">Somente visualização</span>`
-                : protegido
-                ? `<span class="muted">Protegido</span>`
-                : `
-                  <button class="btn-acao btn-editar" data-id="${usuario.id}">Editar</button>
-                  <button class="btn-acao btn-toggle" data-id="${usuario.id}">
-                    ${usuario.ativo ? "Desativar" : "Ativar"}
-                  </button>
-                  <button class="btn-acao btn-logs" data-id="${usuario.id}">Logs</button>
-                  <button class="btn-acao btn-excluir" data-id="${usuario.id}">Excluir</button>
-                `
-            }
+            <div class="user-actions">
+              ${
+                !allowManagement
+                  ? `<span class="muted">Somente visualização</span>`
+                  : protegido
+                  ? `<span class="muted">Protegido</span>`
+                  : `
+                    <button class="btn-acao btn-permissoes" data-id="${usuario.id}">Permissões</button>
+                    <button class="btn-acao btn-editar" data-id="${usuario.id}">Editar</button>
+                    <button class="btn-acao btn-toggle" data-id="${usuario.id}">
+                      ${usuario.ativo ? "Desativar" : "Ativar"}
+                    </button>
+                    <button class="btn-acao btn-logs" data-id="${usuario.id}">Logs</button>
+                    <button class="btn-acao btn-excluir" data-id="${usuario.id}">Excluir</button>
+                  `
+              }
+            </div>
           </td>
         </tr>
       `;
@@ -2408,6 +2926,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
     setUserModalCopy("create");
     setUserFormFeedback("", "");
+    populateBehavioralProfileSelect(fieldBehavioralProfilePrimary, "", "Selecione o perfil 1");
+    populateBehavioralProfileSelect(fieldBehavioralProfileSecondary, "", "Selecione o perfil 2");
     syncTeamSelectors(getDefaultCoordinator());
     updateTeamAssignmentUI();
     openModal();
@@ -2431,7 +2951,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   btnGerenciarEquipes?.addEventListener("click", () => {
     if (!canEditTeams(getSessionUser())) {
-      alert("Somente você e a Gabriella podem editar as equipes.");
+      alert("Você não tem permissão para gerenciar equipes.");
       return;
     }
     setTeamEditorFeedback("", "");
@@ -2636,6 +3156,11 @@ document.addEventListener("DOMContentLoaded", () => {
     if (fieldNome) fieldNome.value = usuario.nome || "";
     if (fieldEmail) fieldEmail.value = usuario.email || "";
     if (fieldCargo) fieldCargo.value = usuario.cargo || "";
+    {
+      const profiles = splitBehavioralProfile(usuario.behavioralProfile);
+      populateBehavioralProfileSelect(fieldBehavioralProfilePrimary, profiles[0] || "", "Selecione o perfil 1");
+      populateBehavioralProfileSelect(fieldBehavioralProfileSecondary, profiles[1] || "", "Selecione o perfil 2");
+    }
     syncTeamSelectors(usuario.coordenador, usuario.equipe);
 
     if (fieldSenha) {
@@ -2738,6 +3263,10 @@ document.addEventListener("DOMContentLoaded", () => {
     const nome = String(fieldNome?.value || "").trim();
     const emailRaw = String(fieldEmail?.value || "").trim();
     const cargo = String(fieldCargo?.value || "").trim();
+    const behavioralProfile = buildBehavioralProfile(
+      fieldBehavioralProfilePrimary?.value,
+      fieldBehavioralProfileSecondary?.value
+    );
     const rawCoordenador = String(inputCoordenador?.value || "").trim();
     const rawEquipe = String(inputEquipe?.value || "").trim();
     const senha = String(fieldSenha?.value || "");
@@ -2750,29 +3279,19 @@ document.addEventListener("DOMContentLoaded", () => {
     const accessProfileSel = document.getElementById("accessProfileSelect");
     const selectedAccessProfile = normalizeAccessProfile(accessProfileSel?.value || "operacional");
     const selectedRole = accessProfileToLegacyRole(selectedAccessProfile);
-    const needsAssignment = requiresTeamAssignment(cargo, selectedAccessProfile);
 
-    if (!nome || !emailRaw || !cargo || (needsAssignment && (!rawCoordenador || !rawEquipe))) {
+    if (!nome || !emailRaw || !cargo) {
       alert("Preencha todos os campos obrigatórios");
       return;
     }
 
-    const normalizedAssignment = needsAssignment
-      ? normalizeAssignment({ coordenador: rawCoordenador, equipe: rawEquipe })
-      : { coordenador: "", equipe: "" };
+    const normalizedAssignment = normalizeAssignment({
+      coordenador: rawCoordenador,
+      equipe: rawEquipe,
+    });
 
-    let finalCoordenador = normalizedAssignment.coordenador;
-    let finalEquipe = normalizedAssignment.equipe;
-
-    if (selectedAccessProfile === "coordenacao") {
-      finalCoordenador = nome;
-      finalEquipe = "";
-    }
-
-    if (needsAssignment && (!finalCoordenador || !finalEquipe)) {
-      alert("Selecione um coordenador e uma equipe validos da lista.");
-      return;
-    }
+    const finalCoordenador = normalizedAssignment.coordenador;
+    const finalEquipe = normalizedAssignment.equipe;
 
     const current = getSessionUser();
     const creatorAccessProfile = getAccessProfile(current);
@@ -2803,6 +3322,7 @@ document.addEventListener("DOMContentLoaded", () => {
           nome,
           email,
           cargo,
+          behavioralProfile,
           role: selectedRole,
           accessProfile: selectedAccessProfile,
           coordenador: finalCoordenador,
@@ -2830,6 +3350,7 @@ document.addEventListener("DOMContentLoaded", () => {
           nome,
           email,
           cargo,
+          behavioralProfile,
           role: selectedRole,
           accessProfile: selectedAccessProfile,
           coordenador: finalCoordenador,
@@ -2846,6 +3367,7 @@ document.addEventListener("DOMContentLoaded", () => {
             nome,
             email,
             cargo,
+            behavioralProfile,
             role: selectedRole,
             active: true,
             accessProfile: selectedAccessProfile,
@@ -2903,6 +3425,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const id = normalizeEntityId(btn.dataset.id);
     if (!id) return;
 
+    if (btn.classList.contains("btn-permissoes")) return openPermissionsForUser(id);
     if (btn.classList.contains("btn-editar")) return editarUsuario(id);
     if (btn.classList.contains("btn-toggle")) return toggleStatusUsuario(id);
     if (btn.classList.contains("btn-excluir")) return excluirUsuario(id);

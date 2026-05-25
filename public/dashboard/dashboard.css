@@ -13,7 +13,7 @@ body {
 }
 
 :root {
-  --bg: #0b0d13;
+  --bg: #05070b;
 
   /* Glass / Panels */
   --panel: rgba(18, 22, 34, 0.72);
@@ -27,17 +27,53 @@ body {
   --muted: rgba(232, 237, 246, 0.65);
 
   /* Accents */
-  --brand: #4ecca3;
+  --brand: #3b82f6;
   --danger: #ff6b6b;
   --warn: #ffd166;
-  --blue: rgba(0, 140, 255, 0.55);
+  --blue: rgba(59, 130, 246, 0.55);
 
   /* Radius / Shadows */
   --radius: 18px;
   --radius-lg: 22px;
   --shadow: 0 26px 80px rgba(0, 0, 0, 0.55);
   --shadow-soft: 0 14px 40px rgba(0, 0, 0, 0.38);
-  --ring: 0 0 0 4px rgba(78, 204, 163, 0.18);
+  --ring: 0 0 0 4px rgba(59, 130, 246, 0.22);
+}
+
+body[data-theme="dark"] {
+  --bg: #05070b;
+  --panel: rgba(18, 22, 34, 0.72);
+  --panel-strong: rgba(18, 22, 34, 0.78);
+  --panel-soft: rgba(255, 255, 255, 0.04);
+  --stroke: rgba(255, 255, 255, 0.08);
+  --stroke-2: rgba(255, 255, 255, 0.06);
+  --text: #e8edf6;
+  --muted: rgba(232, 237, 246, 0.65);
+  --brand: #3b82f6;
+  --danger: #ff6b6b;
+  --warn: #ffd166;
+  --blue: rgba(59, 130, 246, 0.55);
+  --shadow: 0 26px 80px rgba(0, 0, 0, 0.55);
+  --shadow-soft: 0 14px 40px rgba(0, 0, 0, 0.38);
+  --ring: 0 0 0 4px rgba(59, 130, 246, 0.22);
+}
+
+body[data-theme="light"] {
+  --bg: #e9eff7;
+  --panel: rgba(255, 255, 255, 0.96);
+  --panel-strong: rgba(255, 255, 255, 0.985);
+  --panel-soft: rgba(15, 23, 42, 0.035);
+  --stroke: rgba(15, 23, 42, 0.18);
+  --stroke-2: rgba(15, 23, 42, 0.12);
+  --text: #08111f;
+  --muted: rgba(8, 17, 31, 0.84);
+  --brand: #2563eb;
+  --danger: #dc2626;
+  --warn: #d97706;
+  --blue: rgba(37, 99, 235, 0.34);
+  --shadow: 0 20px 50px rgba(15, 23, 42, 0.12);
+  --shadow-soft: 0 14px 28px rgba(15, 23, 42, 0.08);
+  --ring: 0 0 0 4px rgba(37, 99, 235, 0.16);
 }
 
 body {
@@ -46,11 +82,11 @@ body {
   color: var(--text);
   background:
     radial-gradient(
-      1100px 700px at 30% -10%,
-      rgba(0, 140, 255, 0.2),
-      rgba(0, 0, 0, 0) 60%
+      1100px 700px at 24% -12%,
+      rgba(59, 130, 246, 0.16),
+      rgba(0, 0, 0, 0) 58%
     ),
-    linear-gradient(180deg, rgba(0, 140, 255, 0.12), rgba(10, 12, 18, 0.96)),
+    linear-gradient(180deg, rgba(7, 10, 16, 0.98), rgba(4, 6, 10, 1)),
     var(--bg);
   overflow-x: hidden;
   overflow-y: auto;
@@ -67,7 +103,7 @@ body {
   background:
     radial-gradient(
       900px 520px at 20% -10%,
-      rgba(0, 140, 255, 0.12),
+      rgba(59, 130, 246, 0.1),
       rgba(0, 0, 0, 0) 62%
     ),
     var(--bg);
@@ -96,6 +132,11 @@ body {
   gap: 10px;
 }
 
+.theme-switcher--dashboard {
+  width: 100%;
+  justify-content: center;
+}
+
 .profileCard {
   padding: 18px 14px 14px;
   border-radius: 22px;
@@ -117,15 +158,15 @@ body {
   border-radius: 16px;
   display: grid;
   place-items: center;
-  background: rgba(78, 204, 163, 0.16);
-  color: #8ffff0;
+  background: rgba(59, 130, 246, 0.16);
+  color: #dbeafe;
   font-weight: 900;
   font-size: 18px;
 }
 
 .profileCard__avatar--button {
   padding: 0;
-  border: 1px solid rgba(78, 204, 163, 0.22);
+  border: 1px solid rgba(59, 130, 246, 0.22);
   cursor: pointer;
   transition:
     transform 0.16s ease,
@@ -136,8 +177,8 @@ body {
 
 .profileCard__avatar--button:hover {
   transform: translateY(-1px) scale(1.02);
-  background: rgba(78, 204, 163, 0.24);
-  border-color: rgba(78, 204, 163, 0.42);
+  background: rgba(59, 130, 246, 0.24);
+  border-color: rgba(59, 130, 246, 0.42);
   box-shadow: 0 12px 24px rgba(11, 24, 21, 0.35);
 }
 
@@ -174,8 +215,8 @@ body {
   border-radius: 999px;
   display: inline-flex;
   align-items: center;
-  background: rgba(78, 204, 163, 0.14);
-  color: #aaffee;
+  background: rgba(59, 130, 246, 0.14);
+  color: #dbeafe;
   font-size: 12px;
   font-weight: 900;
 }
@@ -236,6 +277,406 @@ body {
     linear-gradient(90deg, rgba(255, 255, 255, 0.035) 1px, transparent 1px);
   background-size: 44px 44px;
   background-position: 0 0;
+}
+
+body[data-theme] {
+  background:
+    radial-gradient(1100px 700px at 24% -12%, var(--theme-accent-glow), transparent 58%),
+    linear-gradient(180deg, var(--theme-bg-soft), var(--theme-bg)) !important;
+}
+
+body[data-theme] .app.dashboardApp {
+  background:
+    radial-gradient(900px 520px at 20% -10%, var(--theme-accent-glow), transparent 62%),
+    var(--theme-bg) !important;
+}
+
+body[data-theme] .dashboardSidebar {
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--theme-surface) 96%, transparent),
+      color-mix(in srgb, var(--theme-surface-2) 98%, transparent)
+    ) !important;
+  border-right-color: var(--theme-stroke) !important;
+}
+
+body[data-theme] .main-shell.bi-shell {
+  background-image:
+    linear-gradient(color-mix(in srgb, var(--theme-stroke) 52%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in srgb, var(--theme-stroke) 52%, transparent) 1px, transparent 1px) !important;
+}
+
+body[data-theme] .dashboardSidebar,
+body[data-theme] .profileCard,
+body[data-theme] .exactCard,
+body[data-theme] .panel,
+body[data-theme] .card,
+body[data-theme] .ticketCreatePanel,
+body[data-theme] .ticketDesk,
+body[data-theme] .ticketTable,
+body[data-theme] .slaMonthCard,
+body[data-theme] .todo__row,
+body[data-theme] .ticket--desk,
+body[data-theme] .ticketDeskSummary__item,
+body[data-theme] .ticketComposer,
+body[data-theme] .ticketWorkspace__pill,
+body[data-theme] .heroChip,
+body[data-theme] .ghost-btn {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.028), rgba(255, 255, 255, 0.012)),
+    var(--theme-surface) !important;
+  border-color: var(--theme-stroke) !important;
+  color: var(--theme-text) !important;
+  box-shadow: var(--theme-shadow) !important;
+  transition:
+    background 0.28s ease,
+    border-color 0.24s ease,
+    color 0.24s ease,
+    box-shadow 0.28s ease;
+}
+
+body[data-theme] .profileCard,
+body[data-theme] .exactCard,
+body[data-theme] .panel,
+body[data-theme] .card,
+body[data-theme] .ticketCreatePanel,
+body[data-theme] .ticketDesk,
+body[data-theme] .ticketTable,
+body[data-theme] .slaMonthCard,
+body[data-theme] .todo__row,
+body[data-theme] .ticket--desk,
+body[data-theme] .ticketDeskSummary__item,
+body[data-theme] .ticketComposer,
+body[data-theme] .ticketWorkspace__pill,
+body[data-theme] .heroChip {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.02), rgba(255, 255, 255, 0.01)),
+    var(--theme-surface) !important;
+  border-color: var(--theme-stroke) !important;
+  color: var(--theme-text) !important;
+  box-shadow: var(--theme-shadow) !important;
+  transition:
+    background 0.28s ease,
+    border-color 0.24s ease,
+    color 0.24s ease,
+    box-shadow 0.28s ease;
+}
+
+body[data-theme] .exactCard--overview,
+body[data-theme] .heroPanel--overview {
+  background:
+    radial-gradient(260px 180px at 86% 16%, var(--theme-accent-glow), rgba(0, 0, 0, 0) 62%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.02), rgba(255, 255, 255, 0.01)),
+    var(--theme-surface) !important;
+}
+
+body[data-theme] .commercialSpotlight,
+body[data-theme] .summary-card.strong {
+  background:
+    radial-gradient(260px 160px at 100% 0%, var(--theme-accent-glow), rgba(0, 0, 0, 0) 72%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.028), rgba(255, 255, 255, 0.012)),
+    var(--theme-surface-2) !important;
+  border-color: color-mix(in srgb, var(--theme-accent) 22%, var(--theme-stroke)) !important;
+}
+
+body[data-theme] .accent-btn {
+  background: linear-gradient(180deg, var(--theme-accent), var(--theme-accent-strong)) !important;
+  border-color: color-mix(in srgb, var(--theme-accent) 48%, transparent) !important;
+  color: var(--theme-inverse) !important;
+}
+
+body[data-theme] .ticketSearch,
+body[data-theme] .ticketCreatePanel__textarea,
+body[data-theme] .ticketCreateRow__select,
+body[data-theme] .todo__text,
+body[data-theme] .ticketCreatePanel__uploadHint {
+  background: var(--theme-surface-2) !important;
+  border-color: var(--theme-stroke) !important;
+  color: var(--theme-text) !important;
+}
+
+body[data-theme] .ticketSearch::placeholder,
+body[data-theme] .ticketCreatePanel__textarea::placeholder,
+body[data-theme] .todo__text::placeholder {
+  color: var(--theme-muted) !important;
+}
+
+body[data-theme] .ticketCreatePanel__upload {
+  background: color-mix(in srgb, var(--theme-accent-soft) 76%, var(--theme-surface)) !important;
+  border-color: color-mix(in srgb, var(--theme-accent) 24%, var(--theme-stroke)) !important;
+}
+
+body[data-theme="light"] .profileCard__body strong,
+body[data-theme="light"] .exactCard--overview h1,
+body[data-theme="light"] .ticketCreatePanel__title,
+body[data-theme="light"] .ticketDeskRow__title,
+body[data-theme="light"] .panel-head h2 {
+  color: var(--theme-text) !important;
+}
+
+body[data-theme="light"] .ticketDeskRow__summary,
+body[data-theme="light"] .bi-copy,
+body[data-theme="light"] .panel-head p {
+  color: var(--theme-muted) !important;
+}
+
+body[data-theme="light"] .dashboardSidebar,
+body[data-theme="light"] .profileCard,
+body[data-theme="light"] .exactCard,
+body[data-theme="light"] .panel,
+body[data-theme="light"] .card,
+body[data-theme="light"] .ticketCreatePanel,
+body[data-theme="light"] .ticketDesk,
+body[data-theme="light"] .ticketTable,
+body[data-theme="light"] .slaMonthCard,
+body[data-theme="light"] .todo__row,
+body[data-theme="light"] .ticket--desk,
+body[data-theme="light"] .ticketDeskSummary__item,
+body[data-theme="light"] .ticketComposer,
+body[data-theme="light"] .ticketWorkspace__pill,
+body[data-theme="light"] .heroChip,
+body[data-theme="light"] .ghost-btn {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.995), rgba(240, 246, 252, 0.985)),
+    var(--theme-surface) !important;
+  border-color: rgba(15, 23, 42, 0.2) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.92),
+    0 18px 38px rgba(15, 23, 42, 0.14) !important;
+}
+
+body[data-theme="light"] {
+  color: #09111f !important;
+  background:
+    radial-gradient(900px 520px at 84% 8%, rgba(37, 99, 235, 0.12), transparent 34%),
+    linear-gradient(180deg, #f3f7fb, #e7edf5) !important;
+}
+
+body[data-theme="light"] .app.dashboardApp {
+  background:
+    radial-gradient(900px 520px at 84% 8%, rgba(37, 99, 235, 0.11), transparent 34%),
+    #eaf0f7 !important;
+}
+
+body[data-theme="light"] .main-shell.bi-shell {
+  background-image:
+    linear-gradient(rgba(15, 23, 42, 0.085) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(15, 23, 42, 0.085) 1px, transparent 1px) !important;
+}
+
+body[data-theme="light"] .exactCard--overview,
+body[data-theme="light"] .heroPanel--overview {
+  background:
+    radial-gradient(260px 180px at 86% 16%, rgba(37, 99, 235, 0.2), transparent 62%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.995), rgba(242, 248, 254, 0.985)),
+    var(--theme-surface) !important;
+}
+
+body[data-theme="light"] .commercialSpotlight,
+body[data-theme="light"] .summary-card.strong,
+body[data-theme="light"] .ticketCreatePanel {
+  background:
+    radial-gradient(260px 160px at 100% 0%, rgba(37, 99, 235, 0.16), transparent 72%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.995), rgba(239, 246, 253, 0.985)),
+    var(--theme-surface-2) !important;
+}
+
+body[data-theme="light"] .profileCard__body strong,
+body[data-theme="light"] .ticketCreatePanel__title,
+body[data-theme="light"] .ticketDeskRow__title,
+body[data-theme="light"] .panel-head h2,
+body[data-theme="light"] .sidebar__label,
+body[data-theme="light"] .card__title,
+body[data-theme="light"] .ticketDeskSummary__item strong,
+body[data-theme="light"] .ticketTable__head,
+body[data-theme="light"] .ticketCreatePanel__label,
+body[data-theme="light"] .heroKicker,
+body[data-theme="light"] .heroChip,
+body[data-theme="light"] .ticketTab,
+body[data-theme="light"] .ticketWorkspace__pill,
+body[data-theme="light"] .ghost-btn,
+body[data-theme="light"] .todoFooter .ghost-btn,
+body[data-theme="light"] .profileCard__status {
+  color: #0f172a !important;
+}
+
+body[data-theme="light"] .profileCard__body span,
+body[data-theme="light"] .ticketDeskRow__summary,
+body[data-theme="light"] .bi-copy,
+body[data-theme="light"] .panel-head p,
+body[data-theme="light"] .card__sub,
+body[data-theme="light"] .ticketCreatePanel__hintRow,
+body[data-theme="light"] .ticketCreatePanel__uploadHint,
+body[data-theme="light"] .ticketCreatePanel__meta,
+body[data-theme="light"] .todo__meta,
+body[data-theme="light"] .ticketDeskSummary__item,
+body[data-theme="light"] .ticketDeskRow__owner,
+body[data-theme="light"] .ticketDeskRow__assignee,
+body[data-theme="light"] .ticketDeskRow__updated {
+  color: rgba(15, 23, 42, 0.88) !important;
+}
+
+body[data-theme="light"] .muted,
+body[data-theme="light"] .card__sub,
+body[data-theme="light"] .ticketCreatePanel__hintRow,
+body[data-theme="light"] .ticketCreatePanel__uploadHint,
+body[data-theme="light"] .ticketCreatePanel__meta,
+body[data-theme="light"] .bi-copy,
+body[data-theme="light"] .panel-head p {
+  color: rgba(15, 23, 42, 0.82) !important;
+}
+
+body[data-theme="light"] .profileCard__status {
+  background: rgba(37, 99, 235, 0.22) !important;
+  border: 1px solid rgba(37, 99, 235, 0.34) !important;
+}
+
+body[data-theme="light"] .ghost-btn--danger {
+  background: rgba(255, 255, 255, 0.92) !important;
+  border-color: rgba(15, 23, 42, 0.12) !important;
+  color: #122033 !important;
+}
+
+body[data-theme="light"] .theme-switcher {
+  background: rgba(255, 255, 255, 0.96) !important;
+  border-color: rgba(15, 23, 42, 0.2) !important;
+  box-shadow: 0 12px 24px rgba(15, 23, 42, 0.14) !important;
+}
+
+body[data-theme="light"] .theme-switcher__button {
+  color: rgba(15, 23, 42, 0.84) !important;
+}
+
+body[data-theme="light"] .theme-switcher__button.is-active {
+  color: #ffffff !important;
+}
+
+body[data-theme="light"] .ticketSearch,
+body[data-theme="light"] .ticketCreatePanel__textarea,
+body[data-theme="light"] .ticketCreateRow__select,
+body[data-theme="light"] .todo__text,
+body[data-theme="light"] .ticketCreatePanel__uploadHint,
+body[data-theme="light"] .ticketCreatePanel__uploadIcon {
+  background: #edf3f9 !important;
+  border-color: rgba(15, 23, 42, 0.22) !important;
+  color: #09111f !important;
+}
+
+body[data-theme="light"] .ticketSearch::placeholder,
+body[data-theme="light"] .ticketCreatePanel__textarea::placeholder,
+body[data-theme="light"] .todo__text::placeholder {
+  color: rgba(9, 17, 31, 0.76) !important;
+}
+
+body[data-theme="light"] .ticketCreatePanel__upload {
+  background: linear-gradient(180deg, rgba(234, 243, 255, 0.98), rgba(223, 236, 255, 0.97)) !important;
+  border-color: rgba(37, 99, 235, 0.44) !important;
+  color: #12305f !important;
+}
+
+body[data-theme="light"] .ticketTabs--desk .ticketTab,
+body[data-theme="light"] .ticketWorkspace__pill,
+body[data-theme="light"] .heroChip,
+body[data-theme="light"] .ticketDeskSummary__item,
+body[data-theme="light"] .pill,
+body[data-theme="light"] .status-chip,
+body[data-theme="light"] .priority-chip {
+  border-color: rgba(15, 23, 42, 0.2) !important;
+  background: rgba(255, 255, 255, 0.97) !important;
+  color: #09111f !important;
+}
+
+body[data-theme="light"] .ticketTabs--desk .ticketTab.is-active,
+body[data-theme="light"] .ticketWorkspace__pill.is-active,
+body[data-theme="light"] .heroChip.is-active {
+  background: rgba(37, 99, 235, 0.24) !important;
+  border-color: rgba(37, 99, 235, 0.4) !important;
+  color: #12305f !important;
+}
+
+body[data-theme="light"] .todo__row.is-done {
+  background:
+    linear-gradient(180deg, rgba(240, 246, 255, 0.92), rgba(237, 243, 252, 0.9)),
+    var(--theme-surface) !important;
+}
+
+body[data-theme="light"] .ticketTable__head {
+  background: rgba(232, 240, 249, 0.98) !important;
+  border-bottom: 1px solid rgba(15, 23, 42, 0.18) !important;
+  color: rgba(9, 17, 31, 0.96) !important;
+}
+
+body[data-theme="light"] .ticket--desk {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(243, 248, 253, 0.98)),
+    var(--theme-surface) !important;
+  border-top: 1px solid rgba(15, 23, 42, 0.14) !important;
+}
+
+body[data-theme="light"] .todo__row,
+body[data-theme="light"] .ticketDeskSummary__item,
+body[data-theme="light"] .ticketWorkspace__pill,
+body[data-theme="light"] .heroChip {
+  box-shadow: none !important;
+}
+
+body[data-theme="light"] .accent-btn {
+  box-shadow: 0 12px 22px rgba(37, 99, 235, 0.24) !important;
+}
+
+body[data-theme="light"] .bi-header h1,
+body[data-theme="light"] .exactCard--overview h1 {
+  color: #06101d !important;
+}
+
+body[data-theme="light"] .ticketDeskRow__title,
+body[data-theme="light"] .card__title,
+body[data-theme="light"] .panel-head h2,
+body[data-theme="light"] .exactCard__headline,
+body[data-theme="light"] .exactCard__value,
+body[data-theme="light"] .todo__text,
+body[data-theme="light"] .ticketCreatePanel__textarea,
+body[data-theme="light"] .ticketSearch {
+  color: #07111f !important;
+}
+
+body[data-theme="light"] .muted,
+body[data-theme="light"] .card__sub,
+body[data-theme="light"] .ticketCreatePanel__hintRow,
+body[data-theme="light"] .ticketCreatePanel__uploadHint,
+body[data-theme="light"] .ticketCreatePanel__meta,
+body[data-theme="light"] .bi-copy,
+body[data-theme="light"] .panel-head p,
+body[data-theme="light"] .profileCard__body span,
+body[data-theme="light"] .ticketDeskRow__summary,
+body[data-theme="light"] .ticketDeskRow__owner,
+body[data-theme="light"] .ticketDeskRow__assignee,
+body[data-theme="light"] .ticketDeskRow__updated {
+  color: rgba(7, 17, 31, 0.86) !important;
+}
+
+body[data-theme="light"] .ticketSearch:focus,
+body[data-theme="light"] .ticketCreatePanel__textarea:focus,
+body[data-theme="light"] .todo__text:focus,
+body[data-theme="light"] .ticketCreateRow__select:focus {
+  border-color: rgba(37, 99, 235, 0.48) !important;
+  box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.16) !important;
+}
+
+body[data-theme="light"] .ticketSearch:focus,
+body[data-theme="light"] .ticketCreatePanel__textarea:focus,
+body[data-theme="light"] .todo__text:focus,
+body[data-theme="light"] .ticketCreateRow__select:focus {
+  border-color: rgba(37, 99, 235, 0.42) !important;
+  box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.14) !important;
+}
+
+body[data-theme="light"] .card,
+body[data-theme="light"] .ghost-btn,
+body[data-theme="light"] .ticketTabs--desk .ticketTab,
+body[data-theme="light"] .ticketWorkspace__pill {
+  font-weight: 800 !important;
 }
 
 .dashboard--commercial .dashboardExact {
@@ -345,9 +786,9 @@ body {
   gap: 14px;
   padding: 18px;
   border-radius: 22px;
-  border: 1px solid rgba(78, 204, 163, 0.18);
+  border: 1px solid rgba(59, 130, 246, 0.18);
   background:
-    radial-gradient(260px 160px at 100% 0%, rgba(78, 204, 163, 0.08), rgba(0, 0, 0, 0) 72%),
+    radial-gradient(260px 160px at 100% 0%, rgba(59, 130, 246, 0.08), rgba(0, 0, 0, 0) 72%),
     linear-gradient(180deg, rgba(18, 30, 46, 0.96), rgba(10, 18, 29, 0.96));
 }
 
@@ -369,7 +810,7 @@ body {
   background:
     radial-gradient(
       320px 220px at 82% 20%,
-      rgba(78, 204, 163, 0.08),
+      rgba(59, 130, 246, 0.08),
       rgba(0, 0, 0, 0) 62%
     ),
     linear-gradient(
@@ -473,7 +914,7 @@ body {
   background:
     radial-gradient(
       260px 180px at 86% 16%,
-      rgba(78, 204, 163, 0.08),
+      rgba(59, 130, 246, 0.08),
       rgba(0, 0, 0, 0) 62%
     ),
     linear-gradient(
@@ -499,9 +940,9 @@ body {
   border-radius: 999px;
   display: inline-flex;
   align-items: center;
-  background: rgba(78, 204, 163, 0.12);
-  color: #8ffff0;
-  border: 1px solid rgba(78, 204, 163, 0.2);
+  background: rgba(59, 130, 246, 0.12);
+  color: #dbeafe;
+  border: 1px solid rgba(59, 130, 246, 0.2);
   font-size: 12px;
   font-weight: 900;
 }
@@ -573,11 +1014,11 @@ body {
 .accent-btn {
   background: linear-gradient(
     180deg,
-    rgba(78, 204, 163, 0.96),
-    rgba(46, 229, 157, 0.8)
+    rgba(59, 130, 246, 0.96),
+    rgba(37, 99, 235, 0.8)
   );
   color: #081118;
-  border-color: rgba(78, 204, 163, 0.5);
+  border-color: rgba(59, 130, 246, 0.5);
 }
 
 .ghost-btn:hover,
@@ -663,7 +1104,7 @@ body {
   background:
     radial-gradient(
       480px 200px at left top,
-      rgba(78, 204, 163, 0.14),
+      rgba(59, 130, 246, 0.14),
       rgba(0, 0, 0, 0) 60%
     ),
     linear-gradient(
@@ -754,9 +1195,9 @@ body {
 }
 
 .ghost-chip[data-tone="ok"] {
-  color: #bff8e4;
-  border-color: rgba(78, 204, 163, 0.28);
-  background: rgba(78, 204, 163, 0.12);
+  color: #dbeafe;
+  border-color: rgba(59, 130, 246, 0.28);
+  background: rgba(59, 130, 246, 0.12);
 }
 
 .ghost-chip[data-tone="warn"] {
@@ -940,19 +1381,19 @@ button.btn {
 .btn--primary {
   background: linear-gradient(
     180deg,
-    rgba(78, 204, 163, 0.95),
-    rgba(46, 229, 157, 0.78)
+    rgba(59, 130, 246, 0.95),
+    rgba(37, 99, 235, 0.78)
   );
   color: #071014;
   font-weight: 900;
-  border-color: rgba(78, 204, 163, 0.55);
+  border-color: rgba(59, 130, 246, 0.55);
 }
 
 .btn--primary:hover {
   background: linear-gradient(
     180deg,
-    rgba(78, 204, 163, 0.98),
-    rgba(46, 229, 157, 0.82)
+    rgba(59, 130, 246, 0.98),
+    rgba(37, 99, 235, 0.82)
   );
 }
 
@@ -1224,8 +1665,8 @@ button.card {
 }
 
 .pill[data-pill="contadmin"] {
-  background: rgba(78, 204, 163, 0.18);
-  border-color: rgba(78, 204, 163, 0.35);
+  background: rgba(59, 130, 246, 0.18);
+  border-color: rgba(59, 130, 246, 0.35);
   color: var(--brand);
 }
 
@@ -1345,7 +1786,7 @@ button.card {
 
 .todo__text:focus {
   box-shadow: var(--ring);
-  border-color: rgba(78, 204, 163, 0.35);
+  border-color: rgba(59, 130, 246, 0.35);
   background: rgba(255, 255, 255, 0.04);
 }
 
@@ -1426,8 +1867,8 @@ button.card {
 }
 
 .ticketTab.is-active {
-  border-color: rgba(78, 204, 163, 0.32);
-  background: rgba(78, 204, 163, 0.12);
+  border-color: rgba(59, 130, 246, 0.32);
+  background: rgba(59, 130, 246, 0.12);
   color: #d9fff1;
 }
 
@@ -1519,8 +1960,8 @@ button.card {
   border-radius: 999px;
   display: inline-flex;
   align-items: center;
-  border: 1px solid rgba(78, 204, 163, 0.24);
-  background: rgba(78, 204, 163, 0.12);
+  border: 1px solid rgba(59, 130, 246, 0.24);
+  background: rgba(59, 130, 246, 0.12);
   font-size: 12px;
   font-weight: 800;
   color: #d9fff1;
@@ -1562,7 +2003,7 @@ button.card {
 
 .ticketSearch:focus {
   box-shadow: var(--ring);
-  border-color: rgba(78, 204, 163, 0.35);
+  border-color: rgba(59, 130, 246, 0.35);
 }
 
 .ticketTabs {
@@ -1704,7 +2145,7 @@ button.card {
 
 .ticketCreatePanel__textarea:focus {
   box-shadow: var(--ring);
-  border-color: rgba(78, 204, 163, 0.35);
+  border-color: rgba(59, 130, 246, 0.35);
 }
 
 .ticketCreatePanel__hintRow {
@@ -1731,8 +2172,8 @@ button.card {
   min-height: 132px;
   padding: 18px;
   border-radius: 18px;
-  border: 1px dashed rgba(78, 204, 163, 0.22);
-  background: rgba(78, 204, 163, 0.06);
+  border: 1px dashed rgba(59, 130, 246, 0.22);
+  background: rgba(59, 130, 246, 0.06);
   color: var(--text);
   font: inherit;
   font-weight: 800;
@@ -1829,7 +2270,7 @@ button.card {
 .ticketCreateRow__input:focus,
 .ticketCreateRow__select:focus {
   box-shadow: var(--ring);
-  border-color: rgba(78, 204, 163, 0.35);
+  border-color: rgba(59, 130, 246, 0.35);
 }
 
 .ticketCreateRow__select,
@@ -2124,7 +2565,7 @@ button.card {
 .ticketComposer__select:focus,
 .ticketComposer__file:focus {
   box-shadow: var(--ring);
-  border-color: rgba(78, 204, 163, 0.35);
+  border-color: rgba(59, 130, 246, 0.35);
   background: rgba(255, 255, 255, 0.04);
 }
 
@@ -2362,9 +2803,9 @@ button.card {
 }
 
 .ticket__badge--urgency-baixa {
-  border-color: rgba(78, 204, 163, 0.28);
-  background: rgba(78, 204, 163, 0.12);
-  color: #cbffef;
+  border-color: rgba(59, 130, 246, 0.28);
+  background: rgba(59, 130, 246, 0.12);
+  color: #bfdbfe;
 }
 
 .ticket__badge--urgency-media {
@@ -2404,9 +2845,9 @@ button.card {
 }
 
 .ticket__badge--status-concluido {
-  border-color: rgba(78, 204, 163, 0.28);
-  background: rgba(78, 204, 163, 0.12);
-  color: #cbffef;
+  border-color: rgba(59, 130, 246, 0.28);
+  background: rgba(59, 130, 246, 0.12);
+  color: #bfdbfe;
 }
 
 .ticket__description {
@@ -2539,11 +2980,11 @@ button.card {
   width: min(360px, calc(100vw - 36px));
   padding: 14px 16px;
   border-radius: 18px;
-  border: 1px solid rgba(78, 204, 163, 0.24);
+  border: 1px solid rgba(59, 130, 246, 0.24);
   background:
     radial-gradient(
       320px 120px at left top,
-      rgba(78, 204, 163, 0.15),
+      rgba(59, 130, 246, 0.15),
       rgba(0, 0, 0, 0) 60%
     ),
     rgba(14, 25, 38, 0.96);
@@ -2602,7 +3043,7 @@ button.card {
 
 .ticket__status:focus {
   box-shadow: var(--ring);
-  border-color: rgba(78, 204, 163, 0.35);
+  border-color: rgba(59, 130, 246, 0.35);
   background: rgba(255, 255, 255, 0.04);
 }
 
@@ -2623,7 +3064,7 @@ button.card {
 .ticket__title:focus,
 .ticket__select:focus {
   box-shadow: var(--ring);
-  border-color: rgba(78, 204, 163, 0.35);
+  border-color: rgba(59, 130, 246, 0.35);
   background: rgba(255, 255, 255, 0.04);
 }
 
@@ -2673,9 +3114,9 @@ button.card {
 }
 
 .ticket[data-status="concluido"] .ticket__code {
-  background: rgba(78, 204, 163, 0.12);
-  border-color: rgba(78, 204, 163, 0.24);
-  color: #cbffef;
+  background: rgba(59, 130, 246, 0.12);
+  border-color: rgba(59, 130, 246, 0.24);
+  color: #bfdbfe;
 }
 
 .tickets__empty {
@@ -2884,9 +3325,9 @@ button.card {
 }
 
 .todo__pill[data-tone="ok"] {
-  color: #bff8e4;
-  border-color: rgba(78, 204, 163, 0.28);
-  background: rgba(78, 204, 163, 0.12);
+  color: #dbeafe;
+  border-color: rgba(59, 130, 246, 0.28);
+  background: rgba(59, 130, 246, 0.12);
 }
 
 .todo__pill[data-tone="warn"] {
@@ -3022,7 +3463,7 @@ button.card {
 .quotaModalField input:focus,
 .quotaModalField select:focus {
   box-shadow: var(--ring);
-  border-color: rgba(78, 204, 163, 0.35);
+  border-color: rgba(59, 130, 246, 0.35);
   background: rgba(255, 255, 255, 0.04);
 }
 
@@ -3062,8 +3503,8 @@ button.card {
 }
 
 .quotaModalPreview__item.is-active {
-  border-color: rgba(78, 204, 163, 0.32);
-  background: rgba(78, 204, 163, 0.1);
+  border-color: rgba(59, 130, 246, 0.32);
+  background: rgba(59, 130, 246, 0.1);
 }
 
 .quotaModalStatus {
@@ -3753,3 +4194,162 @@ button.card {
     flex: none !important;
   }
 }
+
+body[data-theme="light"] .dashboardSidebar,
+body[data-theme="light"] .profileCard,
+body[data-theme="light"] .exactCard,
+body[data-theme="light"] .panel,
+body[data-theme="light"] .card,
+body[data-theme="light"] .ticketCreatePanel,
+body[data-theme="light"] .ticketDesk,
+body[data-theme="light"] .ticketTable,
+body[data-theme="light"] .todo__row,
+body[data-theme="light"] .ticket--desk,
+body[data-theme="light"] .ticketDeskSummary__item,
+body[data-theme="light"] .ticketWorkspace__pill,
+body[data-theme="light"] .heroChip,
+body[data-theme="light"] .ghost-btn {
+  background: linear-gradient(180deg, #ffffff, #f1f6fc) !important;
+  border-color: rgba(15, 23, 42, 0.2) !important;
+  color: #0b1220 !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.95),
+    0 18px 38px rgba(15, 23, 42, 0.14) !important;
+}
+
+body[data-theme="light"] .app.dashboardApp {
+  background:
+    radial-gradient(900px 520px at 84% 8%, rgba(37, 99, 235, 0.12), transparent 34%),
+    #e9eff7 !important;
+}
+
+body[data-theme="light"] .main-shell.bi-shell {
+  background-image:
+    linear-gradient(rgba(15, 23, 42, 0.085) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(15, 23, 42, 0.085) 1px, transparent 1px) !important;
+}
+
+body[data-theme="light"] .exactCard--overview,
+body[data-theme="light"] .heroPanel--overview {
+  background:
+    radial-gradient(280px 180px at 86% 16%, rgba(37, 99, 235, 0.18), transparent 62%),
+    linear-gradient(180deg, #ffffff, #f3f8ff) !important;
+}
+
+body[data-theme="light"] .commercialSpotlight,
+body[data-theme="light"] .summary-card.strong,
+body[data-theme="light"] .ticketCreatePanel {
+  background:
+    radial-gradient(260px 160px at 100% 0%, rgba(37, 99, 235, 0.14), transparent 72%),
+    linear-gradient(180deg, #ffffff, #eef5fd) !important;
+}
+
+body[data-theme="light"] .bi-header h1,
+body[data-theme="light"] .exactCard--overview h1,
+body[data-theme="light"] .panel-head h2,
+body[data-theme="light"] .ticketDeskRow__title,
+body[data-theme="light"] .ticketCreatePanel__title,
+body[data-theme="light"] .card__title,
+body[data-theme="light"] .profileCard__body strong,
+body[data-theme="light"] .exactCard__headline,
+body[data-theme="light"] .exactCard__value,
+body[data-theme="light"] .ticketTable__head,
+body[data-theme="light"] .ticketCreatePanel__label,
+body[data-theme="light"] .sidebar__label,
+body[data-theme="light"] .heroKicker,
+body[data-theme="light"] .ticketTab,
+body[data-theme="light"] .ticketWorkspace__pill,
+body[data-theme="light"] .heroChip,
+body[data-theme="light"] .ghost-btn,
+body[data-theme="light"] .todo__text,
+body[data-theme="light"] .ticketSearch,
+body[data-theme="light"] .ticketCreatePanel__textarea {
+  color: #08111f !important;
+}
+
+body[data-theme="light"] .muted,
+body[data-theme="light"] .bi-copy,
+body[data-theme="light"] .panel-head p,
+body[data-theme="light"] .card__sub,
+body[data-theme="light"] .profileCard__body span,
+body[data-theme="light"] .ticketDeskRow__summary,
+body[data-theme="light"] .ticketDeskRow__owner,
+body[data-theme="light"] .ticketDeskRow__assignee,
+body[data-theme="light"] .ticketDeskRow__updated,
+body[data-theme="light"] .ticketCreatePanel__hintRow,
+body[data-theme="light"] .ticketCreatePanel__meta,
+body[data-theme="light"] .ticketCreatePanel__uploadHint {
+  color: rgba(8, 17, 31, 0.84) !important;
+}
+
+body[data-theme="light"] .ticketSearch,
+body[data-theme="light"] .ticketCreatePanel__textarea,
+body[data-theme="light"] .ticketCreateRow__select,
+body[data-theme="light"] .todo__text,
+body[data-theme="light"] .ticketCreatePanel__uploadHint,
+body[data-theme="light"] .ticketCreatePanel__uploadIcon {
+  background: #edf3fa !important;
+  border-color: rgba(15, 23, 42, 0.22) !important;
+  color: #08111f !important;
+}
+
+body[data-theme="light"] .ticketSearch::placeholder,
+body[data-theme="light"] .ticketCreatePanel__textarea::placeholder,
+body[data-theme="light"] .todo__text::placeholder {
+  color: rgba(8, 17, 31, 0.72) !important;
+}
+
+body[data-theme="light"] .ticketSearch:focus,
+body[data-theme="light"] .ticketCreatePanel__textarea:focus,
+body[data-theme="light"] .todo__text:focus,
+body[data-theme="light"] .ticketCreateRow__select:focus {
+  border-color: rgba(37, 99, 235, 0.48) !important;
+  box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.16) !important;
+}
+
+body[data-theme="light"] .ticketTabs--desk .ticketTab,
+body[data-theme="light"] .ticketWorkspace__pill,
+body[data-theme="light"] .heroChip,
+body[data-theme="light"] .ticketDeskSummary__item,
+body[data-theme="light"] .pill,
+body[data-theme="light"] .status-chip,
+body[data-theme="light"] .priority-chip {
+  background: rgba(255, 255, 255, 0.98) !important;
+  border-color: rgba(15, 23, 42, 0.2) !important;
+  color: #08111f !important;
+}
+
+body[data-theme="light"] .ticketTabs--desk .ticketTab.is-active,
+body[data-theme="light"] .ticketWorkspace__pill.is-active,
+body[data-theme="light"] .heroChip.is-active {
+  background: rgba(37, 99, 235, 0.24) !important;
+  border-color: rgba(37, 99, 235, 0.4) !important;
+  color: #12305f !important;
+}
+
+body[data-theme="light"] .profileCard__status {
+  background: rgba(37, 99, 235, 0.22) !important;
+  border: 1px solid rgba(37, 99, 235, 0.34) !important;
+}
+
+body[data-theme="light"] .ticketCreatePanel__upload {
+  background: linear-gradient(180deg, rgba(234, 243, 255, 0.98), rgba(223, 236, 255, 0.97)) !important;
+  border-color: rgba(37, 99, 235, 0.44) !important;
+  color: #12305f !important;
+}
+
+body[data-theme="light"] .ticketTable__head {
+  background: rgba(232, 240, 249, 0.98) !important;
+  border-bottom: 1px solid rgba(15, 23, 42, 0.18) !important;
+  color: rgba(8, 17, 31, 0.96) !important;
+}
+
+body[data-theme="light"] .ticket--desk {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(243, 248, 253, 0.98)) !important;
+  border-top: 1px solid rgba(15, 23, 42, 0.14) !important;
+}
+
+body[data-theme="light"] .accent-btn {
+  box-shadow: 0 12px 22px rgba(37, 99, 235, 0.24) !important;
+}
+

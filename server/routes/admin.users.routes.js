@@ -4,6 +4,12 @@ const bcrypt = require("bcryptjs");
 const fs = require("fs");
 const path = require("path");
 const db = require("../db"); // PrismaClient
+const { syncCoreModules } = require("../services/module-registry.service");
+const {
+  buildPermissionMatrix,
+  normalizePermissionFlags,
+  normalizePermissionMode,
+} = require("../services/permissions.service");
 const { requireContAdminAccess, requireContAdminManage } = require("../middleware/auth");
 
 const router = express.Router();
@@ -161,10 +167,65 @@ function pickUserSafe(u) {
     cargo: u.cargo ?? null,
     coordenador: cleanText(meta.coordenador),
     equipe: cleanText(meta.equipe),
+    behavioralProfile: cleanText(u.behavioralProfile) || null,
     accessProfile: normalizeAccessProfile(meta.accessProfile, u.role ?? "CUSTOMER"),
+    permissionMode: normalizePermissionMode(u.permissionMode),
     createdAt: u.createdAt ?? null,
     updatedAt: u.updatedAt ?? null,
   };
+}
+
+function normalizeModulePermissionInput(entry = {}) {
+  const moduleDbId = Number(entry.moduleDbId ?? entry.moduleId ?? entry.id);
+  const moduleSlug = cleanText(entry.moduleSlug ?? entry.slug).toLowerCase();
+  return {
+    moduleDbId: Number.isFinite(moduleDbId) && moduleDbId > 0 ? moduleDbId : null,
+    moduleSlug,
+    ...normalizePermissionFlags(entry),
+  };
+}
+
+async function listModulesForPermissions() {
+  return syncCoreModules(db);
+}
+
+async function getUserWithPermissions(id) {
+  return db.user.findUnique({
+    where: { id: Number(id) },
+    select: {
+      id: true,
+      name: true,
+      email: true,
+      role: true,
+      active: true,
+      cargo: true,
+      coordenador: true,
+      equipe: true,
+      behavioralProfile: true,
+      accessProfile: true,
+      permissionMode: true,
+      createdAt: true,
+      updatedAt: true,
+      modulePermissions: {
+        select: {
+          canView: true,
+          canEdit: true,
+          canManage: true,
+          module: {
+            select: {
+              id: true,
+              slug: true,
+              name: true,
+              status: true,
+              access: true,
+              active: true,
+              order: true,
+            },
+          },
+        },
+      },
+    },
+  });
 }
 
 function getActorFromReq(req) {
@@ -274,10 +335,12 @@ router.get("/", requireContAdminAccess, async (req, res) => {
         email: true,
         role: true,
         active: true,
-        cargo: true,
-        coordenador: true,
-        equipe: true,
-        accessProfile: true,
+      cargo: true,
+      coordenador: true,
+      equipe: true,
+      behavioralProfile: true,
+      accessProfile: true,
+        permissionMode: true,
         createdAt: true,
         updatedAt: true,
       },
@@ -328,6 +391,135 @@ router.get("/:id/logs", requireContAdminAccess, async (req, res) => {
   }
 });
 
+router.get("/:id/permissions", requireContAdminManage, async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id)) return res.status(400).json({ error: "ID inválido." });
+
+    const [user, modules] = await Promise.all([getUserWithPermissions(id), listModulesForPermissions()]);
+    if (!user) return res.status(404).json({ error: "Usuário não encontrado." });
+
+    const normalizedUser = {
+      ...user,
+      role: mapRoleOut(user.role),
+      accessProfile: normalizeAccessProfile(user.accessProfile, user.role),
+      permissionMode: normalizePermissionMode(user.permissionMode),
+      modulePermissions: Array.isArray(user.modulePermissions)
+        ? user.modulePermissions.map((entry) => ({
+            canView: Boolean(entry.canView),
+            canEdit: Boolean(entry.canEdit),
+            canManage: Boolean(entry.canManage),
+            module: entry.module || null,
+          }))
+        : [],
+    };
+
+    return res.json({
+      user: pickUserSafe(user),
+      permissionMode: normalizedUser.permissionMode,
+      permissions: buildPermissionMatrix(normalizedUser, modules),
+    });
+  } catch (err) {
+    console.error("Erro ao buscar permissões do usuário:", err);
+    return res.status(500).json({ error: "Erro ao buscar permissões do usuário." });
+  }
+});
+
+router.put("/:id/permissions", requireContAdminManage, async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id)) return res.status(400).json({ error: "ID inválido." });
+
+    const current = await db.user.findUnique({
+      where: { id },
+      select: { id: true, email: true, role: true, accessProfile: true, permissionMode: true },
+    });
+    if (!current) return res.status(404).json({ error: "Usuário não encontrado." });
+
+    const permissionMode = normalizePermissionMode(req.body?.permissionMode);
+    const rawPermissions = Array.isArray(req.body?.permissions) ? req.body.permissions : [];
+    const normalizedEntries = rawPermissions
+      .map(normalizeModulePermissionInput)
+      .filter((entry) => entry.moduleDbId || entry.moduleSlug);
+
+    const modules = await listModulesForPermissions();
+    const moduleById = new Map(modules.map((moduleRow) => [Number(moduleRow.id), moduleRow]));
+    const moduleBySlug = new Map(modules.map((moduleRow) => [cleanText(moduleRow.slug).toLowerCase(), moduleRow]));
+
+    const records = normalizedEntries
+      .map((entry) => {
+        const moduleRow = entry.moduleDbId ? moduleById.get(entry.moduleDbId) : moduleBySlug.get(entry.moduleSlug);
+        if (!moduleRow) return null;
+        return {
+          moduleId: Number(moduleRow.id),
+          canView: Boolean(entry.view),
+          canEdit: Boolean(entry.edit),
+          canManage: Boolean(entry.manage),
+        };
+      })
+      .filter(Boolean);
+
+    await db.$transaction(async (tx) => {
+      await tx.user.update({
+        where: { id },
+        data: { permissionMode },
+      });
+
+      await tx.userModulePermission.deleteMany({ where: { userId: id } });
+
+      if (permissionMode === "custom" && records.length) {
+        await tx.userModulePermission.createMany({
+          data: records.map((record) => ({
+            userId: id,
+            moduleId: record.moduleId,
+            canView: record.canView,
+            canEdit: record.canEdit,
+            canManage: record.canManage,
+          })),
+        });
+      }
+    });
+
+    await writeUserLog({
+      userId: id,
+      action: "USER_UPDATED",
+      message: `Permissões atualizadas: ${current.email}`,
+      meta: {
+        ...getAuditMeta(req),
+        permissionMode,
+        modulesChanged: records.map((record) => record.moduleId),
+      },
+      actor: getActorFromReq(req),
+    });
+
+    const freshUser = await getUserWithPermissions(id);
+    const normalizedUser = {
+      ...freshUser,
+      role: mapRoleOut(freshUser.role),
+      accessProfile: normalizeAccessProfile(freshUser.accessProfile, freshUser.role),
+      permissionMode: normalizePermissionMode(freshUser.permissionMode),
+      modulePermissions: Array.isArray(freshUser.modulePermissions)
+        ? freshUser.modulePermissions.map((entry) => ({
+            canView: Boolean(entry.canView),
+            canEdit: Boolean(entry.canEdit),
+            canManage: Boolean(entry.canManage),
+            module: entry.module || null,
+          }))
+        : [],
+    };
+
+    return res.json({
+      ok: true,
+      user: pickUserSafe(freshUser),
+      permissionMode: normalizedUser.permissionMode,
+      permissions: buildPermissionMatrix(normalizedUser, modules),
+    });
+  } catch (err) {
+    console.error("Erro ao salvar permissões do usuário:", err);
+    return res.status(500).json({ error: "Erro ao salvar permissões do usuário." });
+  }
+});
+
 /* ================================
  * POST /api/admin/users
  * ================================ */
@@ -342,6 +534,7 @@ router.post("/", requireContAdminManage, async (req, res) => {
 
     const active = typeof req.body?.active === "boolean" ? req.body.active : true;
     const cargo = req.body?.cargo != null ? String(req.body.cargo).trim() : null;
+    const behavioralProfile = req.body?.behavioralProfile != null ? String(req.body.behavioralProfile).trim() : null;
 
     if (!name || !email || !password) {
       return res.status(400).json({ error: "name, email e password são obrigatórios." });
@@ -367,12 +560,14 @@ router.post("/", requireContAdminManage, async (req, res) => {
         role,
         active,
         cargo,
+        behavioralProfile: behavioralProfile || null,
         coordenador: cleanText(req.body?.coordenador) || null,
         equipe: cleanText(req.body?.equipe) || null,
         accessProfile: normalizeAccessProfile(
           req.body?.accessProfile ?? req.body?.access_profile,
           role
         ),
+        permissionMode: normalizePermissionMode(req.body?.permissionMode),
       },
     });
     const meta = getPersistedUserMeta(created);
@@ -387,6 +582,7 @@ router.post("/", requireContAdminManage, async (req, res) => {
         role: created.role,
         active: created.active,
         cargo: created.cargo,
+        behavioralProfile: created.behavioralProfile,
         coordenador: meta.coordenador,
         equipe: meta.equipe,
         accessProfile: meta.accessProfile,
@@ -427,6 +623,7 @@ router.put("/:id", requireContAdminManage, async (req, res) => {
     if (typeof req.body?.active === "boolean") data.active = req.body.active;
 
     if (req.body?.cargo != null) data.cargo = String(req.body.cargo).trim();
+    if (req.body?.behavioralProfile != null) data.behavioralProfile = String(req.body.behavioralProfile).trim() || null;
     if (req.body?.coordenador != null) data.coordenador = cleanText(req.body.coordenador) || null;
     if (req.body?.equipe != null) data.equipe = cleanText(req.body.equipe) || null;
     if (req.body?.accessProfile != null || req.body?.access_profile != null) {
@@ -434,6 +631,9 @@ router.put("/:id", requireContAdminManage, async (req, res) => {
         req.body?.accessProfile ?? req.body?.access_profile,
         req.body?.role ?? current.role
       );
+    }
+    if (req.body?.permissionMode != null) {
+      data.permissionMode = normalizePermissionMode(req.body.permissionMode);
     }
 
     // Se vier vazio, não atualiza com string vazia sem querer
@@ -453,6 +653,7 @@ router.put("/:id", requireContAdminManage, async (req, res) => {
       meta: {
         ...getAuditMeta(req), // ✅ NOVO
         fields: Object.keys(data),
+        behavioralProfile: updated.behavioralProfile ?? null,
         coordenador: meta.coordenador,
         equipe: meta.equipe,
         accessProfile: meta.accessProfile,

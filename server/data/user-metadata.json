@@ -1,9 +1,4 @@
 {
-  "0": {
-    "coordenador": "Matheus",
-    "equipe": "Equipe Matheus",
-    "accessProfile": "ti"
-  },
   "10": {
     "coordenador": "Marcos",
     "equipe": "Equipe Marcos",
@@ -143,10 +138,5 @@
     "coordenador": "Matheus",
     "equipe": "Equipe Matheus",
     "accessProfile": "operacional"
-  },
-  "leandro.vieira@franco-rnc.com.br": {
-    "coordenador": "Matheus",
-    "equipe": "Equipe Matheus",
-    "accessProfile": "ti"
   }
 }

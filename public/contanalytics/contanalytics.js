@@ -11,7 +11,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const API_PAINEL_TRIBUTARIO = "/api/sheets/painel-tributario";
   const API_PAINEL_TRIBUTARIO_LR = "/api/sheets/painel-tributario-lr";
   const API_PAINEL_TRIBUTARIO_LRA = "/api/sheets/painel-tributario-lra";
-  const DONUT_COLORS = ["#31c8ff", "#4ecca3", "#ffd166", "#ff8fab", "#9b8cff", "#ff9f43", "#7bd389"];
+  const DONUT_COLORS = ["#60a5fa", "#2563eb", "#ffd166", "#ff8fab", "#9b8cff", "#ff9f43", "#93c5fd"];
   const ACTIVITY_DAYS = 14;
   const QUARTER_LABELS = ["1º Trimestre", "2º Trimestre", "3º Trimestre", "4º Trimestre"];
   const MONTH_LABELS = [
@@ -130,6 +130,13 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function canAccessModule(moduleId, user = getSessionUser()) {
     const id = normalizeAccessToken(moduleId);
+    if (Array.isArray(user?.permissions)) {
+      const matched = user.permissions.find((entry) => normalizeAccessToken(entry?.moduleId) === id);
+      if (matched) return Boolean(matched.view);
+    }
+    if (Array.isArray(user?.visibleModules) && user.visibleModules.length) {
+      return user.visibleModules.map((item) => normalizeAccessToken(item)).includes(id);
+    }
     const profile = getAccessProfile(user);
     const role = normalizeAccessToken(user?.role);
     const rules = normalizeModuleAccess(moduleAccessMap[id]);
@@ -2852,8 +2859,8 @@ document.addEventListener("DOMContentLoaded", () => {
     svg.innerHTML = `
       <defs>
         <linearGradient id="groupGradient" x1="0%" x2="100%" y1="0%" y2="0%">
-          <stop offset="0%" stop-color="#31c8ff"></stop>
-          <stop offset="100%" stop-color="#4ecca3"></stop>
+          <stop offset="0%" stop-color="#60a5fa"></stop>
+          <stop offset="100%" stop-color="#2563eb"></stop>
         </linearGradient>
       </defs>
       ${rows}
@@ -3754,7 +3761,7 @@ document.addEventListener("DOMContentLoaded", () => {
       if (result.status === "fulfilled") {
         datasets[source.key] = source.extractor(result.value);
       } else {
-        console.warn(`Falha ao carregar ${source.key} no ContAnalytics:`, result.reason);
+        console.warn("Falha ao carregar %s no ContAnalytics:", source.key, result.reason);
         datasets[source.key] = EMPTY_DATASET;
       }
     });

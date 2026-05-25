@@ -263,9 +263,14 @@ router.get("/tickets", async (req, res) => {
     }
 
     console.error("Erro ao listar chamados no ClickUp:", err);
-    return res.status(502).json({
+    return res.json({
+      provider: "clickup",
+      configured: false,
+      degraded: true,
       error: "Falha ao sincronizar chamados com o ClickUp.",
       code: "CLICKUP_SYNC_FAILED",
+      savedAt: new Date().toISOString(),
+      data: [],
     });
   }
 });
@@ -320,9 +325,15 @@ router.get("/clickup-next-actions", async (req, res) => {
     }
 
     console.error("Erro ao listar próximas ações no ClickUp:", err);
-    return res.status(502).json({
+    return res.json({
+      provider: "clickup",
+      configured: false,
+      degraded: true,
       error: "Falha ao sincronizar próximas ações com o ClickUp.",
       code: "CLICKUP_NEXT_ACTIONS_SYNC_FAILED",
+      savedAt: new Date().toISOString(),
+      data: [],
+      debug: null,
     });
   }
 });

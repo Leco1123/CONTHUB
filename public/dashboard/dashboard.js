@@ -18,6 +18,7 @@
     refreshPromise: null,
     visibilityBound: false,
     nextActionsFeed: null,
+    ticketsSource: "local",
   };
   const dashboardQuotaModalState = {
     open: false,
@@ -100,12 +101,20 @@
   }
 
   function escapeHTML(s) {
-    return String(s)
-      .replaceAll("&", "&amp;")
-      .replaceAll("<", "&lt;")
-      .replaceAll(">", "&gt;")
-      .replaceAll('"', "&quot;")
-      .replaceAll("'", "&#039;");
+    return String(s).replace(/[&<>"']/g, (char) => {
+      switch (char) {
+        case "&":
+          return "&amp;";
+        case "<":
+          return "&lt;";
+        case ">":
+          return "&gt;";
+        case '"':
+          return "&quot;";
+        default:
+          return "&#039;";
+      }
+    });
   }
 
   function normalizeSearchText(value) {
@@ -645,6 +654,18 @@
         throw new Error(data?.error || "Falha ao carregar próximas ações do ClickUp.");
       }
 
+      if (data?.configured === false) {
+        const fallback = loadNextActionsClickupLegacy();
+        const payload = {
+          savedAt: String(fallback?.savedAt || data?.savedAt || ""),
+          configured: false,
+          data: Array.isArray(fallback?.data) ? fallback.data : [],
+          debug: fallback?.debug && typeof fallback.debug === "object" ? fallback.debug : null,
+        };
+        dashboardTicketsState.nextActionsFeed = payload;
+        return payload;
+      }
+
       const payload = {
         savedAt: String(data?.savedAt || new Date().toISOString()),
         configured: true,
@@ -987,6 +1008,13 @@
 
   function canAccessModule(user, module) {
     const moduleId = String(module?.id || module?.slug || "").trim().toLowerCase();
+    if (Array.isArray(user?.permissions)) {
+      const matched = user.permissions.find((entry) => String(entry?.moduleId || "").trim().toLowerCase() === moduleId);
+      if (matched) return Boolean(matched.view);
+    }
+    if (Array.isArray(user?.visibleModules) && user.visibleModules.length) {
+      return user.visibleModules.map((item) => String(item || "").trim().toLowerCase()).includes(moduleId);
+    }
     const role = String(user?.role || "").trim().toLowerCase();
     const accessProfile = getAccessProfile(user);
     const rules = normalizeModuleAccess(module?.access);
@@ -1181,19 +1209,28 @@
 
   function isClickupUnavailableResponse(resp, payload) {
     const code = String(payload?.code || "").trim().toUpperCase();
-    return resp?.status === 503 || code === "CLICKUP_NOT_CONFIGURED";
+    return resp?.status === 503
+      || code === "CLICKUP_NOT_CONFIGURED"
+      || code === "CLICKUP_SYNC_FAILED"
+      || payload?.configured === false;
   }
 
   async function loadTicketsDocument() {
     try {
       const remoteResp = await apiFetch(TICKETS_API_URL, { method: "GET" });
       const remoteData = await remoteResp?.json().catch(() => null);
-      if (remoteResp && remoteResp.ok && isTicketsApiPayload(remoteData)) {
+      if (
+        remoteResp &&
+        remoteResp.ok &&
+        isTicketsApiPayload(remoteData) &&
+        remoteData?.configured !== false
+      ) {
         const doc = normalizeTicketsDocument({
           savedAt: remoteData?.savedAt || new Date().toISOString(),
           data: extractTicketsFromApiPayload(remoteData),
         });
         dashboardTicketsState.doc = doc;
+        dashboardTicketsState.ticketsSource = "clickup";
         saveTicketsStateLegacy(doc);
         void saveTicketsMirrorSnapshot(doc);
         return doc;
@@ -1211,11 +1248,13 @@
         normalizeTicketsDocument(data?.payload || data?.sheet || data)
       );
       dashboardTicketsState.doc = doc;
+      dashboardTicketsState.ticketsSource = "mirror";
       return doc;
     } catch (err) {
       console.warn("Falha ao carregar chamados do banco, usando fallback local:", err);
       const doc = loadTicketsStateLegacy();
       dashboardTicketsState.doc = doc;
+      dashboardTicketsState.ticketsSource = "local";
       return doc;
     }
   }
@@ -1495,7 +1534,15 @@
     const tickets = filteredTicketsForSelectedFunction();
     if (queueCountEl) queueCountEl.textContent = `${allTickets.length} chamados`;
     const selectedLabel = dashboardTicketsState.selectedFunction === "__all__" ? "Todas" : dashboardTicketsState.selectedFunction;
-    if (functionCountEl) functionCountEl.textContent = `${tickets.length} em ${selectedLabel}`;
+    if (functionCountEl) {
+      const sourceLabel =
+        dashboardTicketsState.ticketsSource === "clickup"
+          ? "ClickUp ao vivo"
+          : dashboardTicketsState.ticketsSource === "mirror"
+            ? "Espelho do ContHub"
+            : "Fallback local";
+      functionCountEl.textContent = `${tickets.length} em ${selectedLabel} • ${sourceLabel}`;
+    }
     if (summaryEl) {
       const openCount = tickets.filter((ticket) => ticket.status === "aberto").length;
       const progressCount = tickets.filter((ticket) => ticket.status === "em_andamento").length;

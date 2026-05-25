@@ -8,34 +8,69 @@
     content="Redefina sua senha no ContHub para recuperar o acesso aos módulos contábeis e operacionais."
   />
   <title>ContHub • Redefinir senha</title>
+  <script src="../shared/theme-boot.js"></script>
+  <link rel="stylesheet" href="../shared/theme.css" />
   <link rel="stylesheet" href="/login/login.css" />
 </head>
 
-<body class="login">
-  <main class="wrap">
-    <form class="card" id="resetForm" novalidate>
-      <header class="card__header">
-        <h1>Redefinir senha</h1>
-        <p class="muted">Defina sua nova senha (mín. 6 caracteres).</p>
+<body class="auth-screen">
+  <main class="auth-shell">
+    <section class="auth-hero">
+      <span class="auth-kicker">Nova senha</span>
+      <h1>Defina uma senha forte e volte ao painel.</h1>
+      <p>
+        Use pelo menos 10 caracteres para manter o acesso protegido e continuar no ContHub com segurança.
+      </p>
+
+      <div class="theme-switcher theme-switcher--auth" aria-label="Alternar tema">
+        <button type="button" class="theme-switcher__button" data-theme-choice="dark">Preto</button>
+        <button type="button" class="theme-switcher__button" data-theme-choice="light">Branco</button>
+      </div>
+
+      <div class="auth-hero__stats">
+        <article class="auth-stat">
+          <span>Regra</span>
+          <strong>Mínimo 10</strong>
+          <small>Caracteres obrigatórios para a nova senha.</small>
+        </article>
+        <article class="auth-stat">
+          <span>Fluxo</span>
+          <strong>Token único</strong>
+          <small>Válido por tempo limitado e uso único.</small>
+        </article>
+      </div>
+    </section>
+
+    <form class="auth-card" id="resetForm" novalidate>
+      <header class="auth-card__header">
+        <span class="auth-card__eyebrow">Redefinir senha</span>
+        <h2>Criar nova senha</h2>
+        <p class="muted">Confirme os dois campos antes de salvar.</p>
       </header>
 
       <div class="field">
         <label for="password">Nova senha</label>
-        <input id="password" name="password" type="password" autocomplete="new-password" required />
+        <div class="password">
+          <input id="password" name="password" type="password" autocomplete="new-password" required />
+          <button class="eye" type="button" data-password-toggle="password" aria-label="Mostrar nova senha">👁</button>
+        </div>
       </div>
 
       <div class="field">
         <label for="password2">Confirmar senha</label>
-        <input id="password2" name="password2" type="password" autocomplete="new-password" required />
+        <div class="password">
+          <input id="password2" name="password2" type="password" autocomplete="new-password" required />
+          <button class="eye" type="button" data-password-toggle="password2" aria-label="Mostrar confirmação de senha">👁</button>
+        </div>
       </div>
 
-      <button class="btn btn--primary w100" type="submit">Salvar nova senha</button>
+      <button class="auth-submit" type="submit">Salvar nova senha</button>
 
-      <p class="hint muted">
+      <div class="auth-links">
         <a href="/login/login.html">Voltar ao login</a>
-      </p>
+      </div>
 
-      <div id="err" class="err hidden" role="alert"></div>
+      <div id="err" class="message message--error hidden" role="alert"></div>
     </form>
   </main>
 

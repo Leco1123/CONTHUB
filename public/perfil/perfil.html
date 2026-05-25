@@ -8,99 +8,141 @@
     content="Perfil do usuário no ContHub com informações de acesso, cargo, equipe, coordenação e dados operacionais."
   />
   <title>Perfil • ContHub</title>
+  <script src="../shared/theme-boot.js"></script>
+  <link rel="stylesheet" href="../shared/theme.css" />
   <link rel="stylesheet" href="./perfil.css" />
 </head>
-<body>
-  <header class="topbar">
-    <button class="btn btn-ghost" id="btnVoltar">← Voltar</button>
+<body class="profile-screen">
+  <div class="profile-layout">
+    <aside class="profile-sidebar">
+      <div class="theme-switcher theme-switcher--dashboard" aria-label="Alternar tema">
+        <button type="button" class="theme-switcher__button" data-theme-choice="dark">Preto</button>
+        <button type="button" class="theme-switcher__button" data-theme-choice="light">Branco</button>
+      </div>
 
-    <div class="brand">
-      <span class="dot"></span>
-      <span>ContHub</span>
-    </div>
-  </header>
+      <button class="profile-back" id="btnVoltar" type="button">← Voltar ao painel</button>
 
-  <main class="wrap">
-    <section class="card">
-      <div class="card__header">
+      <section class="profile-hero">
         <div class="avatar" id="avatar">U</div>
-
-        <div class="who">
+        <div class="profile-hero__body">
+          <span class="profile-kicker">Meu perfil</span>
           <h1 id="nome">Usuário</h1>
           <p id="email" class="muted">—</p>
+        </div>
 
-          <div class="badges">
-            <span class="badge badge--role" id="roleBadge">USER</span>
-            <span class="badge badge--cargo" id="cargoBadge">Cargo</span>
-            <span class="badge badge--status" id="statusBadge">ATIVO</span>
+        <div class="badges">
+          <span class="badge badge--role" id="roleBadge">USER</span>
+          <span class="badge badge--cargo" id="cargoBadge">Cargo</span>
+          <span class="badge badge--status" id="statusBadge">ATIVO</span>
+        </div>
+      </section>
+
+      <section class="profile-panel">
+        <div class="profile-panel__head">
+          <strong>Resumo rápido</strong>
+          <span class="muted">Informações principais</span>
+        </div>
+        <div class="summary-pills">
+          <span class="summary-pill" id="perfilBehavioral">Sem perfil comportamental</span>
+          <span class="summary-pill" id="perfilEquipe">Sem equipe</span>
+          <span class="summary-pill" id="perfilPermissionMode">Perfil padrão</span>
+        </div>
+      </section>
+
+      <section class="profile-panel">
+        <div class="profile-panel__head">
+          <strong>Editar meus dados</strong>
+          <span class="muted">Você pode alterar nome e senha</span>
+        </div>
+
+        <form id="profileForm" class="profile-form" novalidate>
+          <label class="field">
+            <span>Nome</span>
+            <input id="profileName" name="profileName" type="text" placeholder="Seu nome" />
+          </label>
+
+          <label class="field">
+            <span>Email</span>
+            <input id="profileEmail" name="profileEmail" type="email" disabled />
+          </label>
+
+          <label class="field">
+            <span>Senha atual</span>
+            <div class="password">
+              <input id="profileCurrentPassword" name="profileCurrentPassword" type="password" autocomplete="current-password" />
+              <button class="eye" type="button" data-password-toggle="profileCurrentPassword" aria-label="Mostrar senha atual">👁</button>
+            </div>
+          </label>
+
+          <label class="field">
+            <span>Nova senha</span>
+            <div class="password">
+              <input id="profileNewPassword" name="profileNewPassword" type="password" autocomplete="new-password" />
+              <button class="eye" type="button" data-password-toggle="profileNewPassword" aria-label="Mostrar nova senha">👁</button>
+            </div>
+          </label>
+
+          <label class="field">
+            <span>Confirmar nova senha</span>
+            <div class="password">
+              <input id="profileConfirmPassword" name="profileConfirmPassword" type="password" autocomplete="new-password" />
+              <button class="eye" type="button" data-password-toggle="profileConfirmPassword" aria-label="Mostrar confirmação de senha">👁</button>
+            </div>
+          </label>
+
+          <button class="profile-submit" type="submit">Salvar alterações</button>
+          <div id="profileFeedback" class="message hidden" role="alert"></div>
+        </form>
+      </section>
+    </aside>
+
+    <main class="profile-main">
+      <section class="profile-card">
+        <div class="profile-card__head">
+          <div>
+            <span class="profile-kicker">Ficha completa</span>
+            <h2>Informações do usuário</h2>
+          </div>
+          <span class="summary-pill summary-pill--time" id="updatedAtPill">Atualização —</span>
+        </div>
+
+        <div class="info-grid">
+          <div class="info-item"><span>Perfil de acesso</span><strong id="perfilAcesso">—</strong></div>
+          <div class="info-item"><span>Modo de permissão</span><strong id="nivelAcesso">—</strong></div>
+          <div class="info-item"><span>Cargo</span><strong id="cargo">—</strong></div>
+          <div class="info-item"><span>Status</span><strong id="status">—</strong></div>
+          <div class="info-item"><span>Coordenador</span><strong id="coordenador">—</strong></div>
+          <div class="info-item"><span>Equipe</span><strong id="equipe">—</strong></div>
+          <div class="info-item"><span>Perfil comportamental</span><strong id="behavioralProfile">—</strong></div>
+          <div class="info-item"><span>Criado em</span><strong id="createdAt">—</strong></div>
+        </div>
+      </section>
+
+      <section class="profile-card">
+        <div class="profile-card__head">
+          <div>
+            <span class="profile-kicker">Permissões</span>
+            <h2>Acessos aos módulos</h2>
           </div>
         </div>
+        <div class="modules" id="modulesList"></div>
+      </section>
+
+      <section class="profile-card">
+        <div class="profile-card__head">
+          <div>
+            <span class="profile-kicker">Auditoria</span>
+            <h2>Atividade recente</h2>
+          </div>
+        </div>
+        <div class="logs" id="logsList"></div>
+      </section>
+
+      <div class="profile-actions">
+        <button class="profile-logout" id="btnSair" type="button">Sair</button>
       </div>
-
-      <div class="sep"></div>
-
-      <div class="grid">
-        <div class="row">
-          <div class="label">Perfil de acesso</div>
-          <div class="value" id="perfilAcesso">—</div>
-        </div>
-
-        <div class="row">
-          <div class="label">Nível de acesso</div>
-          <div class="value" id="nivelAcesso">—</div>
-        </div>
-
-        <div class="row">
-          <div class="label">Cargo</div>
-          <div class="value" id="cargo">—</div>
-        </div>
-
-        <div class="row">
-          <div class="label">Status</div>
-          <div class="value" id="status">—</div>
-        </div>
-
-        <div class="row">
-          <div class="label">Coordenador</div>
-          <div class="value" id="coordenador">—</div>
-        </div>
-
-        <div class="row">
-          <div class="label">Equipe</div>
-          <div class="value" id="equipe">—</div>
-        </div>
-
-        <div class="row">
-          <div class="label">Última atualização</div>
-          <div class="value" id="updatedAt">—</div>
-        </div>
-      </div>
-
-      <!-- (4) ACESSOS AOS MÓDULOS -->
-      <div class="block">
-        <div class="block__title">Acessos aos módulos</div>
-        <div class="block__subtitle muted">O que você consegue abrir + status do módulo.</div>
-
-        <div class="modules" id="modulesList">
-          <!-- JS injeta -->
-        </div>
-      </div>
-
-      <!-- (5) LOGS / ATIVIDADE -->
-      <div class="block">
-        <div class="block__title">Atividade recente</div>
-        <div class="block__subtitle muted">Últimas ações registradas no sistema.</div>
-
-        <div class="logs" id="logsList">
-          <!-- JS injeta -->
-        </div>
-      </div>
-
-      <div class="actions">
-        <button class="btn btn-danger" id="btnSair">Sair</button>
-      </div>
-    </section>
-  </main>
+    </main>
+  </div>
 
   <script src="./perfil.js"></script>
 </body>

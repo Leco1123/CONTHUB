@@ -8,8 +8,9 @@
       content="Dashboard do ContHub com visão geral da operação contábil, indicadores, produtividade e acompanhamento da equipe."
     />
     <title>ContHub • Boas-vindas</title>
-
-    <link rel="stylesheet" href="./dashboard.css?v=20260521-14" />
+    <script src="../shared/theme-boot.js"></script>
+    <link rel="stylesheet" href="../shared/theme.css" />
+    <link rel="stylesheet" href="./dashboard.css?v=20260524-09" />
   </head>
 
   <body>
@@ -35,6 +36,13 @@
             <div class="profileCard__links">
               <button class="ghost-btn ghost-btn--sidebar ghost-btn--danger" type="button" data-logout>Sair</button>
             </div>
+          </div>
+        </div>
+
+        <div class="sidebar__group">
+          <div class="theme-switcher theme-switcher--dashboard" aria-label="Alternar tema">
+            <button type="button" class="theme-switcher__button" data-theme-choice="dark">Preto</button>
+            <button type="button" class="theme-switcher__button" data-theme-choice="light">Branco</button>
           </div>
         </div>
 

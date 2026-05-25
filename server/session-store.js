@@ -8,10 +8,12 @@ CREATE TABLE IF NOT EXISTS app_sessions (
   expire TIMESTAMPTZ NOT NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
+)
+`;
 
+const SESSION_INDEX_SQL = `
 CREATE INDEX IF NOT EXISTS app_sessions_expire_idx
-  ON app_sessions (expire);
+  ON app_sessions (expire)
 `;
 
 function normalizeExpiration(sess) {
@@ -125,6 +127,7 @@ class PrismaSessionStore extends session.Store {
 
 async function ensureSessionTable() {
   await db.$executeRawUnsafe(SESSION_TABLE_SQL);
+  await db.$executeRawUnsafe(SESSION_INDEX_SQL);
 }
 
 module.exports = {

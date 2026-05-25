@@ -1,214 +1,65 @@
-O CONTHUB é uma aplicação full stack composta por:
+# ContHub
 
-- API RESTful em Node.js
-- Banco de dados PostgreSQL
-- Prisma ORM
-- Autenticação baseada em JWT
-- Painel web em HTML, CSS e JavaScript
-- Estrutura modular preparada para produção
-- O projeto foi desenvolvido com foco em:
-- Organização por camadas
-- Segurança
-- Versionamento profissional
-- Escalabilidade futura
+ContHub e um painel web interno com backend em Node.js, PostgreSQL e Prisma, focado em operacao, modulos internos, dashboards, sheets e rotinas contabeis/comerciais.
 
-# ARQUITETURA
+## Stack
 
-CONTHUB/
-│
-├── server/                 # Backend (Node.js / Express)
-│   ├── db/                 # Conexão com banco (Prisma Client)
-│   ├── routes/             # Rotas da API
-│   ├── middleware/         # Middlewares (Auth, etc.)
-│   └── server.js           # Entry point
-│
-├── prisma/                 # Modelagem do banco
-│   └── schema.prisma
-│
-├── web/                    # Front-end
-│   ├── index.html
-│   ├── styles.css
-│   └── app.js
-│
-├── .env                    # Variáveis sensíveis (não versionado)
-├── .env.example
-├── package.json
-└── README.md
-
-# LINGUAGENS DE PROGRAMAÇÃO
-
-- JavaScript (Node.js) - Backend
-- JavaScript (Vanilla js) - Frontend
-- SQL (PostgreSQL) - Banco de Dados
-- HTML5 - Estrutura do painel
-- CSS3 - Estilização
-- JSON - Comunicação API
-- Prisma Schema Language - Modelagem de dados
-- Bash / Shell - Comandos de terminal
-- Markdown - Documentação 
-
-# TECNOLOGIAS & FERRAMENTAS 
-
-BACKEND
 - Node.js
 - Express
-- Prisma ORM
 - PostgreSQL
+- Prisma
+- HTML, CSS e JavaScript
+- Sessao por cookie com `express-session`
 
-SEGURANÇA
-- JWT
-- Bcrypt
-- Dotenv
+## Estrutura principal
 
-FRONTEND
-- HTML5
-- CSS3
-- Fetch API
+- `server/`: backend, middlewares e rotas
+- `prisma/`: schema e migracoes
+- `public/`: modulos web
+- `docs/`: documentacao operacional
 
-DEV TOOLS 
-- NPM
-- NPX
-- Prisma CLI
-- Git
-- GitHub
-- ESLint
-- Prettier
+## Como rodar localmente
 
-# FUNCIONALIDADES IMPLEMENTADAS
-AUTENTICAÇÃO
-- Login com e-mail normalizado
-- Hash de senha com  bcrypt
-- Geração de token JWT
-- Middleware de proteção de rotas
+1. Instale as dependencias:
 
-BANCO DE DADOS
-- Integração com PostgreSQL
-- Prisma Client configurado
-- Variável DATABASE_URL
-- db push para sincronização rápida
-
-FRONT-END
-- Tela de login funcional
-- Layout responsivo
-- Integração com API via Fetch
-- Armazenamento de JWT no localStorage
-
-
-SETUP DO PROJETO
-PRÉ-REQUISITOS:
-node -v
-npm -v
-npx -v
-
-Também é necessário:
-- PostgreSQL instalado e rodando
-
-INSTALAR DEPENDÊNCIAS
+```powershell
 npm install
+```
 
-CONFIGURAR VARIÁVEIS DE AMBIENTE
+2. Crie um `.env` a partir de [./.env.example](./.env.example)
 
-Crie um arquivo .env na raiz:
-DATABASE_URL="postgresql://USER:SENHA@localhost:5432/conthub?schema=public"
-JWT_SECRET="seu-segredo-super-forte"
+3. Gere o Prisma Client:
 
-GERAR PRISMA CLIENT
-npx prisma generate
-CRIAR OU ATUALIZAR BANCO
-npx prisma migrate dev
+```powershell
+npm run prisma:generate
+```
 
-ou
+4. Aplique as migracoes:
 
-npx prisma db push
-▶️ 6️⃣ Rodar Aplicação
-node server/server.js
+```powershell
+npx prisma migrate deploy --schema prisma/schema.prisma
+```
 
-ou
+5. Inicie a aplicacao:
 
-npm run start
+```powershell
+npm start
+```
 
+## Seguranca e deploy
 
-FLUXO PROFISSIONAL DE DESENVOLVIMENTO
+O guia de producao fica em [docs/DEPLOY_PRODUCAO.md](./docs/DEPLOY_PRODUCAO.md).
+Os comandos diretos de subida e atualizacao ficam em [docs/COMANDOS_DEPLOY.md](./docs/COMANDOS_DEPLOY.md).
 
-git pull --rebase
-git checkout -b feature/nome-da-feature
-git add .
-git commit -m "feat: descrição clara"
-git push -u origin feature/nome-da-feature
+Antes de publicar:
 
-BOAS PRÁTICAS
+- troque todos os segredos do `.env`
+- use `APP_BASE_URL` com `https://`
+- restrinja `ALLOWED_ORIGINS` ao dominio final
+- valide os perfis de acesso
 
-❌ Nunca versionar .env
-❌ Nunca versionar node_modules
-✅ Sempre rodar npm install após clonar
-✅ Sempre rodar npx prisma generate
-✅ Trabalhar com branches
-✅ Usar commits semânticos (feat, fix, chore)
+## Observacoes
 
-ROADMAP
-
-CRUD completo de usuários
-Sistema de permissões (roles)
-Logs estruturados
-Dockerização
-CI/CD
-Deploy automatizado
-Versionamento semântico
-
-👨‍💻 Autor
-
-Leandro Vieira
-Projeto CONTHUB
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+- `.env` nao deve ser versionado
+- producao deve rodar com `NODE_ENV=production`
+- os modulos contabeis e comerciais tem regras de acesso no backend e no frontend

@@ -1,29 +1,15 @@
-// server/middleware/auth.js
 const db = require("../db");
-const TEAM_EDITORS = ["leandro", "gabriella"];
+const {
+  canAccessModule,
+  hasModulePermission,
+  mapRoleOut,
+  normalizeAccessProfile,
+  normalizePermissionMode,
+} = require("../services/permissions.service");
+const { logSecurityEvent } = require("../utils/security-log");
 
 function normalizeEmail(email) {
   return String(email || "").trim().toLowerCase();
-}
-
-function mapRoleOut(role) {
-  const normalized = String(role || "").trim().toUpperCase();
-  if (normalized === "ADMIN") return "admin";
-  if (normalized === "TI") return "ti";
-  if (normalized === "USER") return "user";
-  return "customer";
-}
-
-function normalizeAccessProfile(value, fallbackRole = "customer") {
-  const normalized = String(value || "").trim().toLowerCase();
-  if (["ti", "gerencial", "coordenacao", "operacional", "consulta", "comercial"].includes(normalized)) {
-    return normalized;
-  }
-
-  const role = mapRoleOut(fallbackRole);
-  if (role === "ti") return "ti";
-  if (role === "admin") return "gerencial";
-  return "operacional";
 }
 
 async function loadCurrentUser(req) {
@@ -33,16 +19,37 @@ async function loadCurrentUser(req) {
   const sessionId = Number(sessionUser.id);
   const sessionEmail = normalizeEmail(sessionUser.email);
 
+  const select = {
+    id: true,
+    name: true,
+    email: true,
+    role: true,
+    active: true,
+    accessProfile: true,
+    permissionMode: true,
+    modulePermissions: {
+      select: {
+        canView: true,
+        canEdit: true,
+        canManage: true,
+        module: {
+          select: {
+            id: true,
+            slug: true,
+            name: true,
+            active: true,
+            status: true,
+            access: true,
+          },
+        },
+      },
+    },
+  };
+
   const user =
     Number.isFinite(sessionId) && sessionId > 0
-      ? await db.user.findUnique({
-          where: { id: sessionId },
-          select: { id: true, name: true, email: true, role: true, active: true, accessProfile: true },
-        })
-      : await db.user.findUnique({
-          where: { email: sessionEmail },
-          select: { id: true, name: true, email: true, role: true, active: true, accessProfile: true },
-        });
+      ? await db.user.findUnique({ where: { id: sessionId }, select })
+      : await db.user.findUnique({ where: { email: sessionEmail }, select });
 
   if (!user || user.active === false) return null;
 
@@ -50,15 +57,18 @@ async function loadCurrentUser(req) {
     ...user,
     role: mapRoleOut(user.role),
     accessProfile: normalizeAccessProfile(user.accessProfile, user.role),
+    permissionMode: normalizePermissionMode(user.permissionMode),
+    modulePermissions: Array.isArray(user.modulePermissions)
+      ? user.modulePermissions.map((entry) => ({
+          canView: Boolean(entry.canView),
+          canEdit: Boolean(entry.canEdit),
+          canManage: Boolean(entry.canManage),
+          module: entry.module || null,
+        }))
+      : [],
   };
 
   return req.currentUser;
-}
-
-function matchesTeamEditor(user) {
-  const name = String(user?.name || "").trim().toLowerCase();
-  const email = normalizeEmail(user?.email);
-  return TEAM_EDITORS.some((entry) => name.includes(entry) || email.includes(entry));
 }
 
 async function requireAuth(req, res, next) {
@@ -92,75 +102,54 @@ async function requireAdmin(req, res, next) {
   next();
 }
 
+function requireModuleAccess(moduleId, action = "view") {
+  const normalizedModuleId = String(moduleId || "").trim().toLowerCase();
+  const normalizedAction = String(action || "view").trim().toLowerCase();
+
+  return async (req, res, next) => {
+    if (!req.session?.user) {
+      return res.status(401).json({ error: "Não autenticado." });
+    }
+
+    const user = await loadCurrentUser(req);
+    if (!user) {
+      return res.status(401).json({ error: "Sessão inválida." });
+    }
+
+    if (hasModulePermission(user, { id: normalizedModuleId, slug: normalizedModuleId }, normalizedAction)) {
+      return next();
+    }
+
+    logSecurityEvent("module_access_denied", {
+      userId: user.id,
+      email: user.email,
+      role: user.role,
+      accessProfile: user.accessProfile,
+      permissionMode: user.permissionMode,
+      moduleId: normalizedModuleId,
+      action: normalizedAction,
+      path: req.originalUrl || req.url,
+      method: req.method,
+    });
+
+    return res.status(403).json({ error: "Seu perfil não possui permissão para esta área." });
+  };
+}
+
 async function requireContAdminAccess(req, res, next) {
-  if (!req.session?.user) {
-    return res.status(401).json({ error: "Não autenticado." });
-  }
-
-  const user = await loadCurrentUser(req);
-  if (!user) {
-    return res.status(401).json({ error: "Sessão inválida." });
-  }
-
-  const role = String(user.role || "").toLowerCase();
-  const accessProfile = String(user.accessProfile || "").toLowerCase();
-  if (
-    role === "ti" ||
-    role === "admin" ||
-    accessProfile === "ti" ||
-    accessProfile === "gerencial"
-  ) {
-    return next();
-  }
-
-  return res.status(403).json({ error: "Seu perfil não possui acesso ao ContAdmin." });
+  return requireModuleAccess("contadmin", "view")(req, res, next);
 }
 
 async function requireContAdminManage(req, res, next) {
-  if (!req.session?.user) {
-    return res.status(401).json({ error: "Não autenticado." });
-  }
-
-  const user = await loadCurrentUser(req);
-  if (!user) {
-    return res.status(401).json({ error: "Sessão inválida." });
-  }
-
-  const role = String(user.role || "").toLowerCase();
-  const accessProfile = String(user.accessProfile || "").toLowerCase();
-  if (
-    role === "ti" ||
-    role === "admin" ||
-    accessProfile === "ti"
-  ) {
-    return next();
-  }
-
-  return res.status(403).json({ error: "Acesso restrito a perfis com gestão de usuários." });
+  return requireModuleAccess("contadmin", "manage")(req, res, next);
 }
 
 async function requireTeamConfigManage(req, res, next) {
-  if (!req.session?.user) {
-    return res.status(401).json({ error: "Não autenticado." });
-  }
+  return requireModuleAccess("contadmin", "manage")(req, res, next);
+}
 
-  const user = await loadCurrentUser(req);
-  if (!user) {
-    return res.status(401).json({ error: "Sessão inválida." });
-  }
-
-  const role = String(user.role || "").toLowerCase();
-  const accessProfile = String(user.accessProfile || "").toLowerCase();
-  if (
-    role === "ti" ||
-    role === "admin" ||
-    accessProfile === "ti" ||
-    matchesTeamEditor(user)
-  ) {
-    return next();
-  }
-
-  return res.status(403).json({ error: "Acesso restrito à gestão de equipes." });
+async function requireAccountingAccess(req, res, next) {
+  return requireModuleAccess("contflow", "view")(req, res, next);
 }
 
 module.exports = {
@@ -169,4 +158,7 @@ module.exports = {
   requireContAdminAccess,
   requireContAdminManage,
   requireTeamConfigManage,
+  requireAccountingAccess,
+  requireModuleAccess,
+  canAccessModule,
 };
