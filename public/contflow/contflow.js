@@ -156,7 +156,13 @@ async function requireAuthOrRedirect() {
 
     if (!resp.ok) {
       currentUser = null;
-      goto(LOGIN_PAGE_URL);
+      if (Number(resp.status) === 401) {
+        goto(LOGIN_PAGE_URL);
+      } else {
+        console.warn("ContFlow recebeu resposta inesperada ao validar sessão:", resp.status);
+        alert("Não foi possível validar sua sessão no ContFlow agora. Tente abrir novamente pelo dashboard.");
+        goto("../dashboard/dashboard.html");
+      }
       return null;
     }
 
@@ -174,7 +180,8 @@ async function requireAuthOrRedirect() {
   } catch (err) {
     currentUser = null;
     console.warn("Falha ao validar sessão no ContFlow:", err);
-    goto(LOGIN_PAGE_URL);
+    alert("Falha ao validar sua sessão no ContFlow. Tente novamente pelo dashboard.");
+    goto("../dashboard/dashboard.html");
     return null;
   }
 }
