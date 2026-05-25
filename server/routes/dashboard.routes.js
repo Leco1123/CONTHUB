@@ -241,9 +241,14 @@ router.post("/next-actions/reset", async (req, res) => {
 router.get("/tickets", async (req, res) => {
   try {
     if (!clickupTickets.isClickUpTicketsEnabled()) {
-      return res.status(503).json({
+      return res.json({
+        provider: "clickup",
+        configured: false,
+        degraded: true,
         error: "Integração ClickUp não configurada.",
         code: "CLICKUP_NOT_CONFIGURED",
+        savedAt: new Date().toISOString(),
+        data: [],
       });
     }
 
@@ -256,9 +261,14 @@ router.get("/tickets", async (req, res) => {
     });
   } catch (err) {
     if (isClickupNotConfigured(err)) {
-      return res.status(503).json({
+      return res.json({
+        provider: "clickup",
+        configured: false,
+        degraded: true,
         error: "Integração ClickUp não configurada.",
         code: "CLICKUP_NOT_CONFIGURED",
+        savedAt: new Date().toISOString(),
+        data: [],
       });
     }
 
@@ -285,9 +295,15 @@ router.get("/clickup-next-actions", async (req, res) => {
     });
 
     if (!clickupTickets.isClickUpTicketsEnabled()) {
-      return res.status(503).json({
+      return res.json({
+        provider: "clickup",
+        configured: false,
+        degraded: true,
         error: "Integração ClickUp não configurada.",
         code: "CLICKUP_NOT_CONFIGURED",
+        savedAt: new Date().toISOString(),
+        data: [],
+        debug: null,
       });
     }
 
@@ -318,9 +334,15 @@ router.get("/clickup-next-actions", async (req, res) => {
     });
   } catch (err) {
     if (isClickupNotConfigured(err)) {
-      return res.status(503).json({
+      return res.json({
+        provider: "clickup",
+        configured: false,
+        degraded: true,
         error: "Integração ClickUp não configurada.",
         code: "CLICKUP_NOT_CONFIGURED",
+        savedAt: new Date().toISOString(),
+        data: [],
+        debug: null,
       });
     }
 
