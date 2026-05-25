@@ -3679,6 +3679,7 @@ function closeQuotaEditor({ focusCell = true } = {}) {
 
   quotaEditor.cleanup?.();
   quotaEditor.el?.remove();
+  document.body.classList.remove("cf-mobile-popover-open");
   const previousEditor = quotaEditor;
   quotaEditor = null;
 
@@ -3692,6 +3693,7 @@ function closeMitEditor({ focusCell = true } = {}) {
 
   mitEditor.cleanup?.();
   mitEditor.el?.remove();
+  document.body.classList.remove("cf-mobile-popover-open");
   const previousEditor = mitEditor;
   mitEditor = null;
 
@@ -3740,8 +3742,13 @@ function openQuotaEditor(viewRow, colIndex) {
   const currentValue = String(cfData[dataIndex]?.[col.key] ?? "");
   const presetOptions = ["Compensação", "Prejuízo", "S/M"];
   const rect = cell.getBoundingClientRect();
+  const isMobileQuotaEditor = window.innerWidth <= 560;
   const pop = document.createElement("div");
   pop.className = "cf-quota-editor";
+  if (isMobileQuotaEditor) {
+    pop.classList.add("is-mobile");
+    document.body.classList.add("cf-mobile-popover-open");
+  }
   pop.innerHTML = `
     <div class="cf-quota-editor__head">
       <div>
@@ -3751,6 +3758,7 @@ function openQuotaEditor(viewRow, colIndex) {
       <div class="cf-quota-editor__value-badge">${escapeHTML(currentValue.trim() || "Sem valor")}</div>
     </div>
     <div class="cf-quota-editor__subtitle">Escolha uma forma rápida de concluir ou informe a data manualmente.</div>
+    <div class="cf-quota-editor__scroll">
     <div class="cf-quota-editor__options-label">Opções rápidas</div>
     <div class="cf-quota-editor__options" role="listbox" aria-label="Opções de quota">
       ${presetOptions
@@ -3789,6 +3797,7 @@ function openQuotaEditor(viewRow, colIndex) {
       <span>Outro valor</span>
       <input type="text" class="cf-quota-editor__custom" placeholder="Digite um status personalizado..." />
     </label>
+    </div>
     <div class="cf-quota-editor__footer">
       <button type="button" class="cf-quota-editor__footer-btn is-ghost" data-action="clear">Limpar</button>
       <button type="button" class="cf-quota-editor__footer-btn is-primary" data-action="apply">Aplicar</button>
@@ -3796,8 +3805,12 @@ function openQuotaEditor(viewRow, colIndex) {
   `;
 
   pop.style.position = "fixed";
-  pop.style.top = `${Math.min(rect.bottom + 10, window.innerHeight - 360)}px`;
-  pop.style.left = `${Math.min(rect.left, window.innerWidth - 340)}px`;
+  if (isMobileQuotaEditor) {
+    pop.style.inset = "8px";
+  } else {
+    pop.style.top = `${Math.max(8, Math.min(rect.bottom + 10, window.innerHeight - 360))}px`;
+    pop.style.left = `${Math.max(8, Math.min(rect.left, window.innerWidth - 340))}px`;
+  }
   pop.style.zIndex = "2000";
 
   const stop = (ev) => ev.stopPropagation();
@@ -3948,8 +3961,13 @@ function openMitEditor(viewRow, colIndex) {
 
   const currentValue = String(cfData[dataIndex]?.[col.key] ?? "").trim();
   const rect = cell.getBoundingClientRect();
+  const isMobileMitEditor = window.innerWidth <= 560;
   const pop = document.createElement("div");
   pop.className = "cf-quota-editor";
+  if (isMobileMitEditor) {
+    pop.classList.add("is-mobile");
+    document.body.classList.add("cf-mobile-popover-open");
+  }
   pop.innerHTML = `
     <div class="cf-quota-editor__head">
       <div>
@@ -3981,8 +3999,12 @@ function openMitEditor(viewRow, colIndex) {
   `;
 
   pop.style.position = "fixed";
-  pop.style.top = `${Math.min(rect.bottom + 10, window.innerHeight - 280)}px`;
-  pop.style.left = `${Math.min(rect.left, window.innerWidth - 340)}px`;
+  if (isMobileMitEditor) {
+    pop.style.inset = "8px";
+  } else {
+    pop.style.top = `${Math.min(rect.bottom + 10, window.innerHeight - 280)}px`;
+    pop.style.left = `${Math.min(rect.left, window.innerWidth - 340)}px`;
+  }
   pop.style.zIndex = "2000";
 
   const stop = (ev) => ev.stopPropagation();
@@ -6245,12 +6267,14 @@ function injectExtraStyles() {
     .cf-select-trigger.is-filled{ border-color:rgba(56,189,248,.28); }
     .cf-select-trigger__label{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; text-align:left; }
     .cf-select-trigger__icon{ color:#bfdbfe; font-size:12px; flex:0 0 auto; }
-    .cf-quota-editor{ width:320px; padding:16px; border-radius:18px; border:1px solid rgba(96,165,250,.18); background:linear-gradient(180deg,rgba(8,15,30,.985),rgba(9,19,37,.97)); box-shadow:0 28px 70px rgba(0,0,0,.46); backdrop-filter:blur(14px); }
+    .cf-mobile-popover-open{ overflow:hidden; }
+    .cf-quota-editor{ width:min(320px,calc(100vw - 20px)); max-height:min(82vh,640px); display:grid; grid-template-rows:auto auto minmax(0,1fr) auto; overflow:hidden; padding:16px; border-radius:18px; border:1px solid rgba(96,165,250,.18); background:linear-gradient(180deg,rgba(8,15,30,.985),rgba(9,19,37,.97)); box-shadow:0 28px 70px rgba(0,0,0,.46); backdrop-filter:blur(14px); overscroll-behavior:contain; }
     .cf-quota-editor__head{ display:flex; align-items:flex-start; justify-content:space-between; gap:12px; margin-bottom:10px; }
     .cf-quota-editor__eyebrow{ font-size:10px; font-weight:800; letter-spacing:.12em; text-transform:uppercase; color:rgba(125,211,252,.82); margin-bottom:4px; }
     .cf-quota-editor__title{ font-weight:800; font-size:16px; line-height:1.1; color:#f8fbff; }
     .cf-quota-editor__value-badge{ max-width:120px; padding:7px 10px; border-radius:999px; border:1px solid rgba(255,255,255,.08); background:rgba(15,23,42,.9); color:rgba(226,232,240,.92); font-size:11px; font-weight:700; text-align:right; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
     .cf-quota-editor__subtitle{ font-size:12px; line-height:1.45; color:rgba(226,232,240,.72); margin-bottom:14px; }
+    .cf-quota-editor__scroll{ min-height:0; overflow-y:auto; overflow-x:hidden; -webkit-overflow-scrolling:touch; touch-action:pan-y pinch-zoom; padding-right:2px; }
     .cf-quota-editor__options-label{ font-size:11px; font-weight:800; letter-spacing:.08em; text-transform:uppercase; color:rgba(191,219,254,.82); margin-bottom:8px; }
     .cf-quota-editor__options{ display:grid; grid-template-columns:1fr; gap:8px; margin-bottom:14px; }
     .cf-quota-editor__option{ border:1px solid rgba(148,163,184,.18); background:linear-gradient(180deg,rgba(17,24,39,.94),rgba(15,23,42,.9)); color:#e8edf6; border-radius:14px; padding:11px 12px; cursor:pointer; font:inherit; text-align:left; transition:background .15s ease,border-color .15s ease,transform .15s ease,box-shadow .15s ease; display:flex; flex-direction:column; gap:2px; }
@@ -6276,7 +6300,7 @@ function injectExtraStyles() {
     .cf-quota-editor__field input:focus,
     .cf-quota-editor__field select:focus{ border-color:rgba(56,189,248,.5); box-shadow:0 0 0 3px rgba(14,165,233,.14); }
     .cf-quota-editor__field select option{ color:#111827; }
-    .cf-quota-editor__footer{ display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:14px; }
+    .cf-quota-editor__footer{ display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:14px; flex:0 0 auto; padding-top:12px; padding-bottom:2px; background:linear-gradient(180deg,rgba(8,15,30,0),rgba(9,19,37,.98) 22%,rgba(9,19,37,.995) 100%); }
     .cf-quota-editor__footer-btn{ border:1px solid rgba(148,163,184,.18); color:#e8edf6; border-radius:13px; padding:11px 12px; cursor:pointer; font:inherit; font-weight:800; transition:transform .15s ease,border-color .15s ease,background .15s ease,box-shadow .15s ease; }
     .cf-quota-editor__footer-btn:hover{ transform:translateY(-1px); }
     .cf-quota-editor__footer-btn.is-ghost{ background:rgba(15,23,42,.86); }
@@ -6294,6 +6318,44 @@ function injectExtraStyles() {
     .cf-option-editor__footer{ display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:12px; }
     .cf-option-editor__footer button{ border:1px solid rgba(255,255,255,.12); background:rgba(15,23,42,.92); color:#e8edf6; border-radius:12px; padding:10px 12px; cursor:pointer; font:inherit; }
     .cf-option-editor__footer button:hover{ background:rgba(30,41,59,.96); }
+    @media (max-width: 560px){
+      .cf-quota-editor{ width:calc(100vw - 16px); padding:14px; border-radius:16px; }
+      .cf-quota-editor.is-mobile{
+        inset:8px!important;
+        width:auto!important;
+        height:auto!important;
+        max-height:none!important;
+        padding-bottom:92px;
+        overflow-y:auto!important;
+        overflow-x:hidden!important;
+        -webkit-overflow-scrolling:touch;
+        overscroll-behavior:contain;
+      }
+      .cf-quota-editor__head,
+      .cf-quota-editor__date-head{ flex-direction:column; align-items:stretch; }
+      .cf-quota-editor__value-badge,
+      .cf-quota-editor__date-preview{ max-width:none; text-align:left; }
+      .cf-quota-editor__subtitle{ margin-bottom:10px; }
+      .cf-quota-editor__scroll{ min-height:0; padding-bottom:18px; }
+      .cf-quota-editor.is-mobile .cf-quota-editor__footer{
+        position:fixed;
+        left:20px;
+        right:20px;
+        bottom:20px;
+        z-index:2002;
+        grid-template-columns:1fr;
+        margin-top:0;
+        padding:12px;
+        border-radius:16px;
+        border:1px solid rgba(96,165,250,.18);
+        background:linear-gradient(180deg,rgba(8,15,30,.98),rgba(9,19,37,.995));
+        box-shadow:0 18px 44px rgba(0,0,0,.34);
+      }
+      .cf-quota-editor__footer-btn{ min-height:44px; }
+      .cf-quota-editor__custom-wrap{ margin-bottom:4px; }
+      .cf-quota-editor.is-mobile::-webkit-scrollbar{ width:8px; }
+      .cf-quota-editor.is-mobile::-webkit-scrollbar-thumb{ background:rgba(96,165,250,.35); border-radius:999px; }
+    }
     #cf-corner-select{ z-index: 40 !important; }
     .cf-row-index{ z-index: 35 !important; }
     .cf-table thead th{ z-index: 30 !important; }
