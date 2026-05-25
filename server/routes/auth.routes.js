@@ -315,7 +315,9 @@ router.post("/forgot", async (req, res) => {
       data: { userId: user.id, tokenHash, expiresAt },
     });
 
-    const baseUrl = process.env.APP_BASE_URL || "http://localhost:3000";
+    const configuredBaseUrl = String(process.env.APP_BASE_URL || "").trim();
+    const requestBaseUrl = `${req.protocol}://${req.get("host")}`;
+    const baseUrl = configuredBaseUrl || requestBaseUrl;
     const resetLink = `${baseUrl}/reset/reset.html?token=${rawToken}`;
     console.info("Password reset solicitado para:", normalizedEmail);
     if (process.env.NODE_ENV !== "production") {

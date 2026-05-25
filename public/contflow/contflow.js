@@ -15,7 +15,6 @@ const CF_BC_NAME = "conthub:contflow:bc";
    API
 =========================== */
 const API_MODULES = "/api/admin/modules";
-const API_PREFERRED_PORT = "3000";
 const CF_SHEET_DEFS = [
   { index: 0, key: "contflow", label: "1º Trimestre", draftKey: "conthub:contflow:local-draft", backupsKey: "conthub:contflow:local-backups" },
   { index: 1, key: "contflow-q2", label: "2º Trimestre", draftKey: "conthub:contflow-q2:local-draft", backupsKey: "conthub:contflow-q2:local-backups" },
@@ -92,13 +91,6 @@ function resolveApiUrl(url) {
   const target = String(url || "").trim();
   if (!target) return target;
   if (/^https?:\/\//i.test(target)) return target;
-
-  try {
-    const { protocol, hostname, port } = window.location;
-    if (target.startsWith("/api/") && port && port !== API_PREFERRED_PORT) {
-      return `${protocol}//${hostname}:${API_PREFERRED_PORT}${target}`;
-    }
-  } catch (_) {}
 
   return target;
 }
