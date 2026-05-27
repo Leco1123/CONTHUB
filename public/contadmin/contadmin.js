@@ -526,6 +526,26 @@ document.addEventListener("DOMContentLoaded", () => {
       .filter(Boolean);
   }
 
+  function buildDefaultModuleRow(moduleId, status) {
+    const id = String(moduleId || "").trim().toLowerCase();
+    const normalizedStatus =
+      status === "offline" ? "offline" : status === "dev" ? "dev" : id === "contadmin" ? "admin" : "online";
+
+    let access = "operacional";
+    if (id === "contadmin") access = "gerencial+ti";
+    if (id === "contanalytics") access = "gerencial+coordenacao";
+    if (id === "contcomercial") access = "comercial+operacional+gerencial+ti";
+    if (id === "ti-tickets") access = "gerencial+ti";
+
+    return {
+      slug: id,
+      name: id,
+      access,
+      status: normalizedStatus,
+      active: normalizedStatus !== "offline",
+    };
+  }
+
   function canAccessModule(moduleId, user = getSessionUser()) {
     const id = String(moduleId || "").trim().toLowerCase();
     if (Array.isArray(user?.permissions)) {
@@ -541,6 +561,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     if (profile === "ti" || role === "ti") return true;
     if (profile === "comercial") return id === "dashboard" || id === "contcomercial";
+    if (id === "ti-tickets") return ["ti", "gerencial"].includes(profile) || role === "admin";
     if (id === "contadmin") return canViewAdmin(user);
     if (id === "contanalytics") return ["gerencial", "coordenacao"].includes(profile) || role === "admin";
     if (!rules.length || rules.includes("operacional")) return true;
@@ -593,6 +614,15 @@ document.addEventListener("DOMContentLoaded", () => {
     if (normalizedAccess === "comercial") return false;
     if (normalizedCargo === "gerente") return false;
     return true;
+  }
+
+  function isCoordinatorCargo(cargo) {
+    return normalizeName(cargo) === "coordenador";
+  }
+
+  function buildDefaultCoordinatorTeamName(name) {
+    const safeName = cleanText(name);
+    return safeName ? `Equipe ${safeName}` : "Equipe";
   }
 
   function escapeHtml(value) {
@@ -1095,9 +1125,9 @@ document.addEventListener("DOMContentLoaded", () => {
         <div class="acesso-module-card__footer">
           <span class="acesso-module-card__label">Ambiente do módulo</span>
           <div class="acesso-actions">
-            <button type="button" data-set="online">Online</button>
-            <button type="button" data-set="dev">Dev</button>
-            <button type="button" data-set="offline">Offline</button>
+            <button type="button" data-set="online" aria-pressed="${current === "online" ? "true" : "false"}" class="${current === "online" ? "is-active" : ""}">Online</button>
+            <button type="button" data-set="dev" aria-pressed="${current === "dev" ? "true" : "false"}" class="${current === "dev" ? "is-active" : ""}">Dev</button>
+            <button type="button" data-set="offline" aria-pressed="${current === "offline" ? "true" : "false"}" class="${current === "offline" ? "is-active" : ""}">Offline</button>
           </div>
         </div>
       `;
@@ -1121,7 +1151,7 @@ document.addEventListener("DOMContentLoaded", () => {
       const btn = e.target.closest("button[data-set]");
       if (!btn) return;
 
-      const card = e.target.closest(".cards-modulos[data-module-id]");
+      const card = e.target.closest(".acesso-module-card[data-module-id]");
       if (!card) return;
 
       const moduleId = card.getAttribute("data-module-id");
@@ -1139,23 +1169,20 @@ document.addEventListener("DOMContentLoaded", () => {
         const row = currentRows.find(
           (m) => String(m.slug || "").toLowerCase() === String(moduleId).toLowerCase()
         );
-
-        if (!row) {
-          alert(`Módulo "${moduleId}" não encontrado no banco.`);
-          return;
-        }
+        const targetRow = row || buildDefaultModuleRow(moduleId, next);
+        if (!row) currentRows.push(targetRow);
 
         const nextStatus =
           next === "offline"
             ? "offline"
             : next === "dev"
             ? "dev"
-            : row.slug === "contadmin"
+            : targetRow.slug === "contadmin"
             ? "admin"
             : "online";
 
-        row.status = nextStatus;
-        row.active = next !== "offline";
+        targetRow.status = nextStatus;
+        targetRow.active = next !== "offline";
 
         await apiSaveModules(currentRows);
         await loadModulesFromApi();
@@ -1208,6 +1235,12 @@ document.addEventListener("DOMContentLoaded", () => {
   const fecharEquipeHeader = document.getElementById("fecharEquipeHeader");
   const inputCoordenador = document.getElementById("coordenador");
   const inputEquipe = document.getElementById("equipe");
+  const inputEquipeOptions = document.getElementById("equipesDisponiveis");
+  const coordenadorField = document.getElementById("coordenadorField");
+  const equipeField = document.getElementById("equipeField");
+  const autoTeamPreview = document.getElementById("autoTeamPreview");
+  const autoTeamPreviewTitle = document.getElementById("autoTeamPreviewTitle");
+  const autoTeamPreviewText = document.getElementById("autoTeamPreviewText");
 
   populateBehavioralProfileSelect(fieldBehavioralProfilePrimary, "", "Selecione o perfil 1");
   populateBehavioralProfileSelect(fieldBehavioralProfileSecondary, "", "Selecione o perfil 2");
@@ -1474,9 +1507,14 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function updateTeamAssignmentUI() {
     const structureHint = document.getElementById("estruturaHint");
+    const currentName = cleanText(fieldNome?.value);
+    const currentCargo = cleanText(fieldCargo?.value);
+    const isCoordinator = isCoordinatorCargo(currentCargo);
 
     if (structureHint) {
-      structureHint.textContent = "Cargo, equipe e perfil comportamental";
+      structureHint.textContent = isCoordinator
+        ? "Coordenador cria a propria equipe automaticamente"
+        : "Cargo, equipe e perfil comportamental";
     }
 
     if (inputCoordenador) {
@@ -1491,13 +1529,47 @@ document.addEventListener("DOMContentLoaded", () => {
       inputEquipe.classList.remove("is-disabled");
     }
 
-    if (!cleanText(inputEquipe?.value) && inputEquipe?.options?.length) {
-      const firstOption = Array.from(inputEquipe.options).find((option) => cleanText(option.value));
-      if (firstOption) {
-        inputEquipe.value = firstOption.value;
-        const selectedCoordinator = cleanText(firstOption.getAttribute("data-coordinator"));
-        if (inputCoordenador && selectedCoordinator) inputCoordenador.value = selectedCoordinator;
+    if (coordenadorField) coordenadorField.hidden = false;
+    if (equipeField) equipeField.hidden = false;
+    if (autoTeamPreview) autoTeamPreview.hidden = true;
+
+    if (isCoordinator) {
+      if (inputCoordenador && currentName) {
+        inputCoordenador.value = currentName;
       }
+      if (inputEquipe && !cleanText(inputEquipe.value) && currentName) {
+        inputEquipe.value = buildDefaultCoordinatorTeamName(currentName);
+      }
+      if (currentName) {
+        populateTeamList(currentName, inputEquipe?.value || buildDefaultCoordinatorTeamName(currentName));
+      }
+      if (inputCoordenador) {
+        inputCoordenador.disabled = true;
+        inputCoordenador.classList.add("is-disabled");
+      }
+      if (inputEquipe) {
+        inputEquipe.disabled = true;
+        inputEquipe.classList.add("is-disabled");
+      }
+      if (coordenadorField) coordenadorField.hidden = true;
+      if (equipeField) equipeField.hidden = true;
+      if (autoTeamPreview) autoTeamPreview.hidden = false;
+      if (autoTeamPreviewTitle) {
+        autoTeamPreviewTitle.textContent = currentName
+          ? `Coordenação automática: ${currentName}`
+          : "Coordenação automática";
+      }
+      if (autoTeamPreviewText) {
+        const teamName = currentName
+          ? buildDefaultCoordinatorTeamName(currentName)
+          : "Equipe do coordenador";
+        autoTeamPreviewText.textContent = `Ao salvar, vamos criar automaticamente a equipe "${teamName}" para este coordenador.`;
+      }
+      return;
+    }
+
+    if (inputCoordenador && !cleanText(inputCoordenador.value)) {
+      inputCoordenador.value = getDefaultCoordinator();
     }
   }
 
@@ -1912,10 +1984,23 @@ document.addEventListener("DOMContentLoaded", () => {
 
     teamConfig = {
       ...teamConfig,
-      [safeCoordinator]: [...existingTeams, nextName],
+      [safeCoordinator]: sortDisplayNames([...existingTeams, nextName]),
     };
     await writeTeamConfigStore();
     setTeamEditorFeedback("success", `Equipe "${nextName}" salva em ${safeCoordinator}.`);
+  }
+
+  async function ensureTeamExistsForCoordinator(coordinator, teamName) {
+    const safeCoordinator = resolveCoordinatorName(coordinator);
+    const nextName = cleanText(teamName);
+    if (!safeCoordinator || !nextName || hasTeamInCoordinator(safeCoordinator, nextName)) return;
+
+    const existingTeams = teamConfig[safeCoordinator] || [];
+    teamConfig = {
+      ...teamConfig,
+      [safeCoordinator]: sortDisplayNames([...existingTeams, nextName]),
+    };
+    await writeTeamConfigStore();
   }
 
   async function renameTeamForCoordinator(coordinator, oldTeamName, newTeamName) {
@@ -2157,33 +2242,16 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function populateTeamList(coordinator, selected = "") {
     const safeCoordinator = resolveCoordinatorName(coordinator) || getDefaultCoordinator(coordinator);
+    const teams = getTeamsForCoordinator(safeCoordinator);
+
+    if (inputEquipeOptions) {
+      inputEquipeOptions.innerHTML = teams
+        .map((team) => `<option value="${escapeHtml(team)}"></option>`)
+        .join("");
+    }
+
     if (inputEquipe) {
-      const hiddenCoordinatorMode = inputCoordenador?.hidden || inputCoordenador?.getAttribute("aria-hidden") === "true";
-      if (hiddenCoordinatorMode) {
-        const teams = getSelectableTeams();
-        inputEquipe.innerHTML = [
-          '<option value="">Selecione a equipe</option>',
-          ...teams.map(
-            ({ coordinator: coordinatorName, team }) =>
-              `<option value="${escapeHtml(team)}" data-coordinator="${escapeHtml(coordinatorName)}">${escapeHtml(
-                `${coordinatorName} / ${team}`
-              )}</option>`
-          ),
-        ].join("");
-        const selectedTeam = cleanText(selected);
-        inputEquipe.value = selectedTeam || "";
-        const selectedOption = inputEquipe.selectedOptions?.[0];
-        if (inputCoordenador) {
-          inputCoordenador.value = cleanText(selectedOption?.dataset?.coordinator) || safeCoordinator || "";
-        }
-      } else {
-        const teams = getTeamsForCoordinator(safeCoordinator);
-        inputEquipe.innerHTML = [
-          '<option value="">Selecione a equipe</option>',
-          ...teams.map((team) => `<option value="${escapeHtml(team)}">${escapeHtml(team)}</option>`),
-        ].join("");
-        inputEquipe.value = resolveTeamName(safeCoordinator, selected) || "";
-      }
+      inputEquipe.value = resolveTeamName(safeCoordinator, selected) || cleanText(selected) || "";
     }
   }
 
@@ -2197,14 +2265,7 @@ document.addEventListener("DOMContentLoaded", () => {
   inputCargo?.addEventListener("change", () => updateTeamAssignmentUI());
   fieldNome?.addEventListener("input", () => updateTeamAssignmentUI());
   inputCoordenador?.addEventListener("change", () => {
-    syncTeamSelectors(inputCoordenador.value, "");
-  });
-  inputEquipe?.addEventListener("change", () => {
-    const selectedOption = inputEquipe.selectedOptions?.[0];
-    const optionCoordinator = cleanText(selectedOption?.dataset?.coordinator);
-    if (optionCoordinator && inputCoordenador) {
-      inputCoordenador.value = optionCoordinator;
-    }
+    syncTeamSelectors(inputCoordenador.value, inputEquipe?.value || "");
   });
 
   // =======================================
@@ -3285,13 +3346,25 @@ document.addEventListener("DOMContentLoaded", () => {
       return;
     }
 
-    const normalizedAssignment = normalizeAssignment({
-      coordenador: rawCoordenador,
-      equipe: rawEquipe,
-    });
+    const coordinatorAssignment = isCoordinatorCargo(cargo)
+      ? {
+          coordenador: nome,
+          equipe: rawEquipe || buildDefaultCoordinatorTeamName(nome),
+        }
+      : {
+          coordenador: rawCoordenador,
+          equipe: rawEquipe,
+        };
+
+    const normalizedAssignment = normalizeAssignment(coordinatorAssignment);
 
     const finalCoordenador = normalizedAssignment.coordenador;
     const finalEquipe = normalizedAssignment.equipe;
+
+    if (rawEquipe && !finalCoordenador) {
+      alert("Selecione o coordenador da equipe antes de salvar.");
+      return;
+    }
 
     const current = getSessionUser();
     const creatorAccessProfile = getAccessProfile(current);
@@ -3313,6 +3386,10 @@ document.addEventListener("DOMContentLoaded", () => {
 
     try {
       setUserFormSaving(true);
+      if (finalCoordenador && finalEquipe) {
+        await ensureTeamExistsForCoordinator(finalCoordenador, finalEquipe);
+      }
+
       if (modoEdicao) {
         const id = idEmEdicao;
         if (!id) return;

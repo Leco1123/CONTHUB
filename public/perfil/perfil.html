@@ -11,139 +11,239 @@
   <script src="../shared/theme-boot.js"></script>
   <link rel="stylesheet" href="../shared/theme.css" />
   <link rel="stylesheet" href="./perfil.css" />
+  <link rel="stylesheet" href="../shared/sidebar-standard.css" />
 </head>
-<body class="profile-screen">
-  <div class="profile-layout">
-    <aside class="profile-sidebar">
-      <div class="theme-switcher theme-switcher--dashboard" aria-label="Alternar tema">
-        <button type="button" class="theme-switcher__button" data-theme-choice="dark">Preto</button>
-        <button type="button" class="theme-switcher__button" data-theme-choice="light">Branco</button>
+<body class="profile-screen has-standard-sidebar">
+  <div class="app profileApp">
+    <div class="overlay" id="overlay" aria-hidden="true"></div>
+
+    <aside class="sidebar" aria-label="Menu lateral de módulos">
+      <div class="sidebar__brand">
+        <div class="brand__text">
+          <div class="brand__name">ContHub</div>
+        </div>
       </div>
 
-      <button class="profile-back" id="btnVoltar" type="button">← Voltar ao painel</button>
+      <div class="titulo-sidebar">Módulos do ContHub</div>
 
-      <section class="profile-hero">
-        <div class="avatar" id="avatar">U</div>
-        <div class="profile-hero__body">
-          <span class="profile-kicker">Meu perfil</span>
-          <h1 id="nome">Usuário</h1>
-          <p id="email" class="muted">—</p>
+      <nav class="modulos-sidebar" id="profileSidebarModules">
+        <button class="cards-modulos" type="button" data-module-id="dashboard" data-src="../dashboard/dashboard.html">
+          <span class="icone-modulo">🏠</span>
+          <span class="plaquinha-de-nome">
+            <span class="placeholder-titulo">Dashboard</span>
+            <span class="placeholder">Visão geral</span>
+          </span>
+          <span class="status" data-status="online">ONLINE</span>
+        </button>
+        <button class="cards-modulos" type="button" data-module-id="contcomercial" data-src="../contcomercial/contcomercial.html">
+          <span class="icone-modulo">💼</span>
+          <span class="plaquinha-de-nome">
+            <span class="placeholder-titulo">ContComercial</span>
+            <span class="placeholder">Operação comercial</span>
+          </span>
+          <span class="status" data-status="online">ONLINE</span>
+        </button>
+        <button class="cards-modulos" type="button" data-module-id="contflow" data-src="../contflow/contflow.html">
+          <span class="icone-modulo">⚡</span>
+          <span class="plaquinha-de-nome">
+            <span class="placeholder-titulo">ContFlow</span>
+            <span class="placeholder">Rotinas e fluxo</span>
+          </span>
+          <span class="status" data-status="online">ONLINE</span>
+        </button>
+        <button class="cards-modulos" type="button" data-module-id="contanalytics" data-src="../contanalytics/contanalytics.html">
+          <span class="icone-modulo">📊</span>
+          <span class="plaquinha-de-nome">
+            <span class="placeholder-titulo">ContAnalytics</span>
+            <span class="placeholder">KPIs e painel</span>
+          </span>
+          <span class="status" data-status="online">ONLINE</span>
+        </button>
+        <button class="cards-modulos" type="button" data-module-id="contdocs" data-src="../contdocs/contdocs.html">
+          <span class="icone-modulo">📁</span>
+          <span class="plaquinha-de-nome">
+            <span class="placeholder-titulo">ContDocs</span>
+            <span class="placeholder">Documentos</span>
+          </span>
+          <span class="status" data-status="dev">DEV</span>
+        </button>
+        <button class="cards-modulos" type="button" data-module-id="contrelatorios" data-src="../contrelatorios/contrelatorios.html">
+          <span class="icone-modulo">📈</span>
+          <span class="plaquinha-de-nome">
+            <span class="placeholder-titulo">ContRelatórios</span>
+            <span class="placeholder">Exportações</span>
+          </span>
+          <span class="status" data-status="dev">DEV</span>
+        </button>
+        <button class="cards-modulos" type="button" data-module-id="contconfig" data-src="../contconfig/contconfig.html">
+          <span class="icone-modulo">⚙️</span>
+          <span class="plaquinha-de-nome">
+            <span class="placeholder-titulo">ContConfig</span>
+            <span class="placeholder">Parâmetros</span>
+          </span>
+          <span class="status" data-status="dev">DEV</span>
+        </button>
+        <button class="cards-modulos" type="button" data-module-id="contadmin" data-src="../contadmin/contadmin.html">
+          <span class="icone-modulo">🛡️</span>
+          <span class="plaquinha-de-nome">
+            <span class="placeholder-titulo">ContAdmin Hub</span>
+            <span class="placeholder">Acesso total</span>
+          </span>
+          <span class="status" data-status="admin">ADMIN</span>
+        </button>
+      </nav>
+
+      <div class="sidebar__footer">
+        <div class="theme-switcher theme-switcher--sidebar" aria-label="Alternar tema">
+          <button type="button" class="theme-switcher__button" data-theme-choice="dark">Preto</button>
+          <button type="button" class="theme-switcher__button" data-theme-choice="light">Branco</button>
         </div>
-
-        <div class="badges">
-          <span class="badge badge--role" id="roleBadge">USER</span>
-          <span class="badge badge--cargo" id="cargoBadge">Cargo</span>
-          <span class="badge badge--status" id="statusBadge">ATIVO</span>
+        <div class="usercard-wrap">
+          <button class="cards-modulos usercard is-active" type="button" data-usercard aria-label="Você está no perfil">
+            <span class="icone-modulo usercard__avatar" id="avatar" data-user-avatar>U</span>
+            <span class="plaquinha-de-nome usercard__info">
+              <span class="placeholder-titulo usercard__name" id="userNameSidebar" data-user-name>Usuário</span>
+              <span class="placeholder usercard__role muted" id="userRoleSidebar" data-user-role>USER</span>
+            </span>
+          </button>
+          <button class="btn btn--sair" id="btnSair" type="button" aria-label="Sair do ContHub">Sair</button>
         </div>
-      </section>
-
-      <section class="profile-panel">
-        <div class="profile-panel__head">
-          <strong>Resumo rápido</strong>
-          <span class="muted">Informações principais</span>
-        </div>
-        <div class="summary-pills">
-          <span class="summary-pill" id="perfilBehavioral">Sem perfil comportamental</span>
-          <span class="summary-pill" id="perfilEquipe">Sem equipe</span>
-          <span class="summary-pill" id="perfilPermissionMode">Perfil padrão</span>
-        </div>
-      </section>
-
-      <section class="profile-panel">
-        <div class="profile-panel__head">
-          <strong>Editar meus dados</strong>
-          <span class="muted">Você pode alterar nome e senha</span>
-        </div>
-
-        <form id="profileForm" class="profile-form" novalidate>
-          <label class="field">
-            <span>Nome</span>
-            <input id="profileName" name="profileName" type="text" placeholder="Seu nome" />
-          </label>
-
-          <label class="field">
-            <span>Email</span>
-            <input id="profileEmail" name="profileEmail" type="email" disabled />
-          </label>
-
-          <label class="field">
-            <span>Senha atual</span>
-            <div class="password">
-              <input id="profileCurrentPassword" name="profileCurrentPassword" type="password" autocomplete="current-password" />
-              <button class="eye" type="button" data-password-toggle="profileCurrentPassword" aria-label="Mostrar senha atual">👁</button>
-            </div>
-          </label>
-
-          <label class="field">
-            <span>Nova senha</span>
-            <div class="password">
-              <input id="profileNewPassword" name="profileNewPassword" type="password" autocomplete="new-password" />
-              <button class="eye" type="button" data-password-toggle="profileNewPassword" aria-label="Mostrar nova senha">👁</button>
-            </div>
-          </label>
-
-          <label class="field">
-            <span>Confirmar nova senha</span>
-            <div class="password">
-              <input id="profileConfirmPassword" name="profileConfirmPassword" type="password" autocomplete="new-password" />
-              <button class="eye" type="button" data-password-toggle="profileConfirmPassword" aria-label="Mostrar confirmação de senha">👁</button>
-            </div>
-          </label>
-
-          <button class="profile-submit" type="submit">Salvar alterações</button>
-          <div id="profileFeedback" class="message hidden" role="alert"></div>
-        </form>
-      </section>
+      </div>
     </aside>
 
-    <main class="profile-main">
-      <section class="profile-card">
-        <div class="profile-card__head">
-          <div>
-            <span class="profile-kicker">Ficha completa</span>
-            <h2>Informações do usuário</h2>
-          </div>
-          <span class="summary-pill summary-pill--time" id="updatedAtPill">Atualização —</span>
+    <main class="standard-sidebar-main">
+      <header class="topbar">
+        <button id="menuBtn" class="iconbtn" type="button" aria-label="Abrir menu">☰</button>
+        <div class="topbar__title">
+          <h1>Meu perfil</h1>
+          <p class="muted">Seu perfil com a mesma sidebar retrátil dos demais módulos.</p>
         </div>
+      </header>
 
-        <div class="info-grid">
-          <div class="info-item"><span>Perfil de acesso</span><strong id="perfilAcesso">—</strong></div>
-          <div class="info-item"><span>Modo de permissão</span><strong id="nivelAcesso">—</strong></div>
-          <div class="info-item"><span>Cargo</span><strong id="cargo">—</strong></div>
-          <div class="info-item"><span>Status</span><strong id="status">—</strong></div>
-          <div class="info-item"><span>Coordenador</span><strong id="coordenador">—</strong></div>
-          <div class="info-item"><span>Equipe</span><strong id="equipe">—</strong></div>
-          <div class="info-item"><span>Perfil comportamental</span><strong id="behavioralProfile">—</strong></div>
-          <div class="info-item"><span>Criado em</span><strong id="createdAt">—</strong></div>
-        </div>
-      </section>
+      <div class="profile-layout">
+        <aside class="profile-sidebar">
+          <button class="profile-back" id="btnVoltar" type="button">← Voltar ao painel</button>
 
-      <section class="profile-card">
-        <div class="profile-card__head">
-          <div>
-            <span class="profile-kicker">Permissões</span>
-            <h2>Acessos aos módulos</h2>
-          </div>
-        </div>
-        <div class="modules" id="modulesList"></div>
-      </section>
+          <section class="profile-hero">
+            <div class="profile-hero__body">
+              <span class="profile-kicker">Meu perfil</span>
+              <h1 id="nome">Usuário</h1>
+              <p id="email" class="muted">—</p>
+            </div>
 
-      <section class="profile-card">
-        <div class="profile-card__head">
-          <div>
-            <span class="profile-kicker">Auditoria</span>
-            <h2>Atividade recente</h2>
-          </div>
-        </div>
-        <div class="logs" id="logsList"></div>
-      </section>
+            <div class="badges">
+              <span class="badge badge--role" id="roleBadge">USER</span>
+              <span class="badge badge--cargo" id="cargoBadge">Cargo</span>
+              <span class="badge badge--status" id="statusBadge">ATIVO</span>
+            </div>
+          </section>
 
-      <div class="profile-actions">
-        <button class="profile-logout" id="btnSair" type="button">Sair</button>
+          <section class="profile-panel">
+            <div class="profile-panel__head">
+              <strong>Resumo rápido</strong>
+              <span class="muted">Informações principais</span>
+            </div>
+            <div class="summary-pills">
+              <span class="summary-pill" id="perfilBehavioral">Sem perfil comportamental</span>
+              <span class="summary-pill" id="perfilEquipe">Sem equipe</span>
+              <span class="summary-pill" id="perfilPermissionMode">Perfil padrão</span>
+            </div>
+          </section>
+
+          <section class="profile-panel">
+            <div class="profile-panel__head">
+              <strong>Editar meus dados</strong>
+              <span class="muted">Você pode alterar nome e senha</span>
+            </div>
+
+            <form id="profileForm" class="profile-form" novalidate>
+              <label class="field">
+                <span>Nome</span>
+                <input id="profileName" name="profileName" type="text" placeholder="Seu nome" />
+              </label>
+
+              <label class="field">
+                <span>Email</span>
+                <input id="profileEmail" name="profileEmail" type="email" disabled />
+              </label>
+
+              <label class="field">
+                <span>Senha atual</span>
+                <div class="password">
+                  <input id="profileCurrentPassword" name="profileCurrentPassword" type="password" autocomplete="current-password" />
+                  <button class="eye" type="button" data-password-toggle="profileCurrentPassword" aria-label="Mostrar senha atual">👁</button>
+                </div>
+              </label>
+
+              <label class="field">
+                <span>Nova senha</span>
+                <div class="password">
+                  <input id="profileNewPassword" name="profileNewPassword" type="password" autocomplete="new-password" />
+                  <button class="eye" type="button" data-password-toggle="profileNewPassword" aria-label="Mostrar nova senha">👁</button>
+                </div>
+              </label>
+
+              <label class="field">
+                <span>Confirmar nova senha</span>
+                <div class="password">
+                  <input id="profileConfirmPassword" name="profileConfirmPassword" type="password" autocomplete="new-password" />
+                  <button class="eye" type="button" data-password-toggle="profileConfirmPassword" aria-label="Mostrar confirmação de senha">👁</button>
+                </div>
+              </label>
+
+              <button class="profile-submit" type="submit">Salvar alterações</button>
+              <div id="profileFeedback" class="message hidden" role="alert"></div>
+            </form>
+          </section>
+        </aside>
+
+        <section class="profile-main">
+          <section class="profile-card">
+            <div class="profile-card__head">
+              <div>
+                <span class="profile-kicker">Ficha completa</span>
+                <h2>Informações do usuário</h2>
+              </div>
+              <span class="summary-pill summary-pill--time" id="updatedAtPill">Atualização —</span>
+            </div>
+
+            <div class="info-grid">
+              <div class="info-item"><span>Perfil de acesso</span><strong id="perfilAcesso">—</strong></div>
+              <div class="info-item"><span>Modo de permissão</span><strong id="nivelAcesso">—</strong></div>
+              <div class="info-item"><span>Cargo</span><strong id="cargo">—</strong></div>
+              <div class="info-item"><span>Status</span><strong id="status">—</strong></div>
+              <div class="info-item"><span>Coordenador</span><strong id="coordenador">—</strong></div>
+              <div class="info-item"><span>Equipe</span><strong id="equipe">—</strong></div>
+              <div class="info-item"><span>Perfil comportamental</span><strong id="behavioralProfile">—</strong></div>
+              <div class="info-item"><span>Criado em</span><strong id="createdAt">—</strong></div>
+            </div>
+          </section>
+
+          <section class="profile-card">
+            <div class="profile-card__head">
+              <div>
+                <span class="profile-kicker">Permissões</span>
+                <h2>Acessos aos módulos</h2>
+              </div>
+            </div>
+            <div class="modules" id="modulesList"></div>
+          </section>
+
+          <section class="profile-card">
+            <div class="profile-card__head">
+              <div>
+                <span class="profile-kicker">Auditoria</span>
+                <h2>Atividade recente</h2>
+              </div>
+            </div>
+            <div class="logs" id="logsList"></div>
+          </section>
+        </section>
       </div>
     </main>
   </div>
 
   <script src="./perfil.js"></script>
+  <script src="../shared/sidebar-standard.js"></script>
 </body>
 </html>

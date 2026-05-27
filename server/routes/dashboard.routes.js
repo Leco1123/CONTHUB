@@ -132,6 +132,37 @@ function isClickupNotConfigured(err) {
   return err?.code === "CLICKUP_NOT_CONFIGURED";
 }
 
+function buildFallbackTicket({
+  funcao = "Contábil",
+  descricao = "",
+  urgencia = "media",
+  solicitanteNome = "",
+  solicitanteEmail = "",
+  imagem = "",
+} = {}) {
+  const now = new Date().toISOString();
+  const normalizedPriority = ["baixa", "media", "alta", "critica"].includes(String(urgencia || "").trim().toLowerCase())
+    ? String(urgencia || "").trim().toLowerCase()
+    : "media";
+
+  return {
+    id: `local_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
+    funcao: String(funcao || "").trim() || "Contábil",
+    descricao: String(descricao || "").trim(),
+    urgencia: normalizedPriority,
+    status: "aberto",
+    solicitanteNome: String(solicitanteNome || "").trim(),
+    solicitanteEmail: String(solicitanteEmail || "").trim(),
+    assigneeName: "",
+    imagem: String(imagem || "").trim(),
+    dueAt: "",
+    createdAt: now,
+    updatedAt: now,
+    provider: "local",
+    degraded: true,
+  };
+}
+
 // ===================================================
 // NEXT ACTIONS
 // GET/PUT no formato do front: { manual: [6], checks: [6] }
@@ -361,18 +392,30 @@ router.get("/clickup-next-actions", async (req, res) => {
 });
 
 router.post("/tickets", async (req, res) => {
+  const funcao = String(req.body?.funcao || "").trim();
+  const descricao = String(req.body?.descricao || "").trim().slice(0, 1000);
+  const urgencia = String(req.body?.urgencia || "media").trim().toLowerCase();
+  const imagem = String(req.body?.imagem || "").trim();
+  const fallbackTicket = buildFallbackTicket({
+    funcao,
+    descricao,
+    urgencia,
+    imagem,
+    solicitanteNome: getRequesterName(req),
+    solicitanteEmail: getRequesterEmail(req),
+  });
+
   try {
     if (!clickupTickets.isClickUpTicketsEnabled()) {
-      return res.status(503).json({
-        error: "Integração ClickUp não configurada.",
+      return res.status(201).json({
+        provider: "local",
+        configured: false,
+        degraded: true,
         code: "CLICKUP_NOT_CONFIGURED",
+        warning: "Integração ClickUp não configurada. Chamado salvo no fallback local.",
+        ticket: fallbackTicket,
       });
     }
-
-    const funcao = String(req.body?.funcao || "").trim();
-    const descricao = String(req.body?.descricao || "").trim().slice(0, 1000);
-    const urgencia = String(req.body?.urgencia || "media").trim().toLowerCase();
-    const imagem = String(req.body?.imagem || "").trim();
 
     if (!descricao) {
       return res.status(400).json({ error: "Descrição do chamado é obrigatória." });
@@ -393,16 +436,24 @@ router.post("/tickets", async (req, res) => {
     });
   } catch (err) {
     if (isClickupNotConfigured(err)) {
-      return res.status(503).json({
-        error: "Integração ClickUp não configurada.",
+      return res.status(201).json({
+        provider: "local",
+        configured: false,
+        degraded: true,
         code: "CLICKUP_NOT_CONFIGURED",
+        warning: "Integração ClickUp não configurada. Chamado salvo no fallback local.",
+        ticket: fallbackTicket,
       });
     }
 
     console.error("Erro ao criar chamado no ClickUp:", err);
-    return res.status(502).json({
-      error: "Falha ao criar chamado no ClickUp.",
+    return res.status(201).json({
+      provider: "local",
+      configured: false,
+      degraded: true,
       code: "CLICKUP_CREATE_FAILED",
+      warning: "Falha ao criar chamado no ClickUp. Chamado salvo no fallback local.",
+      ticket: fallbackTicket,
     });
   }
 });

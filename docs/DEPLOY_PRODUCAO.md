@@ -183,6 +183,7 @@ Estas melhorias não impedem o deploy inicial, mas valem a pena:
 ## 14. Arquivos relacionados
 
 - [../.env.example](../.env.example)
+- [./DEPLOY_LAN_CLICKUP.md](./DEPLOY_LAN_CLICKUP.md)
 - [../server/server.js](../server/server.js)
 - [../scripts/generate-session-secret.js](../scripts/generate-session-secret.js)
 - [../scripts/backup-conthub.ps1](../scripts/backup-conthub.ps1)

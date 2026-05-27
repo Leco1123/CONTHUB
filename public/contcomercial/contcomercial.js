@@ -89,6 +89,7 @@
 
     if (role === "ti" || profile === "ti") return true;
     if (profile === "comercial") return id === "dashboard" || id === "contcomercial";
+    if (id === "ti-tickets") return ["ti", "gerencial"].includes(profile) || role === "admin";
     if (id === "contadmin") return role === "admin" || profile === "gerencial";
     if (!rules.length || rules.includes("user") || rules.includes("user+admin")) return true;
     if (rules.includes("all") || rules.includes("*") || rules.includes("auth")) return true;
@@ -221,9 +222,12 @@
         card.hidden = blocked;
       }
 
-      const pill = card.querySelector(".pill");
-      if (pill && moduleId !== "contcomercial") {
-        pill.textContent = STATUS_LABEL[status] || pill.textContent;
+      const pill = card.querySelector(".status, .pill");
+      if (pill) {
+        if (pill.classList.contains("status")) {
+          pill.setAttribute("data-status", moduleId === "contadmin" ? "admin" : status);
+        }
+        pill.textContent = STATUS_LABEL[moduleId === "contadmin" ? "admin" : status] || pill.textContent;
       }
     });
   }

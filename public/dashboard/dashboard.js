@@ -1021,6 +1021,7 @@
 
     if (role === "ti" || accessProfile === "ti") return true;
     if (accessProfile === "comercial") return moduleId === "dashboard" || moduleId === "contcomercial";
+    if (moduleId === "ti-tickets") return ["ti", "gerencial"].includes(accessProfile) || role === "admin";
     if (moduleId === "contadmin") return role === "admin" || accessProfile === "gerencial";
     if (moduleId === "contanalytics") return ["gerencial", "coordenacao"].includes(accessProfile) || role === "admin";
     if (!rules.length || rules.includes("user") || rules.includes("user+admin")) return true;
@@ -3059,7 +3060,7 @@
     if (!isCommercial) return;
 
     if (heroTitle) {
-      heroTitle.textContent = "Acompanhe a frente comercial com foco, leveza e direção.";
+      heroTitle.textContent = "ContHub";
     }
 
     if (heroText) {
@@ -3162,6 +3163,18 @@
         await logoutDashboard();
       });
     }
+  }
+
+  function openDashboardPanelFromHash() {
+    const hash = String(window.location.hash || "").trim().toLowerCase();
+    if (hash !== "#dashboardchamadospanel" && hash !== "#ti-tickets") return;
+
+    const panel = document.getElementById("dashboardChamadosPanel");
+    if (!panel) return;
+
+    requestAnimationFrame(() => {
+      panel.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
   }
 
   async function renderQuickAutoCard() {
@@ -3459,5 +3472,8 @@
     renderMonthlySlaIndicator();
     bindContFlowAutoUpdates();
     startTicketsSyncLoop();
+    openDashboardPanelFromHash();
   });
+
+  window.addEventListener("hashchange", openDashboardPanelFromHash);
 })();

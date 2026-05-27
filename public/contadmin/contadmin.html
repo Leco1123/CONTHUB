@@ -316,11 +316,25 @@
                       </div>
                     </label>
 
-                    <label class="form-field">
+                    <label class="form-field" id="coordenadorField">
+                      <span>Coordenador</span>
+                      <div class="select-cargo">
+                        <select id="coordenador" name="coordenador"></select>
+                      </div>
+                    </label>
+
+                    <label class="form-field" id="equipeField">
                       <span>Equipe</span>
                       <div class="select-cargo">
-                        <select id="equipe" name="equipe"></select>
-                        <select id="coordenador" name="coordenador" hidden aria-hidden="true" tabindex="-1"></select>
+                        <input
+                          id="equipe"
+                          name="equipe"
+                          type="text"
+                          list="equipesDisponiveis"
+                          placeholder="Selecione ou digite uma nova equipe"
+                          autocomplete="off"
+                        />
+                        <datalist id="equipesDisponiveis"></datalist>
                       </div>
                     </label>
 
@@ -337,6 +351,11 @@
                         <select id="behavioralProfileSecondary" name="behavioralProfileSecondary"></select>
                       </div>
                     </label>
+                  </div>
+
+                  <div class="auto-team-preview" id="autoTeamPreview" hidden>
+                    <strong id="autoTeamPreviewTitle">Equipe automática</strong>
+                    <span id="autoTeamPreviewText">Ao salvar, a coordenação e a equipe serão criadas automaticamente.</span>
                   </div>
                 </section>
 

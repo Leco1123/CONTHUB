@@ -11,115 +11,124 @@
     <script src="../shared/theme-boot.js"></script>
     <link rel="stylesheet" href="../shared/theme.css" />
     <link rel="stylesheet" href="./dashboard.css?v=20260524-09" />
+    <link rel="stylesheet" href="../shared/sidebar-standard.css" />
   </head>
 
-  <body>
+  <body class="has-standard-sidebar">
     <div class="app dashboardApp">
-      <aside class="sidebar dashboardSidebar">
-        <div class="profileCard">
-          <button
-            class="profileCard__avatar profileCard__avatar--button"
-            id="userInitials"
-            type="button"
-            data-goto="../perfil/perfil.html"
-            aria-label="Abrir meu perfil"
-            title="Abrir meu perfil"
-          >
-            U
-          </button>
-          <div class="profileCard__body">
-            <strong id="userName">Usuário</strong>
-            <span id="userRole">USER</span>
-          </div>
-          <div class="profileCard__actions">
-            <div class="profileCard__status" id="sessionStatus">Sessão ativa</div>
-            <div class="profileCard__links">
-              <button class="ghost-btn ghost-btn--sidebar ghost-btn--danger" type="button" data-logout>Sair</button>
-            </div>
+      <div class="overlay" id="overlay" aria-hidden="true"></div>
+
+      <aside class="sidebar dashboardSidebar" aria-label="Menu lateral de módulos">
+        <div class="sidebar__brand">
+          <div class="brand__text">
+            <div class="brand__name">ContHub</div>
           </div>
         </div>
 
-        <div class="sidebar__group">
-          <div class="theme-switcher theme-switcher--dashboard" aria-label="Alternar tema">
+        <div class="titulo-sidebar">Módulos do ContHub</div>
+
+        <nav class="modulos-sidebar">
+          <button class="cards-modulos is-active" type="button" data-module-id="dashboard" data-src="../dashboard/dashboard.html" data-goto="../dashboard/dashboard.html">
+            <span class="icone-modulo">🏠</span>
+            <span class="plaquinha-de-nome">
+              <span class="placeholder-titulo">Dashboard</span>
+              <span class="placeholder">Visão geral</span>
+            </span>
+            <span class="status" data-status="online">ONLINE</span>
+          </button>
+
+          <button class="cards-modulos" type="button" data-module-id="contcomercial" data-src="../contcomercial/contcomercial.html" data-goto="../contcomercial/contcomercial.html">
+            <span class="icone-modulo">💼</span>
+            <span class="plaquinha-de-nome">
+              <span class="placeholder-titulo">ContComercial</span>
+              <span class="placeholder">Operação comercial</span>
+            </span>
+            <span class="status" data-status="online">ONLINE</span>
+          </button>
+
+          <button class="cards-modulos" type="button" data-module-id="contflow" data-src="../contflow/contflow.html" data-goto="../contflow/contflow.html">
+            <span class="icone-modulo">⚡</span>
+            <span class="plaquinha-de-nome">
+              <span class="placeholder-titulo">ContFlow</span>
+              <span class="placeholder">Rotinas e fluxo</span>
+            </span>
+            <span class="status" data-status="online">ONLINE</span>
+          </button>
+
+          <button class="cards-modulos" type="button" data-module-id="contanalytics" data-src="../contanalytics/contanalytics.html" data-goto="../contanalytics/contanalytics.html">
+            <span class="icone-modulo">📊</span>
+            <span class="plaquinha-de-nome">
+              <span class="placeholder-titulo">ContAnalytics</span>
+              <span class="placeholder">KPIs e painel</span>
+            </span>
+            <span class="status" data-status="online">ONLINE</span>
+          </button>
+
+          <button class="cards-modulos" type="button" data-module-id="contdocs" data-src="../contdocs/contdocs.html" data-goto="../contdocs/contdocs.html">
+            <span class="icone-modulo">📁</span>
+            <span class="plaquinha-de-nome">
+              <span class="placeholder-titulo">ContDocs</span>
+              <span class="placeholder">Documentos</span>
+            </span>
+            <span class="status" data-status="dev">DEV</span>
+          </button>
+
+          <button class="cards-modulos" type="button" data-module-id="contrelatorios" data-src="../contrelatorios/contrelatorios.html" data-goto="../contrelatorios/contrelatorios.html">
+            <span class="icone-modulo">📈</span>
+            <span class="plaquinha-de-nome">
+              <span class="placeholder-titulo">ContRelatórios</span>
+              <span class="placeholder">Exportações</span>
+            </span>
+            <span class="status" data-status="dev">DEV</span>
+          </button>
+
+          <button class="cards-modulos" type="button" data-module-id="contconfig" data-src="../contconfig/contconfig.html" data-goto="../contconfig/contconfig.html">
+            <span class="icone-modulo">⚙️</span>
+            <span class="plaquinha-de-nome">
+              <span class="placeholder-titulo">ContConfig</span>
+              <span class="placeholder">Parâmetros</span>
+            </span>
+            <span class="status" data-status="dev">DEV</span>
+          </button>
+
+          <button class="cards-modulos" type="button" data-module-id="contadmin" data-src="../contadmin/contadmin.html" data-goto="../contadmin/contadmin.html">
+            <span class="icone-modulo">🛡️</span>
+            <span class="plaquinha-de-nome">
+              <span class="placeholder-titulo">ContAdmin Hub</span>
+              <span class="placeholder">Acesso total</span>
+            </span>
+            <span class="status" data-status="admin">ADMIN</span>
+          </button>
+        </nav>
+
+        <div class="sidebar__footer">
+          <div class="theme-switcher theme-switcher--sidebar" aria-label="Alternar tema">
             <button type="button" class="theme-switcher__button" data-theme-choice="dark">Preto</button>
             <button type="button" class="theme-switcher__button" data-theme-choice="light">Branco</button>
           </div>
-        </div>
-
-        <div class="sidebar__group">
-          <div class="sidebar__label">Atalhos</div>
-          <div class="cards cards--sidebar">
-            <button class="card" type="button" data-module-id="contcomercial" data-goto="../contcomercial/contcomercial.html">
-              <div class="card__icon">💼</div>
-              <div class="card__body">
-                <div class="card__title">ContComercial</div>
-                <div class="card__sub muted">Operação comercial</div>
-              </div>
-              <div class="pill" data-pill="contcomercial">CRM</div>
+          <div class="usercard-wrap">
+            <button class="cards-modulos usercard" type="button" data-usercard data-goto="../perfil/perfil.html" aria-label="Abrir perfil do usuário">
+              <span class="icone-modulo usercard__avatar" id="userInitials" data-user-avatar>U</span>
+              <span class="plaquinha-de-nome usercard__info">
+                <span class="placeholder-titulo usercard__name" id="userName" data-user-name>Usuário</span>
+                <span class="placeholder usercard__role muted" id="userRole" data-user-role>USER</span>
+              </span>
             </button>
-
-            <button class="card" type="button" data-module-id="contflow" data-goto="../contflow/contflow.html">
-              <div class="card__icon">⚡</div>
-              <div class="card__body">
-                <div class="card__title">ContFlow</div>
-                <div class="card__sub muted">Rotinas e fluxo</div>
-              </div>
-              <div class="pill" data-pill="contflow">ONLINE</div>
-            </button>
-
-            <button class="card" type="button" data-module-id="contanalytics" data-goto="../contanalytics/contanalytics.html">
-              <div class="card__icon">📊</div>
-              <div class="card__body">
-                <div class="card__title">ContAnalytics</div>
-                <div class="card__sub muted">KPIs e painel</div>
-              </div>
-              <div class="pill" data-pill="contanalytics">BI</div>
-            </button>
-
-            <button class="card" type="button" data-module-id="contrelatorios" data-goto="../contrelatorios/contrelatorios.html">
-              <div class="card__icon">📈</div>
-              <div class="card__body">
-                <div class="card__title">ContRelatórios</div>
-                <div class="card__sub muted">Exportações</div>
-              </div>
-              <div class="pill" data-pill="contrelatorios">REPORT</div>
-            </button>
-
-            <button class="card" type="button" data-module-id="contconfig" data-goto="../contconfig/contconfig.html">
-              <div class="card__icon">⚙️</div>
-              <div class="card__body">
-                <div class="card__title">ContConfig</div>
-                <div class="card__sub muted">Parâmetros</div>
-              </div>
-              <div class="pill" data-pill="contconfig">CFG</div>
-            </button>
-
-            <button class="card" type="button" data-module-id="contadmin" data-goto="../contadmin/contadmin.html">
-              <div class="card__icon">🛡️</div>
-              <div class="card__body">
-                <div class="card__title">ContAdmin</div>
-                <div class="card__sub muted">Acesso total</div>
-              </div>
-              <div class="pill" data-pill="contadmin">ADMIN</div>
-            </button>
-
-            <button
-              class="card card--ti-only"
-              type="button"
-              id="shortcutTiTickets"
-            >
-              <div class="card__icon">🧰</div>
-              <div class="card__body">
-                <div class="card__title">Central TI</div>
-                <div class="card__sub muted">Fila de chamados</div>
-              </div>
-              <div class="pill" data-pill="ti-tickets">TI</div>
-            </button>
+            <button class="btn btn--sair" type="button" data-logout aria-label="Sair do ContHub">Sair</button>
           </div>
         </div>
       </aside>
 
-      <main class="main-shell bi-shell">
+      <main class="standard-sidebar-main">
+        <header class="topbar">
+          <button id="menuBtn" class="iconbtn" type="button" aria-label="Abrir menu">☰</button>
+          <div class="topbar__title">
+            <h1>Dashboard</h1>
+            <p class="muted">Visão geral do ContHub com navegação lateral padronizada.</p>
+          </div>
+        </header>
+
+      <div class="main-shell bi-shell">
         <section class="dashboardExact">
           <div class="dashboardExact__column dashboardExact__column--main">
             <article class="panel exactCard exactCard--sla">
@@ -186,16 +195,13 @@
           <div class="dashboardExact__column dashboardExact__column--side">
             <article class="panel exactCard exactCard--overview">
               <span class="page-kicker">Executive overview</span>
-              <h1>Controle a operação com clareza, ritmo e prioridade.</h1>
+              <h1>ContHub</h1>
               <p class="bi-copy" id="heroText">
                 Visão central para acessar módulos, acompanhar o turno e agir rápido no que está travando a operação.
               </p>
 
               <div class="heroOverview__actions">
-                <button class="accent-btn" type="button" data-module-id="contcomercial" data-goto="../contcomercial/contcomercial.html" id="btnGoContComercial">Abrir ContComercial</button>
                 <button class="accent-btn" type="button" data-module-id="contflow" data-goto="../contflow/contflow.html">Abrir ContFlow</button>
-                <button class="ghost-btn" type="button" id="btnGoChamados">Ir para chamados</button>
-                <button class="ghost-btn" type="button" data-module-id="contconfig" data-goto="../contconfig/contconfig.html">Abrir ContConfig</button>
               </div>
             </article>
 
@@ -332,7 +338,7 @@
             </article>
           </div>
         </section>
-
+      </div>
       </main>
     </div>
 
@@ -444,5 +450,6 @@
     </div>
 
     <script src="./dashboard.js?v=20260521-13"></script>
+    <script src="../shared/sidebar-standard.js"></script>
   </body>
 </html>

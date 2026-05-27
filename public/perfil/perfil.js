@@ -4,6 +4,7 @@
   const MODULE_CATALOG = [
     { id: "dashboard", name: "Dashboard", desc: "Visão geral do ContHub.", icon: "🏠" },
     { id: "contcomercial", name: "ContComercial", desc: "Operação comercial e propostas.", icon: "💼" },
+    { id: "ti-tickets", name: "Chamados TI", desc: "Fila de chamados e suporte interno.", icon: "🧰" },
     { id: "contflow", name: "ContFlow", desc: "Fluxo e rotinas contábeis.", icon: "⚡" },
     { id: "contanalytics", name: "ContAnalytics", desc: "Indicadores e análise.", icon: "📊" },
     { id: "contdocs", name: "ContDocs", desc: "Documentos e reconciliações.", icon: "📁" },
@@ -18,6 +19,8 @@
     avatar: document.getElementById("avatar"),
     nome: document.getElementById("nome"),
     email: document.getElementById("email"),
+    sidebarUserName: document.getElementById("userNameSidebar"),
+    sidebarUserRole: document.getElementById("userRoleSidebar"),
     perfilAcesso: document.getElementById("perfilAcesso"),
     nivelAcesso: document.getElementById("nivelAcesso"),
     cargo: document.getElementById("cargo"),
@@ -197,6 +200,8 @@
     if (el.avatar) el.avatar.textContent = avatarFromName(displayName);
     if (el.nome) el.nome.textContent = displayName;
     if (el.email) el.email.textContent = cleanText(user.email) || "—";
+    if (el.sidebarUserName) el.sidebarUserName.textContent = displayName;
+    if (el.sidebarUserRole) el.sidebarUserRole.textContent = accessProfileLabel(user.accessProfile);
     if (el.perfilAcesso) el.perfilAcesso.textContent = accessProfileLabel(user.accessProfile);
     if (el.nivelAcesso) el.nivelAcesso.textContent = permissionModeLabel(user.permissionMode);
     if (el.cargo) el.cargo.textContent = cleanText(user.cargo) || "Não informado";
@@ -233,8 +238,32 @@
     const raw = cleanText(permission?.status || permission?.moduleStatus).toLowerCase();
     if (raw === "offline") return "offline";
     if (raw === "dev") return "dev";
-    if (raw === "admin") return "online";
+    if (raw === "admin") return "admin";
     return "online";
+  }
+
+  function syncSidebarModules(user) {
+    const permissions = Array.isArray(user?.permissions) ? user.permissions : [];
+    const permissionsMap = new Map(
+      permissions.map((entry) => [cleanText(entry?.moduleId).toLowerCase(), entry])
+    );
+
+    document.querySelectorAll(".modulos-sidebar [data-module-id]").forEach((button) => {
+      const moduleId = cleanText(button.getAttribute("data-module-id")).toLowerCase();
+      const permission = permissionsMap.get(moduleId);
+      const canView = Boolean(permission?.view);
+      const status = moduleId === "contadmin" ? "admin" : normalizeModuleStatus(permission);
+      const badge = button.querySelector(".status");
+
+      button.hidden = !canView;
+      button.setAttribute("data-noaccess", canView ? "false" : "true");
+      button.setAttribute("data-disabled", status === "offline" ? "true" : "false");
+
+      if (badge) {
+        badge.setAttribute("data-status", status);
+        badge.textContent = status.toUpperCase();
+      }
+    });
   }
 
   function renderModules(user) {
@@ -339,6 +368,12 @@
 
   el.btnVoltar?.addEventListener("click", () => goto(DASHBOARD_PAGE_URL));
   el.btnSair?.addEventListener("click", logout);
+  document.querySelectorAll(".modulos-sidebar [data-src]").forEach((button) => {
+    button.addEventListener("click", () => {
+      if (button.getAttribute("data-disabled") === "true" || button.getAttribute("data-noaccess") === "true") return;
+      goto(button.getAttribute("data-src"));
+    });
+  });
 
   el.profileForm?.addEventListener("submit", async (event) => {
     event.preventDefault();
@@ -381,6 +416,7 @@
 
       authUser = payload?.user || authUser;
       renderProfile(authUser);
+      syncSidebarModules(authUser);
       renderModules(authUser);
       await renderLogs();
 
@@ -399,6 +435,7 @@
       const user = await requireSession();
       if (!user) return;
       renderProfile(user);
+      syncSidebarModules(user);
       renderModules(user);
       await renderLogs();
     } catch (err) {

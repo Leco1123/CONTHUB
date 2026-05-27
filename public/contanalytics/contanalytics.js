@@ -143,6 +143,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     if (profile === "ti" || role === "ti") return true;
     if (profile === "comercial") return id === "dashboard" || id === "contcomercial";
+    if (id === "ti-tickets") return ["ti", "gerencial"].includes(profile) || role === "admin";
     if (id === "contadmin") return profile === "gerencial" || role === "admin";
     if (id === "contanalytics") return ["ti", "gerencial", "coordenacao"].includes(profile) || role === "admin";
     if (!rules.length || rules.includes("user") || rules.includes("user+admin")) return true;

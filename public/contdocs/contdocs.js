@@ -47,6 +47,39 @@ document.addEventListener("DOMContentLoaded", () => {
     return "USER";
   }
 
+  function normalizeAccessProfile(value) {
+    const normalized = String(value || "")
+      .trim()
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "");
+
+    if (normalized === "ti") return "ti";
+    if (normalized === "admin" || normalized === "gerencial" || normalized === "gerencia") return "gerencial";
+    if (normalized === "coordenacao" || normalized === "coordenador") return "coordenacao";
+    if (normalized === "comercial") return "comercial";
+    if (normalized === "consulta") return "consulta";
+    return "operacional";
+  }
+
+  function getAccessProfile(user) {
+    return normalizeAccessProfile(
+      user?.accessProfile || user?.access_profile || user?.perfilAcesso || user?.perfil_acesso || user?.role
+    );
+  }
+
+  function canAccessSidebarModule(moduleId, user = getSessionUser()) {
+    const id = String(moduleId || "").trim().toLowerCase();
+    const profile = getAccessProfile(user);
+    const role = String(user?.role || "").trim().toLowerCase();
+
+    if (profile === "ti" || role === "ti") return true;
+    if (id === "contadmin") return profile === "gerencial" || role === "admin";
+    if (id === "ti-tickets") return profile === "gerencial" || role === "admin";
+    if (profile === "comercial") return id === "dashboard" || id === "contcomercial";
+    return true;
+  }
+
   function avatarFromName(name) {
     const t = String(name || "").trim();
     return t ? t[0].toUpperCase() : "U";
@@ -191,13 +224,12 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function applyRoleToSidebar() {
     const current = getSessionUser();
-    const role = (current?.role || "user").toLowerCase();
 
     getSidebarCards().forEach((card) => {
       const moduleId = card.dataset.moduleId;
       if (!moduleId) return;
 
-      const blocked = role === "user" && moduleId === "contadmin";
+      const blocked = !canAccessSidebarModule(moduleId, current);
       card.setAttribute("data-noaccess", blocked ? "true" : "false");
     });
   }
