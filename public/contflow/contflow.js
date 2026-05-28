@@ -3113,6 +3113,55 @@ function scheduleFilterDropdownPosition() {
   });
 }
 
+function positionFloatingEditor(pop, anchorRect, options = {}) {
+  if (!pop || !anchorRect) return;
+
+  const viewportPadding = options.viewportPadding ?? 8;
+  const gap = options.gap ?? 8;
+  const fallbackWidth = options.fallbackWidth ?? 320;
+  const fallbackHeight = options.fallbackHeight ?? 420;
+  const isMobile = Boolean(options.isMobile);
+
+  if (isMobile) {
+    pop.style.inset = `${viewportPadding}px`;
+    pop.style.left = "";
+    pop.style.top = "";
+    pop.style.maxHeight = `calc(100vh - ${viewportPadding * 2}px)`;
+    pop.dataset.placement = "fullscreen";
+    return;
+  }
+
+  const measuredWidth = Math.max(pop.offsetWidth || 0, fallbackWidth);
+  const measuredHeight = Math.max(pop.offsetHeight || 0, fallbackHeight);
+  const maxLeft = Math.max(viewportPadding, window.innerWidth - measuredWidth - viewportPadding);
+  const left = clamp(anchorRect.left, viewportPadding, maxLeft);
+
+  const availableBelow = window.innerHeight - anchorRect.bottom - gap - viewportPadding;
+  const availableAbove = anchorRect.top - gap - viewportPadding;
+  const canFitBelow = availableBelow >= Math.min(measuredHeight, 240);
+  const shouldOpenAbove = !canFitBelow && availableAbove > availableBelow;
+
+  const usableHeight = Math.max(220, shouldOpenAbove ? availableAbove : availableBelow);
+  pop.style.maxHeight = `${Math.min(measuredHeight, usableHeight)}px`;
+
+  const effectiveHeight = Math.max(pop.offsetHeight || 0, Math.min(measuredHeight, usableHeight));
+  let top = anchorRect.bottom + gap;
+
+  if (shouldOpenAbove) {
+    top = Math.max(viewportPadding, anchorRect.top - effectiveHeight - gap);
+    pop.dataset.placement = "top";
+  } else {
+    top = Math.min(
+      Math.max(viewportPadding, anchorRect.bottom + gap),
+      Math.max(viewportPadding, window.innerHeight - effectiveHeight - viewportPadding)
+    );
+    pop.dataset.placement = "bottom";
+  }
+
+  pop.style.left = `${left}px`;
+  pop.style.top = `${top}px`;
+}
+
 function hideFilterDropdown() {
   if (!cfFilterDD) return;
   cfFilterAnchorEl = null;
@@ -3741,7 +3790,6 @@ function openQuotaEditor(viewRow, colIndex) {
 
   const currentValue = String(cfData[dataIndex]?.[col.key] ?? "");
   const presetOptions = ["Compensação", "Prejuízo", "S/M"];
-  const rect = cell.getBoundingClientRect();
   const isMobileQuotaEditor = window.innerWidth <= 560;
   const pop = document.createElement("div");
   pop.className = "cf-quota-editor";
@@ -3805,12 +3853,6 @@ function openQuotaEditor(viewRow, colIndex) {
   `;
 
   pop.style.position = "fixed";
-  if (isMobileQuotaEditor) {
-    pop.style.inset = "8px";
-  } else {
-    pop.style.top = `${Math.max(8, Math.min(rect.bottom + 10, window.innerHeight - 360))}px`;
-    pop.style.left = `${Math.max(8, Math.min(rect.left, window.innerWidth - 340))}px`;
-  }
   pop.style.zIndex = "2000";
 
   const stop = (ev) => ev.stopPropagation();
@@ -3927,6 +3969,12 @@ function openQuotaEditor(viewRow, colIndex) {
   setActiveQuotaOption(currentValue);
 
   document.body.appendChild(pop);
+  positionFloatingEditor(pop, cell.getBoundingClientRect(), {
+    isMobile: isMobileQuotaEditor,
+    fallbackWidth: 320,
+    fallbackHeight: 540,
+    gap: 10,
+  });
   document.addEventListener("mousedown", onDocumentMouseDown);
   document.addEventListener("keydown", onDocumentKeyDown, true);
   window.addEventListener("resize", onWindowResize);
@@ -3960,7 +4008,6 @@ function openMitEditor(viewRow, colIndex) {
   closeOptionEditor({ focusCell: false });
 
   const currentValue = String(cfData[dataIndex]?.[col.key] ?? "").trim();
-  const rect = cell.getBoundingClientRect();
   const isMobileMitEditor = window.innerWidth <= 560;
   const pop = document.createElement("div");
   pop.className = "cf-quota-editor";
@@ -3999,12 +4046,6 @@ function openMitEditor(viewRow, colIndex) {
   `;
 
   pop.style.position = "fixed";
-  if (isMobileMitEditor) {
-    pop.style.inset = "8px";
-  } else {
-    pop.style.top = `${Math.min(rect.bottom + 10, window.innerHeight - 280)}px`;
-    pop.style.left = `${Math.min(rect.left, window.innerWidth - 340)}px`;
-  }
   pop.style.zIndex = "2000";
 
   const stop = (ev) => ev.stopPropagation();
@@ -4040,6 +4081,12 @@ function openMitEditor(viewRow, colIndex) {
   pop.querySelector('[data-action="close"]')?.addEventListener("click", () => closeMitEditor());
 
   document.body.appendChild(pop);
+  positionFloatingEditor(pop, cell.getBoundingClientRect(), {
+    isMobile: isMobileMitEditor,
+    fallbackWidth: 320,
+    fallbackHeight: 360,
+    gap: 10,
+  });
   document.addEventListener("mousedown", onDocumentMouseDown);
   document.addEventListener("keydown", onDocumentKeyDown, true);
   window.addEventListener("resize", onWindowResize);
@@ -4071,12 +4118,9 @@ function openOptionEditor(viewRow, colIndex, initialText = null) {
 
   const currentValue = String(cfData[dataIndex]?.[col.key] ?? "");
   const seededValue = initialText != null ? String(initialText) : currentValue;
-  const rect = cell.getBoundingClientRect();
   const pop = document.createElement("div");
   pop.className = "cf-option-editor";
   pop.style.position = "fixed";
-  pop.style.top = `${Math.min(rect.bottom + 8, window.innerHeight - 360)}px`;
-  pop.style.left = `${Math.min(rect.left, window.innerWidth - 320)}px`;
   pop.style.zIndex = "2000";
 
   pop.innerHTML = `
@@ -4165,6 +4209,11 @@ function openOptionEditor(viewRow, colIndex, initialText = null) {
   pop.querySelector('[data-action="apply"]')?.addEventListener("click", () => commitOptionValue(input?.value || ""));
 
   document.body.appendChild(pop);
+  positionFloatingEditor(pop, cell.getBoundingClientRect(), {
+    fallbackWidth: 320,
+    fallbackHeight: 360,
+    gap: 8,
+  });
   document.addEventListener("mousedown", onDocumentMouseDown);
   document.addEventListener("keydown", onDocumentKeyDown, true);
   window.addEventListener("resize", onWindowResize);
