@@ -591,6 +591,7 @@
       description: String(row.description || row.details || "").trim(),
       status: String(row.status || "").trim(),
       priority: String(row.priority || row.urgencia || "").trim().toLowerCase(),
+      priorityRaw: String(row.priorityRaw || row.priority_label || "").trim(),
       assigneeName: assigneeNames[0] || fallbackAssignee,
       assigneeNames,
       assigneeEmails,
@@ -660,7 +661,14 @@
           savedAt: String(fallback?.savedAt || data?.savedAt || ""),
           configured: false,
           data: Array.isArray(fallback?.data) ? fallback.data : [],
-          debug: fallback?.debug && typeof fallback.debug === "object" ? fallback.debug : null,
+          debug: data?.debug && typeof data.debug === "object"
+            ? data.debug
+            : fallback?.debug && typeof fallback.debug === "object"
+              ? fallback.debug
+              : null,
+          error: String(data?.error || "").trim(),
+          detail: String(data?.detail || "").trim(),
+          code: String(data?.code || "").trim(),
         };
         dashboardTicketsState.nextActionsFeed = payload;
         return payload;
@@ -671,6 +679,9 @@
         configured: true,
         data: Array.isArray(data?.data) ? data.data.map(normalizeNextActionTicket) : [],
         debug: data?.debug && typeof data.debug === "object" ? data.debug : null,
+        error: "",
+        detail: "",
+        code: "",
       };
       dashboardTicketsState.nextActionsFeed = payload;
       saveNextActionsClickupLegacy(payload);
@@ -680,6 +691,9 @@
         savedAt: "",
         configured: false,
         data: [],
+        error: "",
+        detail: "",
+        code: "",
       };
       dashboardTicketsState.nextActionsFeed = fallback;
       return fallback;
@@ -841,30 +855,41 @@
   }
 
   function getNextActionAssigneeLabel(ticket) {
-    if (String(ticket?.assigneeDisplay || "").trim()) {
-      return String(ticket.assigneeDisplay).trim();
+    const display = String(ticket?.assigneeDisplay || "").trim();
+    if (display && !/^voce\b/i.test(display) && !/^você\b/i.test(display)) {
+      return display;
     }
     const emails = Array.isArray(ticket?.assigneeEmails)
       ? ticket.assigneeEmails.map((item) => String(item || "").trim().toLowerCase()).filter(Boolean)
       : [];
     const names = Array.isArray(ticket?.assigneeNames) ? ticket.assigneeNames.filter(Boolean) : [];
+    if (names.length) return names.join(" • ");
     const responsibleCount =
       Number(ticket?.responsibleCount || 0) ||
       Math.max(emails.length, names.length, 1);
-    if (responsibleCount > 1) return `Você + ${responsibleCount - 1}`;
-    return "Você";
+    if (emails.length) return emails.join(" • ");
+    if (responsibleCount > 1) return `${responsibleCount} responsáveis`;
+    return "Responsável não identificado";
   }
 
   function ticketPriorityRank(priority) {
     switch (String(priority || "").trim().toLowerCase()) {
+      case "urgent":
       case "critica":
         return 0;
+      case "high":
       case "alta":
         return 1;
+      case "normal":
       case "media":
         return 2;
-      default:
+      case "":
         return 3;
+      case "low":
+      case "baixa":
+        return 4;
+      default:
+        return 2;
     }
   }
 
@@ -886,14 +911,27 @@
     return Number.isFinite(time) && time > 0 ? time : Number.MAX_SAFE_INTEGER;
   }
 
+  function formatNextActionDueLabel(ticket) {
+    const raw = String(ticket?.dueAt || "").trim();
+    if (!raw) return "Sem prazo definido";
+    return `Prazo ${formatDateTimeBR(raw)}`;
+  }
+
   function ticketPriorityTone(priority) {
     switch (String(priority || "").trim().toLowerCase()) {
+      case "urgent":
       case "critica":
         return "danger";
+      case "high":
       case "alta":
         return "warn";
+      case "":
+        return "soft";
+      case "low":
       case "baixa":
         return "soft";
+      case "normal":
+        return "ok";
       default:
         return "ok";
     }
@@ -920,6 +958,9 @@
         __dueTime: getTicketDueTime(ticket),
       }))
       .sort((a, b) => {
+        const aAssigned = a?.assignedToSessionUser ? 1 : 0;
+        const bAssigned = b?.assignedToSessionUser ? 1 : 0;
+        if (aAssigned !== bAssigned) return bAssigned - aAssigned;
         if (ticketStatusRank(a.status) !== ticketStatusRank(b.status)) {
           return ticketStatusRank(a.status) - ticketStatusRank(b.status);
         }
@@ -945,8 +986,14 @@
     }
 
     if (dashboardTicketsState.nextActionsFeed.configured === false && !openCount) {
-      el.textContent = "ClickUp sem cache disponível";
-      el.dataset.tone = "soft";
+      const detail = String(dashboardTicketsState.nextActionsFeed?.detail || "").trim();
+      if (detail) {
+        el.textContent = `ClickUp indisponível: ${detail}`;
+        el.dataset.tone = "warn";
+      } else {
+        el.textContent = "ClickUp sem cache disponível";
+        el.dataset.tone = "soft";
+      }
       return;
     }
 
@@ -1349,12 +1396,19 @@
 
   function ticketPriorityLabel(priority) {
     switch (String(priority || "").trim().toLowerCase()) {
+      case "":
+        return "Sem prioridade";
       case "baixa":
+      case "low":
         return "Baixa";
       case "alta":
+      case "high":
         return "Alta";
       case "critica":
+      case "urgent":
         return "Crítica";
+      case "normal":
+        return "Normal";
       default:
         return "Média";
     }
@@ -3237,8 +3291,8 @@
       : clickupItems.length
         ? `<div class="todo__autoList">
             ${clickupItems.map((ticket) => {
-              const relationLabel = "Atribuído a você";
-              const whenLabel = ticket?.dueAt ? `Prazo ${formatRelativeOrDate(ticket.dueAt)}` : "Sem prazo definido";
+              const relationLabel = "Atividade do ClickUp";
+              const whenLabel = formatNextActionDueLabel(ticket);
               return `
                 <article class="todo__auto">
                   <div class="todo__autoHead">
@@ -3253,23 +3307,27 @@
                     <span class="todo__pill" data-tone="soft">${escapeHTML(ticket.listName || "Sem lista")}</span>
                     <span class="todo__pill" data-tone="soft">${escapeHTML(relationLabel)}</span>
                     <span class="todo__pill" data-tone="${ticket?.dueAt ? "warn" : "soft"}">${escapeHTML(whenLabel)}</span>
-                    <span class="todo__pill" data-tone="soft">${escapeHTML(getNextActionAssigneeLabel(ticket))}</span>
+                    <span class="todo__pill" data-tone="soft">Responsáveis: ${escapeHTML(getNextActionAssigneeLabel(ticket))}</span>
                   </div>
                 </article>
               `;
             }).join("")}
           </div>`
-        : `<div class="todo__empty">Nenhuma tarefa do ClickUp está atribuída a você neste momento. As ações do painel continuam logo abaixo.</div>`;
+        : `<div class="todo__empty">${
+            dashboardTicketsState.nextActionsFeed?.configured === false
+              ? escapeHTML(String(dashboardTicketsState.nextActionsFeed?.detail || dashboardTicketsState.nextActionsFeed?.error || "Não foi possível carregar atividades do ClickUp."))
+              : "Nenhuma atividade aberta do ClickUp foi encontrada no momento."
+          }</div>`;
 
     const clickupDebugHtml = clickupDebug
-      ? `<div class="todo__sectionHint" style="margin-top:6px;opacity:.82;">Sessão: ${escapeHTML(String(clickupDebug.sessionEmail || clickupDebug.sessionName || "--"))} • ClickUp lidas: ${escapeHTML(String(clickupDebug.fetchedCount ?? 0))} • Compatíveis: ${escapeHTML(String(clickupDebug.matchedCount ?? 0))}</div>`
+      ? `<div class="todo__sectionHint" style="margin-top:6px;opacity:.82;">Sessão: ${escapeHTML(String(clickupDebug.sessionEmail || clickupDebug.sessionName || "--"))} • ClickUp lidas: ${escapeHTML(String(clickupDebug.fetchedCount ?? 0))} • Atribuídas a você: ${escapeHTML(String(clickupDebug.matchedCount ?? 0))}</div>`
       : "";
 
     el.innerHTML = `
       <section class="todo__section">
         <div class="todo__sectionHead">
-          <div class="todo__sectionTitle">ClickUp</div>
-          <div class="todo__sectionHint">Somente tarefas atribuídas ao seu nome no ClickUp.</div>
+          <div class="todo__sectionTitle">Atividades do ClickUp</div>
+          <div class="todo__sectionHint">Mostra as atividades vindas do ClickUp com seus responsáveis.</div>
         </div>
         ${clickupDebugHtml}
         ${clickupHtml}

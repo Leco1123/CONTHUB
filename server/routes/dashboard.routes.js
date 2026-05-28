@@ -104,27 +104,96 @@ function normalizeIdentity(value) {
   return String(value || "").trim().toLowerCase();
 }
 
-function isNextActionForSessionUser(req, item) {
-  const currentUser = req?.currentUser || req?.session?.user || {};
-  const sessionEmail = normalizeIdentity(currentUser.email || "");
-
-  const assigneeEmails = Array.isArray(item?.assigneeEmails)
-    ? item.assigneeEmails.map((entry) => normalizeIdentity(entry)).filter(Boolean)
-    : [];
-
-  return Boolean(sessionEmail) && assigneeEmails.includes(sessionEmail);
+function normalizeIdentityToken(value) {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
-function decorateNextActionForSessionUser(item) {
+function buildIdentityAliases(...values) {
+  const aliases = new Set();
+
+  values.forEach((value) => {
+    const raw = String(value || "").trim();
+    if (!raw) return;
+
+    const normalized = normalizeIdentity(raw);
+    if (normalized) aliases.add(normalized);
+
+    const tokenized = normalizeIdentityToken(raw);
+    if (tokenized) aliases.add(tokenized);
+
+    if (normalized.includes("@")) {
+      const [localPart] = normalized.split("@");
+      if (localPart) {
+        aliases.add(localPart);
+        const collapsed = localPart.replace(/[._-]+/g, " ").trim();
+        if (collapsed) aliases.add(collapsed);
+      }
+    }
+
+    tokenized
+      .split(" ")
+      .map((part) => part.trim())
+      .filter(Boolean)
+      .forEach((part) => aliases.add(part));
+  });
+
+  return Array.from(aliases).filter(Boolean);
+}
+
+function hasSharedIdentity(leftAliases, rightAliases) {
+  const right = new Set((Array.isArray(rightAliases) ? rightAliases : []).filter(Boolean));
+  return (Array.isArray(leftAliases) ? leftAliases : []).some((alias) => right.has(alias));
+}
+
+function isNextActionForSessionUser(req, item) {
+  const currentUser = req?.currentUser || req?.session?.user || {};
+  const sessionAliases = buildIdentityAliases(
+    currentUser.email || "",
+    currentUser.nome || currentUser.name || ""
+  );
+  const assigneeAliases = buildIdentityAliases(
+    ...(Array.isArray(item?.assigneeEmails) ? item.assigneeEmails : []),
+    ...(Array.isArray(item?.assigneeNames) ? item.assigneeNames : []),
+    item?.assigneeName || ""
+  );
+
+  return sessionAliases.length > 0 && hasSharedIdentity(sessionAliases, assigneeAliases);
+}
+
+function decorateNextActionForSessionUser(req, item) {
+  const currentUser = req?.currentUser || req?.session?.user || {};
   const assigneeEmails = Array.isArray(item?.assigneeEmails) ? item.assigneeEmails.filter(Boolean) : [];
   const assigneeNames = Array.isArray(item?.assigneeNames) ? item.assigneeNames.filter(Boolean) : [];
   const responsibleCount = Math.max(assigneeEmails.length, assigneeNames.length, 1);
+  const sessionAliases = buildIdentityAliases(
+    currentUser.email || "",
+    currentUser.nome || currentUser.name || ""
+  );
+  const assigneeAliases = buildIdentityAliases(
+    ...assigneeEmails,
+    ...assigneeNames,
+    item?.assigneeName || ""
+  );
 
   return {
     ...item,
     assignedToSessionUser: true,
     responsibleCount,
-    assigneeDisplay: responsibleCount > 1 ? `Você + ${responsibleCount - 1}` : "Você",
+    assigneeDisplay:
+      assigneeNames.join(" • ") ||
+      assigneeEmails.join(" • ") ||
+      "Responsável não identificado",
+    debugMatch: {
+      sessionAliases,
+      assigneeAliases,
+    },
   };
 }
 
@@ -271,7 +340,7 @@ router.post("/next-actions/reset", async (req, res) => {
 
 router.get("/tickets", async (req, res) => {
   try {
-    if (!clickupTickets.isClickUpTicketsEnabled()) {
+    if (!clickupTickets.isClickUpNextActionsEnabled()) {
       return res.json({
         provider: "clickup",
         configured: false,
@@ -325,7 +394,7 @@ router.get("/clickup-next-actions", async (req, res) => {
       Vary: "Cookie",
     });
 
-    if (!clickupTickets.isClickUpTicketsEnabled()) {
+    if (!clickupTickets.isClickUpNextActionsEnabled()) {
       return res.json({
         provider: "clickup",
         configured: false,
@@ -338,26 +407,44 @@ router.get("/clickup-next-actions", async (req, res) => {
       });
     }
 
-    const items = await clickupTickets.listNextActionsTasks();
-    const filteredItems = (Array.isArray(items) ? items : [])
-      .filter((item) => isNextActionForSessionUser(req, item))
-      .map(decorateNextActionForSessionUser);
+    const rawItems = await clickupTickets.listNextActionsTasks();
+    const items = Array.isArray(rawItems) ? rawItems : [];
+    const decoratedItems = items.map((item) => {
+      const assignedToSessionUser = isNextActionForSessionUser(req, item);
+      return {
+        ...decorateNextActionForSessionUser(req, item),
+        assignedToSessionUser,
+      };
+    });
+    const matchedCount = decoratedItems.filter((item) => item.assignedToSessionUser).length;
     const currentUser = req?.currentUser || req?.session?.user || {};
     return res.json({
       provider: "clickup",
       configured: true,
       savedAt: new Date().toISOString(),
-      data: filteredItems,
+      data: decoratedItems,
       debug: {
         sessionEmail: String(currentUser.email || "").trim().toLowerCase(),
         sessionName: String(currentUser.nome || currentUser.name || "").trim(),
-        fetchedCount: Array.isArray(items) ? items.length : 0,
-        matchedCount: filteredItems.length,
+        sessionAliases: buildIdentityAliases(
+          currentUser.email || "",
+          currentUser.nome || currentUser.name || ""
+        ),
+        fetchedCount: items.length,
+        matchedCount,
         assigneeEmails: Array.from(
           new Set(
-            (Array.isArray(items) ? items : [])
+            items
               .flatMap((item) => (Array.isArray(item?.assigneeEmails) ? item.assigneeEmails : []))
               .map((entry) => String(entry || "").trim().toLowerCase())
+              .filter(Boolean)
+          )
+        ),
+        assigneeNames: Array.from(
+          new Set(
+            items
+              .flatMap((item) => (Array.isArray(item?.assigneeNames) ? item.assigneeNames : []))
+              .map((entry) => String(entry || "").trim())
               .filter(Boolean)
           )
         ),
@@ -384,6 +471,7 @@ router.get("/clickup-next-actions", async (req, res) => {
       degraded: true,
       error: "Falha ao sincronizar próximas ações com o ClickUp.",
       code: "CLICKUP_NEXT_ACTIONS_SYNC_FAILED",
+      detail: String(err?.payload?.err || err?.message || "").trim(),
       savedAt: new Date().toISOString(),
       data: [],
       debug: null,

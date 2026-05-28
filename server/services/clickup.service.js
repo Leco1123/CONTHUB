@@ -42,8 +42,22 @@ function isClickUpTicketsEnabled() {
   return Boolean(CLICKUP_API_TOKEN && CLICKUP_LIST_ID);
 }
 
+function isClickUpApiEnabled() {
+  if (CLICKUP_TICKETS_ENABLED) {
+    return CLICKUP_TICKETS_ENABLED === "true" && Boolean(CLICKUP_API_TOKEN);
+  }
+  return Boolean(CLICKUP_API_TOKEN);
+}
+
+function isClickUpNextActionsEnabled() {
+  if (CLICKUP_TICKETS_ENABLED) {
+    return CLICKUP_TICKETS_ENABLED === "true" && Boolean(CLICKUP_API_TOKEN && CLICKUP_NEXT_ACTIONS_LIST_ID);
+  }
+  return Boolean(CLICKUP_API_TOKEN && CLICKUP_NEXT_ACTIONS_LIST_ID);
+}
+
 function assertConfigured() {
-  if (!isClickUpTicketsEnabled() || !CLICKUP_API_TOKEN || !CLICKUP_LIST_ID) {
+  if (!isClickUpApiEnabled()) {
     const err = new Error("Integração ClickUp não configurada.");
     err.code = "CLICKUP_NOT_CONFIGURED";
     throw err;
@@ -51,7 +65,7 @@ function assertConfigured() {
 }
 
 function assertListConfigured(listId) {
-  if (!isClickUpTicketsEnabled() || !CLICKUP_API_TOKEN || !String(listId || "").trim()) {
+  if (!isClickUpApiEnabled() || !String(listId || "").trim()) {
     const err = new Error("Integração ClickUp não configurada.");
     err.code = "CLICKUP_NOT_CONFIGURED";
     throw err;
@@ -91,6 +105,7 @@ function mapPriorityToClickUp(priority) {
 }
 
 function mapPriorityFromClickUp(priority) {
+  if (priority == null || String(priority).trim() === "") return "";
   const normalized = normalizeText(priority);
   if (normalized === "urgent") return "critica";
   if (normalized === "high") return "alta";
@@ -159,9 +174,9 @@ function computeTicketDueDate(priority, now = new Date()) {
   return setLocalTime(nextBusinessDay(now), 12, 0, 0, 0);
 }
 
-function formatIsoFromUnixMs(value) {
+function formatIsoFromUnixMs(value, fallback = new Date().toISOString()) {
   const time = Number(value);
-  if (!Number.isFinite(time) || time <= 0) return new Date().toISOString();
+  if (!Number.isFinite(time) || time <= 0) return fallback;
   return new Date(time).toISOString();
 }
 
@@ -402,11 +417,12 @@ function mapTaskToNextAction(task) {
     description: String(task?.description || task?.text_content || "").trim(),
     status: statusRaw,
     priority: mapPriorityFromClickUp(priorityRaw),
+    priorityRaw,
     assigneeName: assigneeNames[0] || "",
     assigneeNames,
     assigneeEmails,
     assigneeLabel: assigneeNames.join(" • "),
-    dueAt: formatIsoFromUnixMs(task?.due_date),
+    dueAt: formatIsoFromUnixMs(task?.due_date, ""),
     createdAt,
     updatedAt,
     url: String(task?.url || "").trim(),
@@ -518,7 +534,9 @@ async function deleteTicket(taskId) {
 }
 
 module.exports = {
+  isClickUpApiEnabled,
   isClickUpTicketsEnabled,
+  isClickUpNextActionsEnabled,
   createTicket,
   listAllTasks,
   listNextActionsTasks,
